@@ -15,6 +15,7 @@ from .contracts import (
     inspect_static_adapter,
 )
 from .mixtral import MixtralStaticAdapter
+from .qwen3_moe import Qwen3MoeStaticAdapter
 
 __all__ = [
     "AdapterContractError",
@@ -25,4 +26,5 @@ __all__ = [
     "StaticSemanticAdapter",
     "inspect_static_adapter",
     "MixtralStaticAdapter",
+    "Qwen3MoeStaticAdapter",
 ]

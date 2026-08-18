@@ -153,6 +153,71 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(term=term):
                 self.assertIn(term, adapters)
 
+    def test_qwen3_adapter_docs_describe_bounded_reference_layouts(self) -> None:
+        adapters = (ROOT / "docs" / "adapters.md").read_text()
+        discovery = (ROOT / "docs" / "discovery.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                adapters,
+                (
+                    "Qwen3MoeStaticAdapter()",
+                    "qwen3_moe",
+                    "legacy_indexed",
+                    "mlp_only_layers",
+                    "decoder_sparse_step",
+                    "Qwen2",
+                    "Qwen3.5",
+                    "64f30450dbfd1d02f610ad7080535cb906637fb9",
+                    "v4.51.3",
+                    "v4.57.1",
+                    "v5.0.0",
+                ),
+            ),
+            (
+                discovery,
+                (
+                    "Qwen3MoeStaticAdapter()",
+                    "qwen3_moe",
+                    "legacy_indexed",
+                    "mlp_only_layers",
+                    "decoder_sparse_step",
+                    "Qwen2",
+                    "Qwen3.5",
+                ),
+            ),
+            (
+                ledger,
+                (
+                    "Qwen3MoeStaticAdapter()",
+                    "legacy_indexed",
+                    "Qwen2",
+                    "Qwen3.5",
+                    "STRUCTURE",
+                ),
+            ),
+            (
+                readme,
+                (
+                    "Qwen3MoeStaticAdapter()",
+                    "legacy_indexed",
+                    "Qwen2/Qwen3.5",
+                    "STRUCTURE-only",
+                ),
+            ),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        for term in ("Qwen3MoeStaticAdapter", "qwen3_moe"):
+            with self.subTest(term=term):
+                self.assertIn(
+                    term,
+                    (ROOT / "src" / "moeatlas" / "adapters" / "__init__.py").read_text(),
+                )
+        self.assertTrue((ROOT / "src" / "moeatlas" / "adapters" / "qwen3_moe.py").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

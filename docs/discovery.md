@@ -106,3 +106,26 @@ through the runtime bridge. Static semantic adapters may consume this report
 as an input, but must preserve its provenance and `[STRUCTURE]` capability;
 they cannot claim runtime behavior or elevate a component. Real checkpoint
 certification remains deferred to Phase 1 and MV-01/MV-02.
+
+## Qwen3-MoE adapter boundary
+
+The caller may select `Qwen3MoeStaticAdapter()` after the generic scan. It
+requires exact `qwen3_moe` family identity and validates the full Qwen3
+dense/sparse schedule from `mlp_only_layers` and
+`decoder_sparse_step`. Dense `mlp` layers are checked for their exact
+projection children and shapes but are not published as MoE components.
+
+For sparse layers it accepts the official `legacy_indexed` names used by
+Transformers 4.51.3/4.57.1 or the packed 5.0.0/current names. The indexed
+surface has `experts.N` children and physical `gate_proj.weight`,
+`up_proj.weight`, and `down_proj.weight` shapes. The packed surface has
+direct `experts.gate_up_proj` and `experts.down_proj` parameters without
+`.weight`; its per-expert report entries are logical slices and explicitly
+not independently hookable. Missing/extra children, mixed layouts, bad
+structural attributes, or schedule swaps produce zero detection.
+
+Qwen2-MoE and Qwen3.5 hybrid/composite models are not inferred by this
+adapter. Its report remains unverified `[STRUCTURE]` evidence only: it does
+not capture routing, run inference, certify specialization, or establish
+real checkpoint compatibility. Model-library, checkpoint, GPU, and final
+VM validation remain deferred under MV-01/MV-02.

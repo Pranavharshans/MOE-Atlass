@@ -36,6 +36,15 @@ fused, and malformed surfaces. It does not infer a Transformers version,
 observe routing, certify Mixtral behavior, or change the deferred MV-01/MV-02
 status; real checkpoints and VM/GPU evidence remain required.
 
+Feature 14 adds the explicitly caller-selected `Qwen3MoeStaticAdapter()`
+for the official Qwen3-MoE dense/sparse schedule and the indexed
+`legacy_indexed` and packed reference surfaces from the documented
+Transformers versions. Its model-free fixtures verify exact family markers,
+schedule, structural attributes, topology, shapes, safe failures, and
+unverified `[STRUCTURE]` provenance only. Qwen2/Qwen3.5 layouts, routing,
+real checkpoints, and VM/GPU evidence remain deferred; this feature does
+not change MV-01/MV-02 status.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

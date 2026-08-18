@@ -78,3 +78,47 @@ The caller must choose this adapter explicitly and supply the already-observed
 model/config/manifest. Real Transformers checkpoints, fused or quantized
 variants, and VM/GPU validation remain deferred in the model-validation
 ledger.
+
+## Qwen3-MoE static adapter
+
+`Qwen3MoeStaticAdapter()` is an explicit, stateless caller choice for the
+exact `qwen3_moe` family. It requires `model.config` to be the same object
+as the supplied configuration and accepts only the explicit Qwen3-MoE
+architecture allowlist. Class names alone, Qwen2, Qwen3.5, fuzzy markers,
+and conflicting family markers produce zero detection.
+
+The adapter validates the complete configured dense/sparse schedule:
+layer `i` is sparse exactly when `i` is not in `mlp_only_layers` and
+`(i + 1) % decoder_sparse_step == 0`; at least one sparse layer is required.
+Dense layers must expose `mlp.gate_proj`, `mlp.up_proj`, `mlp.down_proj`,
+and `mlp.act_fn` with the configured dense shapes, but dense layers are not
+published as MoE components.
+
+Sparse layers use one common prefix before `layers.N` and exactly one of:
+
+- the `legacy_indexed` reference surface from Transformers 4.51.3 and
+  4.57.1: `mlp.gate`, `mlp.experts.N`, and each expert's
+  `gate_proj`, `up_proj`, `down_proj`, and `act_fn` children;
+- the packed reference surface from Transformers 5.0.0/current pinned
+  sources: `mlp.gate`, `mlp.experts.act_fn`, and direct
+  `experts.gate_up_proj`/`experts.down_proj` parameters without `.weight`.
+
+These are source-layout references, not a claim that every released model is
+compatible. The pinned upstream references are [Transformers
+4.51.3](https://github.com/huggingface/transformers/blob/v4.51.3/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py),
+[4.57.1](https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py),
+[5.0.0](https://github.com/huggingface/transformers/blob/v5.0.0/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py),
+and the pinned current reference
+[`64f30450dbfd1d02f610ad7080535cb906637fb9`](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py).
+
+The adapter checks all structural attributes, exact router/expert shapes,
+contiguous layer and indexed-expert names, and rejects missing, extra, mixed,
+fused, or transformed surfaces. Discovery publishes only sparse layers,
+routers, expert containers, and routed experts with exactly `[STRUCTURE]`,
+`STATIC_STRUCTURE`, method `qwen3-moe-static-structure-v1`, and
+`verified=False`. Packed expert entries are logical slices and carry the
+fixed warning that they are not independently hookable. No routing scores,
+expert activity, specialization, or routing certification is claimed.
+Qwen2-MoE and Qwen3.5 hybrid/composite layouts are separate future adapters.
+Real checkpoints, runtime versions, GPU behavior, and VM evidence remain
+deferred.

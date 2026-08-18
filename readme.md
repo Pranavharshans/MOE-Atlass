@@ -53,6 +53,11 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
   with exact family/config/attribute/shape checks and unverified
   STRUCTURE-only provenance; it makes no routing or certification claim and
   is covered only by model-free fixtures.
+- Explicit `Qwen3MoeStaticAdapter()` support for the official Qwen3-MoE
+  dense/sparse schedule, indexed `legacy_indexed` layouts from
+  Transformers 4.51.3/4.57.1, and packed 5.0.0/current logical slices;
+  it remains caller-selected, STRUCTURE-only, unverified, and separate from
+  Qwen2/Qwen3.5 adapters.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

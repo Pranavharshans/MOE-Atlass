@@ -26,7 +26,7 @@ Planned internal areas:
 | `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
 | `store` | run metadata, Parquet events, and DuckDB queries | Useful alpha |
 | `server` | local FastAPI API and run progress | Useful alpha |
-| `adapters` | explicit static semantic protocol, Mixtral structure adapter, and STRUCTURE-only inspection | Useful alpha |
+| `adapters` | explicit static semantic protocol, Mixtral/Qwen3-MoE structure adapters, and STRUCTURE-only inspection | Useful alpha |
 | `cli` | headless commands and diagnostics | Foundation / all phases |
 
 The foundation `cli` and diagnostics modules, the `core` capability/identity/
@@ -90,6 +90,9 @@ The foundation supports:
 - selecting `MixtralStaticAdapter()` explicitly for the exact indexed or
   packed Mixtral structural layouts, without routing certification or runtime
   adapter behavior;
+- selecting `Qwen3MoeStaticAdapter()` explicitly for the official Qwen3-MoE
+  dense/sparse schedule and either indexed or packed sparse layout, without
+  routing certification or runtime adapter behavior;
 - executing model-free tests.
 
 The optional loader and static adapter seam do not certify a checkpoint, perform inference, trace
