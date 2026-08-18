@@ -14,8 +14,10 @@ from .identity import (
     make_component_key,
     make_config_hash,
     make_model_key,
+    make_token_key,
     parse_component_key,
     parse_model_key,
+    parse_token_key,
     stable_digest,
     validate_stable_identifier,
 )
@@ -54,8 +56,10 @@ __all__ = [
     "make_component_key",
     "make_config_hash",
     "make_model_key",
+    "make_token_key",
     "parse_component_key",
     "parse_model_key",
+    "parse_token_key",
     "stable_digest",
     "validate_stable_identifier",
 ]

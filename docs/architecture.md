@@ -20,6 +20,7 @@ Planned internal areas:
 | `core` | typed identities, manifests, capabilities, and shared contracts | Probe core |
 | `discovery` | static traversal and confidence-scored MoE candidates | Probe core |
 | `probe` | serializable plans, passive hooks, bounded policy, cleanup | Probe core |
+| `events` | versioned token, routing, and expert evidence contracts | Probe core |
 | `runtime` | prompts, datasets, generation, and interventions | Useful alpha / causal beta |
 | `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
 | `store` | run metadata, Parquet events, and DuckDB queries | Useful alpha |
@@ -66,6 +67,8 @@ The foundation supports:
   discovery report with confidence and warnings;
 - resolving strict probe plans and managing torch-free synthetic hook
   lifecycles with transactional cleanup;
+- validating normalized, capability-aware token/routing/expert events without
+  capturing tensors or writing storage;
 - executing model-free tests.
 
 The foundation does not support loading a checkpoint, runtime inference,

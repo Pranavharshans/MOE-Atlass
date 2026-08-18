@@ -17,6 +17,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "schemas.md",
             ROOT / "docs" / "discovery.md",
             ROOT / "docs" / "probe.md",
+            ROOT / "docs" / "events.md",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -49,6 +50,20 @@ class ProjectFilesTests(unittest.TestCase):
         for term in ("ProbePlan", "HookManager", "raw_opt_in", "reverse", "MV-04"):
             with self.subTest(term=term):
                 self.assertIn(term, probe)
+
+    def test_event_docs_describe_normalized_boundary(self) -> None:
+        events = (ROOT / "docs" / "events.md").read_text()
+        for term in (
+            "TokenEvent",
+            "RoutingEvent",
+            "ExpertEvent",
+            "token:<64 lowercase hex",
+            "zero-based",
+            "latency_ms",
+            "Parquet/DuckDB",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, events)
 
 
 if __name__ == "__main__":

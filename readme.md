@@ -10,9 +10,10 @@ expert specialization.
 
 The repository is being implemented feature by feature against the
 [MoEAtlas product requirements](docs/specification/MoEAtlas_PRD_v1.docx).
-The current release contains the repository foundation and canonical manifest
-contracts. Model loading, discovery, instrumentation, storage, analysis, and
-the local UI are planned phases rather than advertised as complete features.
+The current release contains the repository foundation, canonical manifest
+contracts, static discovery/probe contracts, and normalized event schemas.
+Model loading, runtime instrumentation, storage, analysis, and the local UI
+remain planned phases rather than advertised as complete features.
 
 ## Current status
 
@@ -24,6 +25,8 @@ the local UI are planned phases rather than advertised as complete features.
   scored candidates, normalized expert/top-k facts, and STRUCTURE manifests.
 - Strict serializable probe plans with deterministic target resolution and a
   torch-free transactional hook lifecycle manager.
+- Versioned normalized token, routing, and expert event contracts with
+  portable identities and capability-driven partial evidence.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

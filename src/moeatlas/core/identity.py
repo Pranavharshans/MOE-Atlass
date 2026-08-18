@@ -12,6 +12,8 @@ from typing import Any
 _WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:/")
 _URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 _COMPONENT_KEY = re.compile(r"^component:([0-9a-f]{64})$")
+_TOKEN_KEY = re.compile(r"^token:([0-9a-f]{64})$")
+_TOKEN_PHASES = frozenset({"prefill", "decode"})
 
 
 def canonical_identifier(value: str, *, field_name: str = "identifier") -> str:
@@ -172,4 +174,51 @@ def parse_component_key(component_key: str) -> str:
     match = _COMPONENT_KEY.fullmatch(component_key)
     if match is None:
         raise ValueError("component_key must use the canonical component:<64 lowercase hex> form")
+    return match.group(1)
+
+
+def make_token_key(
+    run_key: str,
+    sequence_id: str,
+    token_pos: int,
+    token_id: int,
+    phase: str,
+) -> str:
+    """Build a portable token identity from stable token coordinates.
+
+    Token text is deliberately excluded: decoded presentation can vary while
+    the run, sequence, position, ID, and phase still identify the same token.
+    The helper accepts only strict Python types so numeric strings and booleans
+    cannot silently alter an event identity.
+    """
+
+    stable_run_key = validate_stable_identifier(run_key, field_name="run_key")
+    stable_sequence_id = validate_stable_identifier(sequence_id, field_name="sequence_id")
+    for name, value in (("token_pos", token_pos), ("token_id", token_id)):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
+        if value < 0:
+            raise ValueError(f"{name} must be non-negative")
+    if not isinstance(phase, str):
+        raise TypeError(f"phase must be a string, got {type(phase).__name__}")
+    if phase not in _TOKEN_PHASES:
+        raise ValueError("phase must be one of: prefill, decode")
+    payload = {
+        "phase": phase,
+        "run_key": stable_run_key,
+        "sequence_id": stable_sequence_id,
+        "token_id": token_id,
+        "token_pos": token_pos,
+    }
+    return f"token:{stable_digest(payload)}"
+
+
+def parse_token_key(token_key: str) -> str:
+    """Validate and return the digest from a canonical token key."""
+
+    if not isinstance(token_key, str):
+        raise TypeError(f"token_key must be a string, got {type(token_key).__name__}")
+    match = _TOKEN_KEY.fullmatch(token_key)
+    if match is None:
+        raise ValueError("token_key must use the canonical token:<64 lowercase hex> form")
     return match.group(1)
