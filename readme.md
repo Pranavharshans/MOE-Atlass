@@ -30,6 +30,9 @@ remain planned phases rather than advertised as complete features.
 - Phase 0 `moeatlas scan fixture:synthetic` command producing a complete,
   deterministic STRUCTURE discovery report; real model loading remains
   deferred.
+- Strict model-source and loading-plan schemas covering HF/local/instance/
+  custom intent, offline defaults, policy warnings, and external revision
+  evidence without performing loading.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
@@ -68,6 +71,10 @@ uv run --locked moeatlas scan fixture:synthetic --output report.json
 
 Only `fixture:synthetic` is supported in Phase 0. HF/local loading, cache
 inspection, and checkpoint downloads remain deferred to the final VM workflow.
+
+The loading contracts are schema-only and intentionally do not load a model:
+see [loading contracts](docs/loading.md) before using them in later runtime
+integration.
 
 The standard-library test discovery command is also available inside the
 locked environment:

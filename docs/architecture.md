@@ -21,6 +21,7 @@ Planned internal areas:
 | `discovery` | static traversal and confidence-scored MoE candidates | Probe core |
 | `probe` | serializable plans, passive hooks, bounded policy, cleanup | Probe core |
 | `events` | versioned token, routing, and expert evidence contracts | Probe core |
+| `loading` | source requests, load policy, plan identity, resolution evidence | Probe core |
 | `runtime` | prompts, datasets, generation, and interventions | Useful alpha / causal beta |
 | `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
 | `store` | run metadata, Parquet events, and DuckDB queries | Useful alpha |
@@ -71,6 +72,7 @@ The foundation supports:
   lifecycles with transactional cleanup;
 - validating normalized, capability-aware token/routing/expert events without
   capturing tensors or writing storage;
+- validating model-source/loading intent without loading or resolving a model;
 - executing model-free tests.
 
 The foundation does not support loading a checkpoint, runtime inference,

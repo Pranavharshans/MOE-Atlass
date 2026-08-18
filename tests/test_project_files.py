@@ -19,6 +19,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "probe.md",
             ROOT / "docs" / "events.md",
             ROOT / "docs" / "cli.md",
+            ROOT / "docs" / "loading.md",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -78,6 +79,21 @@ class ProjectFilesTests(unittest.TestCase):
         ):
             with self.subTest(term=term):
                 self.assertIn(term, cli)
+
+    def test_loading_docs_describe_schema_only_boundary(self) -> None:
+        loading = (ROOT / "docs" / "loading.md").read_text()
+        for term in (
+            "HuggingFaceSource",
+            "LocalSource",
+            "InstanceSource",
+            "CustomLoaderSource",
+            "trust_remote_code=False",
+            "plan_id",
+            "ImmutableRevisionEvidence",
+            "MV-01/MV-02",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, loading)
 
 
 if __name__ == "__main__":
