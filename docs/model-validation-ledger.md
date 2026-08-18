@@ -45,6 +45,14 @@ unverified `[STRUCTURE]` provenance only. Qwen2/Qwen3.5 layouts, routing,
 real checkpoints, and VM/GPU evidence remain deferred; this feature does
 not change MV-01/MV-02 status.
 
+Feature 15 adds the pure adapter-inspection-to-routing-plan compiler. Its
+model-free tests verify fresh inspection revalidation, exact router targets,
+deterministic reduced `ROUTING` intent, safe errors, and no runtime/model
+actions. It does not execute hooks, decode routing, create events, write
+storage, or impose an execution/event/storage bound; native routing payload
+equivalence and capture remain deferred to MV-03. It does not certify routing
+or change the deferred MV-01/MV-02 status.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

@@ -15,6 +15,7 @@ from .contracts import (
     inspect_static_adapter,
 )
 from .mixtral import MixtralStaticAdapter
+from .planning import AdapterProbePlanError, build_routing_probe_plan
 from .qwen3_moe import Qwen3MoeStaticAdapter
 
 __all__ = [
@@ -27,4 +28,6 @@ __all__ = [
     "inspect_static_adapter",
     "MixtralStaticAdapter",
     "Qwen3MoeStaticAdapter",
+    "AdapterProbePlanError",
+    "build_routing_probe_plan",
 ]

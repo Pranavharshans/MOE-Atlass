@@ -218,6 +218,61 @@ class ProjectFilesTests(unittest.TestCase):
                 )
         self.assertTrue((ROOT / "src" / "moeatlas" / "adapters" / "qwen3_moe.py").is_file())
 
+    def test_adapter_probe_planning_docs_and_exports_are_present(self) -> None:
+        adapters = (ROOT / "docs" / "adapters.md").read_text()
+        probe = (ROOT / "docs" / "probe.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                adapters,
+                (
+                    "build_routing_probe_plan(inspection)",
+                    "family-neutral",
+                    "ComponentKind.ROUTER",
+                    "TOP_K",
+                    "forward-hook API",
+                    "no execution, event, or storage bound",
+                    "payload conventions",
+                    "MV-03",
+                    "Mixtral v4.50.0 source",
+                    "Qwen3-MoE v4.57.1 source",
+                    "Mixtral source at `64f30450dbfd1d02f610ad7080535cb906637fb9`",
+                    "Qwen3-MoE source at the same pinned commit",
+                ),
+            ),
+            (
+                probe,
+                (
+                    "build_routing_probe_plan()",
+                    "AdapterInspection",
+                    "ROUTING",
+                    "Mixtral source",
+                    "Qwen3-MoE source",
+                    "no execution, event, or storage bound",
+                    "payload conventions",
+                    "MV-03",
+                    "Mixtral v4.50.0 source",
+                    "Qwen3-MoE v4.57.1 source",
+                    "Mixtral source at `64f30450dbfd1d02f610ad7080535cb906637fb9`",
+                    "Qwen3-MoE source at the same pinned commit",
+                ),
+            ),
+            (architecture, ("family-neutral", "ROUTING")),
+            (ledger, ("Feature 15", "adapter-inspection-to-routing-plan", "MV-03")),
+            (readme, ("AdapterInspection", "family-neutral reduced")),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "adapters" / "planning.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "adapters" / "__init__.py").read_text()
+        for term in ("AdapterProbePlanError", "build_routing_probe_plan"):
+            self.assertIn(term, source)
+            self.assertIn(term, exports)
+        self.assertTrue((ROOT / "tests" / "test_adapter_probe_planning.py").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

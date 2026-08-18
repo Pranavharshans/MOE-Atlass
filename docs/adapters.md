@@ -122,3 +122,37 @@ expert activity, specialization, or routing certification is claimed.
 Qwen2-MoE and Qwen3.5 hybrid/composite layouts are separate future adapters.
 Real checkpoints, runtime versions, GPU behavior, and VM evidence remain
 deferred.
+
+## Routing probe-plan compilation
+
+`build_routing_probe_plan(inspection)` is the family-neutral bridge from one
+already validated `AdapterInspection` to an inert `ProbePlan`. It re-dumps and
+freshly reconstructs the exact inspection before reading semantic fields, then
+selects every and only `ROUTER` component. At least one router is required and
+duplicate router module paths are rejected. The resulting targets preserve the
+canonical module path, component key, and `ComponentKind.ROUTER` identity.
+
+The compiler emits `ROUTING` with only the `forward` hook point, empty
+include/exclude selectors, and a reduced `TOP_K` capture policy:
+inputs and gradients are disabled, outputs are enabled, raw opt-in and all
+budgets are disabled, and sampling is deterministic at `1.0`. Because
+`max_items` and `max_bytes` are both `None`, this is intent only and imposes
+no execution, event, or storage bound. `ProbePlan` itself canonicalizes
+ordering and computes the stable plan ID. The inspection remains the
+source-of-truth artifact and must be retained alongside the plan.
+
+This translation does not call adapters or models, resolve named modules,
+install hooks, decode tensors, capture events, write storage, or claim routing
+certification. Later runtime execution follows the official
+[PyTorch forward-hook API](https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_forward_hook).
+For both families, the comparison references are the tagged legacy
+[Mixtral v4.50.0 source](https://github.com/huggingface/transformers/blob/v4.50.0/src/transformers/models/mixtral/modeling_mixtral.py)
+and [Qwen3-MoE v4.57.1 source](https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py),
+plus the pinned current
+[Mixtral source at `64f30450dbfd1d02f610ad7080535cb906637fb9`](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/mixtral/modeling_mixtral.py)
+and [Qwen3-MoE source at the same pinned commit](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py).
+These are source-layout comparisons only, not a broad compatibility claim.
+The tagged legacy and pinned current implementations can expose different
+router forward-payload conventions; this compiler assumes no tensor/tuple
+decoder and treats the plan as intent only. Native routing payload
+equivalence and capture remain deferred to MV-03.

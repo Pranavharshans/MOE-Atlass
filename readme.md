@@ -58,6 +58,9 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
   Transformers 4.51.3/4.57.1, and packed 5.0.0/current logical slices;
   it remains caller-selected, STRUCTURE-only, unverified, and separate from
   Qwen2/Qwen3.5 adapters.
+- Pure compilation of retained static `AdapterInspection` evidence into a
+  family-neutral reduced `ROUTING` `ProbePlan`; it performs no model calls,
+  hook registration, decoding, event capture, storage, or certification.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

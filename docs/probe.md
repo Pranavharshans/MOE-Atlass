@@ -76,6 +76,34 @@ tracked and can be retried with `close()`. Normal-exit failures are raised as
 are attached as a note so the original error remains primary. Cleanup is
 idempotent after all handles succeed, and a manager cannot be re-entered.
 
+## Static adapter bridge
+
+`moeatlas.adapters.build_routing_probe_plan()` accepts one already validated
+`AdapterInspection` and emits an inert, family-neutral `ROUTING` plan. It
+freshly reconstructs the inspection from its JSON form before semantic reads,
+selects every and only router component, and rejects empty or duplicate router
+module paths. The plan targets retain each router's exact module path,
+canonical component key, and `ROUTER` kind. It uses only the `forward` hook,
+empty selectors, and reduced `TOP_K` capture with outputs enabled and no raw,
+gradient, input, sampling, or intervention opt-in.
+
+The inspection must be retained as the evidence and provenance source; the
+plan is intent only. Both `max_items` and `max_bytes` are `None`, so reduced
+`TOP_K` imposes no execution, event, or storage bound. Compilation does not call an adapter or model, resolve
+modules, install hooks, decode values, create token/routing events, write
+storage, or certify routing. Hook fidelity is deferred to the official
+[PyTorch forward-hook API](https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_forward_hook)
+and VM validation. For both families, the comparison references are the
+tagged legacy [Mixtral v4.50.0 source](https://github.com/huggingface/transformers/blob/v4.50.0/src/transformers/models/mixtral/modeling_mixtral.py)
+and [Qwen3-MoE v4.57.1 source](https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py),
+plus the pinned current
+[Mixtral source at `64f30450dbfd1d02f610ad7080535cb906637fb9`](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/mixtral/modeling_mixtral.py)
+and [Qwen3-MoE source at the same pinned commit](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py).
+These are source-layout comparisons only, not a broad compatibility claim.
+Tagged legacy and pinned current implementations can expose different router
+forward-payload conventions, so no tensor/tuple decoder is assumed. Native
+routing equivalence and capture remain deferred to MV-03.
+
 ## Deferred fidelity boundary
 
 The synthetic fixture tests lifecycle behavior without a model runtime. Real

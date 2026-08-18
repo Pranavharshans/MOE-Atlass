@@ -93,6 +93,8 @@ The foundation supports:
 - selecting `Qwen3MoeStaticAdapter()` explicitly for the official Qwen3-MoE
   dense/sparse schedule and either indexed or packed sparse layout, without
   routing certification or runtime adapter behavior;
+- compiling a validated adapter inspection into a family-neutral, reduced
+  `ROUTING` probe plan without calling models, adapters, or hooks;
 - executing model-free tests.
 
 The optional loader and static adapter seam do not certify a checkpoint, perform inference, trace
