@@ -28,7 +28,8 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
 - Versioned normalized token, routing, and expert event contracts with
   portable identities and capability-driven partial evidence.
 - Phase 0 `moeatlas scan fixture:synthetic` command producing a complete,
-  deterministic STRUCTURE discovery report; HF/local CLI scan integration
+  deterministic STRUCTURE discovery report, plus explicit resolved HF/local
+  plan-file scanning through the runtime bridge; real checkpoint certification
   remains deferred.
 - Strict model-source and loading-plan schemas covering HF/local/instance/
   custom intent, offline defaults, policy warnings, and external revision
@@ -77,11 +78,14 @@ Run the deterministic Phase 0 semantic scan:
 ```bash
 uv run --locked moeatlas scan fixture:synthetic
 uv run --locked moeatlas scan fixture:synthetic --output report.json
+uv run --locked moeatlas scan --loading-plan plan.json --output report.json
 ```
 
-Only `fixture:synthetic` is supported by the Phase 0 CLI scan. HF/local CLI
-scan integration, cache inspection, and real checkpoint validation remain
-deferred to the final VM workflow.
+Direct positional CLI scans support only `fixture:synthetic`. An explicit
+`--loading-plan plan.json` must contain a fully validated, immutable HF/local
+`LoadingPlan`; the CLI passes it unchanged to the runtime bridge and never
+infers or resolves a source. Cache inspection, real checkpoint validation, and
+GPU certification remain deferred to the final VM workflow.
 
 The loading contracts are schema-only and intentionally do not load a model;
 the optional runtime loader is a separate explicit call that requires the

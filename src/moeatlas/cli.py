@@ -1,4 +1,4 @@
-"""Command-line entry point for the MoEAtlas foundation."""
+"""Command-line entry point for direct Phase 0 and resolved plan scans."""
 
 from __future__ import annotations
 
@@ -6,11 +6,17 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from . import PRODUCT_NAME, __version__
 from .diagnostics import collect_doctor_report
+from .loading import HuggingFaceSource, LoadingPlan, LocalSource
 from .scan import ScanOutputError, ScanSourceError, report_payload, scan_source, write_report_atomic
+
+
+class _LoadingPlanInputError(ValueError):
+    """Raised when a plan file cannot be safely accepted by the CLI."""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,7 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="moeatlas",
         description=(
             "Map, inspect, and understand Mixture-of-Experts models. "
-            "Phase 0 scanning supports only the explicit synthetic fixture."
+            "Direct Phase 0 scanning supports only the explicit synthetic fixture; "
+            "resolved plan-file scans use the runtime bridge."
         ),
     )
     parser.add_argument(
@@ -43,25 +50,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = subparsers.add_parser(
         "scan",
-        help="emit a deterministic Phase 0 semantic discovery report",
+        help="emit a deterministic semantic discovery report",
         description=(
-            "Run the model-free Phase 0 semantic scanner. The only supported "
-            "source is MODEL=fixture:synthetic. HF/local model loading is deferred "
-            "to Phase 1 (MV-01/MV-02)."
+            "Run a deterministic semantic scanner. MODEL=fixture:synthetic is "
+            "model-free; --loading-plan accepts one strictly validated HF/local "
+            "LoadingPlan JSON document and delegates to the resolved runtime."
         ),
         epilog=(
             "Examples:\n"
             "  moeatlas scan fixture:synthetic\n"
-            "  moeatlas scan fixture:synthetic --output report.json\n\n"
-            "Real Hugging Face and local checkpoint sources are not inspected or "
-            "downloaded in Phase 0."
+            "  moeatlas scan fixture:synthetic --output report.json\n"
+            "  moeatlas scan --loading-plan plan.json --output report.json\n\n"
+            "MODEL and --loading-plan are mutually exclusive. A plan file must "
+            "contain a resolved HuggingFaceSource or LocalSource; no model ID or "
+            "local path is inferred by the CLI. Real checkpoint validation remains "
+            "deferred to MV-01/MV-02 and the final VM."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     scan.add_argument(
         "model",
+        nargs="?",
         metavar="MODEL",
-        help="Phase 0 source; currently only fixture:synthetic is supported",
+        help="source name; only fixture:synthetic is supported directly",
+    )
+    scan.add_argument(
+        "--loading-plan",
+        metavar="PLAN.json",
+        help="read one validated HF/local LoadingPlan JSON document",
     )
     scan.add_argument(
         "--output",
@@ -73,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="replace an existing --output file",
     )
-    scan.set_defaults(handler=_handle_scan)
+    scan.set_defaults(handler=_handle_scan, _scan_parser=scan)
     return parser
 
 
@@ -98,19 +114,84 @@ def _handle_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_loading_plan(path: str) -> LoadingPlan:
+    """Read and strictly validate one plan without exposing input details."""
+
+    try:
+        payload = Path(path).read_bytes()
+    except (OSError, ValueError) as exc:
+        raise _LoadingPlanInputError("could not read loading plan") from exc
+    try:
+        return LoadingPlan.from_json(payload)
+    except Exception as exc:
+        raise _LoadingPlanInputError("loading plan is not a valid LoadingPlan document") from exc
+
+
+def _preflight_loading_plan(plan: LoadingPlan) -> None:
+    """Reject unsupported or unresolved plans before optional runtime dispatch."""
+
+    if not isinstance(plan.source, HuggingFaceSource | LocalSource):
+        raise _LoadingPlanInputError(
+            "loading-plan scan supports only HuggingFaceSource and LocalSource"
+        )
+    if plan.resolution is None:
+        raise _LoadingPlanInputError(
+            "loading plan must contain immutable model and tokenizer resolution evidence"
+        )
+    if plan.source.tokenizer is None:
+        raise _LoadingPlanInputError(
+            "loading plan must contain a tokenizer request and immutable tokenizer resolution"
+        )
+    if (
+        plan.resolution.resolved_tokenizer_revision is None
+        or plan.resolution.resolved_tokenizer_revision_evidence is None
+    ):
+        raise _LoadingPlanInputError(
+            "loading plan must contain immutable tokenizer resolution evidence"
+        )
+
+
+def _load_and_scan_plan(plan: LoadingPlan):
+    """Import the public runtime bridge only after plan preflight succeeds."""
+
+    from .runtime import load_and_scan
+
+    return load_and_scan(plan)
+
+
 def _handle_scan(args: argparse.Namespace) -> int:
     if args.force and args.output is None:
         print("moeatlas scan: --force requires --output PATH", file=sys.stderr)
         return 2
 
+    if args.model is None and args.loading_plan is None:
+        args._scan_parser.error("one of MODEL or --loading-plan is required")
+    if args.model is not None and args.loading_plan is not None:
+        print("moeatlas scan: MODEL and --loading-plan are mutually exclusive", file=sys.stderr)
+        return 2
+
     try:
-        payload = report_payload(scan_source(args.model))
+        if args.loading_plan is not None:
+            plan = _read_loading_plan(args.loading_plan)
+            _preflight_loading_plan(plan)
+            for warning in plan.security_warnings:
+                print(f"moeatlas scan: warning: {warning}", file=sys.stderr)
+            report = _load_and_scan_plan(plan)
+        else:
+            report = scan_source(args.model)
+        payload = report_payload(report)
         if args.output is None:
             sys.stdout.write(payload)
             return 0
         output = write_report_atomic(payload, args.output, force=args.force)
-    except (ScanSourceError, ScanOutputError, ValueError) as exc:
+    except _LoadingPlanInputError as exc:
         print(f"moeatlas scan: {exc}", file=sys.stderr)
+        return 2
+    except (ScanSourceError, ScanOutputError) as exc:
+        print(f"moeatlas scan: {exc}", file=sys.stderr)
+        return 2
+    except Exception:
+        print("moeatlas scan: loading or report generation failed", file=sys.stderr)
         return 2
 
     print(f"saved scan report to {output}", file=sys.stderr)

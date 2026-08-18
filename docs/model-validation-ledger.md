@@ -17,6 +17,11 @@ resolved loader and static discovery. Its model-free tests verify dispatch,
 identity binding, report validation, and retryable cleanup only; it does not
 certify a real checkpoint or change the deferred MV-01/MV-02 status.
 
+Feature 11 adds the plan-file CLI entrypoint. Its model-free tests verify
+strict plan parsing, source/resolution preflight, unchanged delegation, and
+publication safety only; it does not resolve or certify a real checkpoint and
+does not change the deferred MV-01/MV-02 status.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

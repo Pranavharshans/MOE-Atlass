@@ -81,6 +81,9 @@ The foundation supports:
 - composing one resolved HF/local load with the existing read-only scanner via
   `runtime.load_and_scan()`, returning only a validated STRUCTURE report after
   cleanup succeeds;
+- scanning an explicitly supplied, already-resolved HF/local `LoadingPlan`
+  JSON file through that same runtime bridge without reconstructing or mutating
+  the plan;
 - executing model-free tests.
 
 The optional loader does not certify a checkpoint, perform inference, trace

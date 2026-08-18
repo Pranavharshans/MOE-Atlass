@@ -80,6 +80,13 @@ value, and contains only `[STRUCTURE]` components. `InstanceSource` and
 `CustomLoaderSource` are intentionally rejected here; callers must invoke
 `load_instance()`/`load_custom()` and `discovery.scan()` manually.
 
+The CLI exposes this same boundary only through
+`moeatlas scan --loading-plan PLAN.json`. The plan file is validated as one
+strict `LoadingPlan` before the runtime bridge is imported or dispatched, and
+the exact validated object is passed through. CLI publication reuses the
+existing report serializer and atomic writer; it does not add a second loader
+policy or a plan reconstruction path.
+
 ## Custom loaders
 
 `load_custom(plan)` is inert unless `execute_user_code=True` is passed. Only

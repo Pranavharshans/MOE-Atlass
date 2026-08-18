@@ -25,8 +25,33 @@ file and then atomically replaced; failed writes clean up the temporary file.
 With `--output`, only a concise confirmation is written to stderr and the JSON
 is not duplicated on stdout.
 
-Any other `MODEL` value fails with a nonzero status and a concise message. Phase
-0 does not inspect local paths or caches, contact Hugging Face, load
-checkpoints, or substitute the fixture. Real Hugging Face/local loading is a
-Phase 1 task and remains deferred in MV-01/MV-02. `doctor` and `--version`
-remain model-free diagnostics.
+## Loading-plan scan
+
+Resolved Hugging Face or local runtime plans can be supplied explicitly:
+
+```bash
+moeatlas scan --loading-plan plan.json
+moeatlas scan --loading-plan plan.json --output report.json --force
+```
+
+`MODEL` and `--loading-plan` are mutually exclusive, and exactly one is
+required. The file must be one strict `LoadingPlan` JSON document with a
+`HuggingFaceSource` or `LocalSource`, immutable model/tokenizer resolution
+evidence, and the plan's canonical `plan_id`. The CLI does not independently
+infer a model ID, resolve or read a local path, resolve a branch, alter
+offline/download policy, or reconstruct the plan. Canonical schema validation
+may lexically normalize `LocalSource.path`, but performs no filesystem
+resolution. The CLI preflights the document and then passes that validated
+plan unchanged to `moeatlas.runtime.load_and_scan()`.
+
+Derived plan security warnings are printed to stderr before runtime dispatch;
+they are never copied from raw input. Runtime loading and static discovery
+finish, including cleanup, before a report is published. Failures return
+status 2 with concise stderr and leave an existing output and temporary files
+untouched. KeyboardInterrupt/SystemExit remain control-flow exceptions.
+
+Direct non-fixture `MODEL` values remain rejected. Phase 0 does not inspect local paths
+or caches. The plan-file path enables the explicit runtime seam, but real
+checkpoint fidelity, network/cache behavior, and GPU certification remain
+deferred in MV-01/MV-02 and the final VM. `doctor` and `--version` remain
+model-free diagnostics.

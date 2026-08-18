@@ -68,3 +68,14 @@ branch, tag, short hash, or arbitrary “claimed” string cannot be labeled
 immutable. Creating this contract performs no resolution. Runtime loading
 requires the existing immutable evidence and keeps real checkpoint/network/GPU
 validation deferred to MV-01/MV-02 and the final VM.
+
+## CLI plan files
+
+`moeatlas scan --loading-plan PLAN.json` accepts the same `LoadingPlan` JSON
+contract for an explicit HF/local static scan. The CLI validates the whole
+document, requires immutable model and tokenizer resolution, rejects
+`InstanceSource`/`CustomLoaderSource`, and delegates the unchanged plan to
+`moeatlas.runtime.load_and_scan()`. It does not infer identities, resolve
+revisions, inspect local paths, or override policy. Direct positional CLI
+sources remain limited to `fixture:synthetic`; real checkpoint certification
+and VM evidence remain deferred in MV-01/MV-02.
