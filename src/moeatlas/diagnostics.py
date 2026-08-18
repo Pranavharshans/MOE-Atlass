@@ -47,8 +47,7 @@ def collect_doctor_report() -> dict[str, Any]:
             "supported": sys.version_info >= (3, 11),
         },
         "optional_runtime_packages": {
-            name: {"available": _is_importable(name)}
-            for name in _OPTIONAL_RUNTIME_PACKAGES
+            name: {"available": _is_importable(name)} for name in _OPTIONAL_RUNTIME_PACKAGES
         },
         "validation": {
             "model_and_gpu": {

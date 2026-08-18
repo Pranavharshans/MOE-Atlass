@@ -10,15 +10,17 @@ expert specialization.
 
 The repository is being implemented feature by feature against the
 [MoEAtlas product requirements](docs/specification/MoEAtlas_PRD_v1.docx).
-The current release is the repository foundation only. Model loading,
-discovery, instrumentation, storage, analysis, and the local UI are planned
-phases rather than advertised as complete features.
+The current release contains the repository foundation and canonical manifest
+contracts. Model loading, discovery, instrumentation, storage, analysis, and
+the local UI are planned phases rather than advertised as complete features.
 
 ## Current status
 
 - Python 3.11+ package named `moeatlas`.
 - Model-free `moeatlas doctor` command.
-- Standard-library test harness for the foundation.
+- Pydantic v2 model/component manifests with versioned JSON contracts and
+  deterministic portable identity helpers.
+- Model-free test harness for the foundation and schemas.
 - PyTorch, Transformers, and checkpoint/GPU validation explicitly deferred to
   the final VM phase.
 - No model files are downloaded by the repository tests or setup.
@@ -31,26 +33,27 @@ interpreting a local test result as model compatibility evidence.
 Using `uv`:
 
 ```bash
-uv venv
-uv pip install -e '.[dev]'
-moeatlas doctor
-moeatlas doctor --json
+uv sync --extra dev
+uv run --locked moeatlas doctor
+uv run --locked moeatlas doctor --json
 ```
 
-The package has no required runtime dependencies in this foundation slice.
-The optional `model` extra describes dependencies that later model-runtime
+The foundation runtime uses Pydantic v2 for strict manifest validation. The
+optional `model` extra describes dependencies that later model-runtime
 features may use; it is intentionally not installed by the commands above.
 
 Run the model-free tests without downloading a checkpoint:
 
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
+uv run --locked pytest -q
+uv run --locked ruff check src tests
 ```
 
-When `pytest` is already available, the equivalent command is:
+The standard-library discovery command is also available inside the locked
+environment:
 
 ```bash
-PYTHONPATH=src python -m pytest
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 ## Planned product shape

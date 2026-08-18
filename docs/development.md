@@ -14,14 +14,14 @@ MoEAtlas is built feature by feature. The normal loop is:
 From the repository root:
 
 ```bash
-uv venv
-uv pip install -e '.[dev]'
-PYTHONPATH=src python -m unittest discover -s tests -v
-moeatlas doctor
-moeatlas doctor --json
+uv sync --extra dev
+uv run --locked pytest -q
+uv run --locked ruff check src tests
+uv run --locked moeatlas doctor
+uv run --locked moeatlas doctor --json
 ```
 
-The baseline test command uses only the Python standard library. It does not
+The manifest test suite uses the required Pydantic v2 runtime. It does not
 load PyTorch, Transformers, a tokenizer, or a model checkpoint. The diagnostic
 command only checks whether optional packages can be found; it does not import
 them or inspect a GPU.
@@ -41,6 +41,7 @@ environment.
 ## Packaging notes
 
 `pyproject.toml` uses a `src/` layout and exposes the `moeatlas` console
-script. The runtime dependency list is empty in the foundation. Optional
-developer and model extras are intentionally explicit so a future environment
-can opt into them without changing the default install contract.
+script. Pydantic is the only required runtime dependency in the foundation.
+Optional developer and model extras are intentionally explicit so a future
+environment can opt into them without changing the default model-free test
+contract.

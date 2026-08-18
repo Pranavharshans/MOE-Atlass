@@ -25,7 +25,9 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-dependencies = []
+dependencies = [
+    "pydantic>=2.7,<3",
+]
 
 [project.optional-dependencies]
 # Kept optional so importing and testing the foundation never pulls a model

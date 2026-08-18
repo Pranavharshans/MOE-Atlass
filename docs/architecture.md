@@ -27,17 +27,18 @@ Planned internal areas:
 | `adapters` | architecture-specific semantic decoding and capabilities | Useful alpha |
 | `cli` | headless commands and diagnostics | Foundation / all phases |
 
-Only the foundation `cli` and diagnostics modules exist today. Empty future
-areas are not created merely to make the tree look complete; each will arrive
-with a testable feature and a documented contract.
+The foundation `cli` and diagnostics modules plus the `core` capability,
+identity, and manifest contracts exist today. Empty future areas are not
+created merely to make the tree look complete; each will arrive with a
+testable feature and a documented contract.
 
 ## Dependency boundary
 
-The foundation has no required runtime dependencies and does not import model
-libraries. PyTorch, Transformers, and safetensors are optional metadata in the
-`model` extra for later phases. This keeps package import, docs, and tests
-usable on a CPU-only machine and makes it impossible for the baseline test
-command to silently download a checkpoint.
+The foundation requires only Pydantic v2 for strict, JSON-compatible schema
+validation and does not import model libraries. PyTorch, Transformers, and
+safetensors are optional metadata in the `model` extra for later phases. This
+keeps package import, docs, and tests usable on a CPU-only machine and makes it
+impossible for the baseline test command to silently download a checkpoint.
 
 The eventual runtime will prefer native PyTorch module boundaries and native
 router outputs, then use adapters for packed/fused or architecture-specific
@@ -54,14 +55,15 @@ compatibility or specialization claim.
 
 ## Execution boundary for this phase
 
-Feature 1 supports:
+The foundation supports:
 
 - installing/importing the package;
 - displaying package and Python metadata;
 - checking optional runtime package presence without importing it;
 - running a JSON or human-readable `doctor` report;
+- validating versioned model/component manifests and deterministic identities;
 - executing model-free tests.
 
-Feature 1 does not support loading a checkpoint, scanning a model, registering
-hooks, tracing tokens, or claiming GPU compatibility. Those are tracked as
-later features and as explicit deferred validation items.
+The foundation does not support loading a checkpoint, scanning a model,
+registering hooks, tracing tokens, or claiming GPU compatibility. Those are
+tracked as later features and as explicit deferred validation items.
