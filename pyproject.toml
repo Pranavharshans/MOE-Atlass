@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moeatlas"
+version = "0.1.0"
+description = "Local-first observability and experimentation for Mixture-of-Experts models."
+readme = { file = "readme.md", content-type = "text/markdown" }
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    { name = "MoEAtlas contributors" },
+]
+keywords = ["mixture-of-experts", "moe", "observability", "interpretability", "pytorch"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []
+
+[project.optional-dependencies]
+# Kept optional so importing and testing the foundation never pulls a model
+# runtime or a large accelerator stack into a contributor's environment.
+dev = [
+    "pytest>=8.3,<9",
+    "ruff>=0.12,<0.13",
+]
+model = [
+    "safetensors>=0.5",
+    "torch>=2.5",
+    "transformers>=4.50",
+]
+
+[project.scripts]
+moeatlas = "moeatlas.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+moeatlas = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

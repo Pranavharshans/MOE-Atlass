@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local MoEAtlas data and model material
+models/
+checkpoints/
+artifacts/
+runs/
+workspace/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
