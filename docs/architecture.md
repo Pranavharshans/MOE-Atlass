@@ -27,10 +27,10 @@ Planned internal areas:
 | `adapters` | architecture-specific semantic decoding and capabilities | Useful alpha |
 | `cli` | headless commands and diagnostics | Foundation / all phases |
 
-The foundation `cli` and diagnostics modules plus the `core` capability,
-identity, and manifest contracts exist today. Empty future areas are not
-created merely to make the tree look complete; each will arrive with a
-testable feature and a documented contract.
+The foundation `cli` and diagnostics modules, the `core` capability/identity/
+manifest contracts, and the model-runtime-independent `discovery` scanner
+exist today. Empty future areas are not created merely to make the tree look
+complete; each will arrive with a testable feature and a documented contract.
 
 ## Dependency boundary
 
@@ -62,8 +62,11 @@ The foundation supports:
 - checking optional runtime package presence without importing it;
 - running a JSON or human-readable `doctor` report;
 - validating versioned model/component manifests and deterministic identities;
+- statically traversing a duck-typed module tree into a STRUCTURE-only
+  discovery report with confidence and warnings;
 - executing model-free tests.
 
-The foundation does not support loading a checkpoint, scanning a model,
-registering hooks, tracing tokens, or claiming GPU compatibility. Those are
-tracked as later features and as explicit deferred validation items.
+The foundation does not support loading a checkpoint, runtime inference,
+registering hooks, tracing tokens, or claiming GPU compatibility. Static
+discovery is deliberately separate from those runtime claims and remains
+tracked alongside explicit deferred validation items.

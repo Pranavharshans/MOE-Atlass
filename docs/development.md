@@ -26,6 +26,15 @@ load PyTorch, Transformers, a tokenizer, or a model checkpoint. The diagnostic
 command only checks whether optional packages can be found; it does not import
 them or inspect a GPU.
 
+The static discovery suite uses a small standard-library MoE-shaped fixture.
+It tests deterministic structure reports, confidence evidence, strict JSON
+round-trips, and the scanner's read-only boundary. It does not execute a
+model, inspect tensor values, or certify a real architecture.
+
+The implementation keeps three internal boundaries legible: structural
+surface collection, heuristic candidate/fact scoring, and public report
+assembly. These are internal modules, not plugin or distribution boundaries.
+
 ## Model-free test rules
 
 Tests that can run on every contributor machine belong in the normal suite.
@@ -37,6 +46,10 @@ Model-dependent tests are not skipped silently. Add them to the
 [validation ledger](model-validation-ledger.md) with a status of `deferred`,
 then run them only in the final VM phase when the user provisions that
 environment.
+
+The discovery scanner is intentionally a dry-run-free boundary. Do not add
+hooks, adapters, forward calls, or a checkpoint loader to it; those belong to
+the later runtime features and require separate validation evidence.
 
 ## Packaging notes
 

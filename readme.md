@@ -20,6 +20,8 @@ the local UI are planned phases rather than advertised as complete features.
 - Model-free `moeatlas doctor` command.
 - Pydantic v2 model/component manifests with versioned JSON contracts and
   deterministic portable identity helpers.
+- Read-only, model-runtime-independent static MoE discovery with confidence-
+  scored candidates, normalized expert/top-k facts, and STRUCTURE manifests.
 - Model-free test harness for the foundation and schemas.
 - PyTorch, Transformers, and checkpoint/GPU validation explicitly deferred to
   the final VM phase.
@@ -49,8 +51,8 @@ uv run --locked pytest -q
 uv run --locked ruff check src tests
 ```
 
-The standard-library discovery command is also available inside the locked
-environment:
+The standard-library test discovery command is also available inside the
+locked environment:
 
 ```bash
 uv run --locked python -m unittest discover -s tests -v
@@ -68,8 +70,8 @@ The roadmap is documented in [architecture](docs/architecture.md) and the
 PRD. The intended progression is:
 
 1. repository foundation and model-free contracts;
-2. probe core with scanner, manifests, hooks, event schema, and a synthetic
-   fixture;
+2. probe core with static scanner, manifests, hooks, event schema, and a
+   synthetic fixture;
 3. useful alpha with small real-model adapters and routing storage/UI;
 4. research and causal workflows;
 5. certified compatibility, plugin SDK, packaging, and benchmarks.

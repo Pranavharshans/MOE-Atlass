@@ -15,6 +15,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "development.md",
             ROOT / "docs" / "model-validation-ledger.md",
             ROOT / "docs" / "schemas.md",
+            ROOT / "docs" / "discovery.md",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -35,6 +36,12 @@ class ProjectFilesTests(unittest.TestCase):
         for label in ("FULL", "ROUTING", "MODULE", "STRUCTURE", "EXPERIMENTAL", "UNSUPPORTED"):
             with self.subTest(label=label):
                 self.assertIn(f"`{label}`", schemas)
+
+    def test_discovery_docs_describe_static_boundary(self) -> None:
+        discovery = (ROOT / "docs" / "discovery.md").read_text()
+        for term in ("named_modules()", "confidence", "STRUCTURE", "dry-run", "MV-02"):
+            with self.subTest(term=term):
+                self.assertIn(term, discovery)
 
 
 if __name__ == "__main__":
