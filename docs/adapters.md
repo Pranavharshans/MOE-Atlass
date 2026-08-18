@@ -45,3 +45,36 @@ their payload is not copied into the public message. Contract failures use
 `AdapterContractError`. `KeyboardInterrupt` and `SystemExit` propagate
 unchanged. Architecture-specific capture, runtime loading, capability
 elevation, and certification remain deferred to the validation ledger.
+
+## Mixtral static adapter
+
+`MixtralStaticAdapter()` is the first concrete caller-selected adapter. It is
+stateless and is not registered or auto-selected. Its descriptor is
+`huggingface-mixtral-static` version `1.0`, for the exact `mixtral` family.
+The adapter accepts either an exact `model_type="mixtral"` or one of the
+explicit Mixtral architecture names; Qwen and other look-alikes are not
+treated as Mixtral.
+
+The model-free implementation recognizes two strict module surfaces under one
+common prefix: the official Transformers 4.50-style indexed layout
+`layers.N.block_sparse_moe.{gate,experts}` with indexed `experts.N`, including
+the registered `w1`, `w2`, `w3`, and `act_fn` children (report layout
+`legacy_indexed`), and the current packed
+layout `layers.N.mlp.{gate,experts}` with its registered `act_fn` child.
+Packed expert parameters are the direct `gate_up_proj` and `down_proj`
+parameters (without a `.weight` suffix); their logical per-expert shapes are
+reported without inventing a parameter name. Configuration fields, strict
+structural attributes, contiguous layer/expert indices, router dimensions, and
+expert dimensions must agree exactly. Detection evidence is weighted across family identity,
+architecture, strict configuration, topology, and semantic parameter shapes;
+it is evidence strength, not a probability or compatibility certificate.
+
+Discovery emits only `[STRUCTURE]` components with
+`STATIC_STRUCTURE`, method `mixtral-static-structure-v1`, adapter version
+`1.0`, and `verified=False`. Packed expert entries describe logical slices and
+carry a warning that those slices are not independently hookable. No routing
+scores, expert activity, specialization, or routing certification is claimed.
+The caller must choose this adapter explicitly and supply the already-observed
+model/config/manifest. Real Transformers checkpoints, fused or quantized
+variants, and VM/GPU validation remain deferred in the model-validation
+ledger.

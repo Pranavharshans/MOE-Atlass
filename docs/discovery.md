@@ -71,6 +71,25 @@ be surfaced as a low-confidence router candidate without being promoted to a
 certified MoE structure. Ordinary dense modules with no independent MoE
 signals produce no candidates.
 
+## Architecture-specific static adapters
+
+The first explicit adapter is `MixtralStaticAdapter()`, selected by the
+caller rather than discovered through a registry. It recognizes exact Mixtral
+family identity and two strict surfaces: the official Transformers 4.50
+indexed `block_sparse_moe` layout and the current packed `mlp` layout. It
+requires exact configuration counts, strict block/gate/expert attributes,
+contiguous layers and experts, and semantic router/expert shapes. Legacy
+expert `w1`, `w2`, `w3`, and `act_fn` children and packed `act_fn` children are
+part of the exact accepted surface. Packed experts use direct
+`gate_up_proj`/`down_proj` parameters and are reported as logical slices with
+a non-hookable-slice warning. Qwen and dense gated MLPs are separate families
+and are not promoted by fuzzy names or class names.
+
+Adapter output is still static `[STRUCTURE]` evidence with unverified static
+provenance. It does not observe routing or certify expert behavior; real
+Transformers versions, fused/quantized surfaces, and VM validation remain
+deferred.
+
 ## Boundaries and future work
 
 Static discovery describes names, structure, configuration, and parameter

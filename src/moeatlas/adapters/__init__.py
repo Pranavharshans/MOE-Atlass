@@ -14,6 +14,7 @@ from .contracts import (
     StaticSemanticAdapter,
     inspect_static_adapter,
 )
+from .mixtral import MixtralStaticAdapter
 
 __all__ = [
     "AdapterContractError",
@@ -23,4 +24,5 @@ __all__ = [
     "AdapterInspection",
     "StaticSemanticAdapter",
     "inspect_static_adapter",
+    "MixtralStaticAdapter",
 ]

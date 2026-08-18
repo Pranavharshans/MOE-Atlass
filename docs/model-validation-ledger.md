@@ -27,6 +27,15 @@ model-free tests verify strict manifests, identity binding, STRUCTURE-only
 provenance, safe error boundaries, and no-runtime-action behavior only; it does
 not certify any architecture or change the deferred MV-01/MV-02 status.
 
+Feature 13 adds the explicitly caller-selected `MixtralStaticAdapter()` for
+two model-free structural surfaces: official Transformers 4.50 indexed
+experts and current packed direct `gate_up_proj`/`down_proj` tensors. Its tests use standard-library
+fixtures only and verify exact family/config/topology/shape evidence,
+STRUCTURE-only unverified provenance, and safe rejection of Qwen, dense,
+fused, and malformed surfaces. It does not infer a Transformers version,
+observe routing, certify Mixtral behavior, or change the deferred MV-01/MV-02
+status; real checkpoints and VM/GPU evidence remain required.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

@@ -26,7 +26,7 @@ Planned internal areas:
 | `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
 | `store` | run metadata, Parquet events, and DuckDB queries | Useful alpha |
 | `server` | local FastAPI API and run progress | Useful alpha |
-| `adapters` | explicit static semantic protocol and STRUCTURE-only inspection | Useful alpha |
+| `adapters` | explicit static semantic protocol, Mixtral structure adapter, and STRUCTURE-only inspection | Useful alpha |
 | `cli` | headless commands and diagnostics | Foundation / all phases |
 
 The foundation `cli` and diagnostics modules, the `core` capability/identity/
@@ -87,6 +87,9 @@ The foundation supports:
 - inspecting one caller-supplied static semantic adapter with strict,
   versioned descriptor/detection/report contracts, without a registry or
   optional model imports;
+- selecting `MixtralStaticAdapter()` explicitly for the exact indexed or
+  packed Mixtral structural layouts, without routing certification or runtime
+  adapter behavior;
 - executing model-free tests.
 
 The optional loader and static adapter seam do not certify a checkpoint, perform inference, trace

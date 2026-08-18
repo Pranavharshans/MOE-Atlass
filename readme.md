@@ -48,6 +48,11 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
 - Explicit caller-supplied static semantic-adapter contracts with strict
   descriptor/detection/inspection manifests; adapters remain STRUCTURE-only,
   unregistered, and model-runtime-independent.
+- Explicit `MixtralStaticAdapter()` support for the indexed and packed
+  structural layouts (including direct packed `gate_up_proj`/`down_proj`),
+  with exact family/config/attribute/shape checks and unverified
+  STRUCTURE-only provenance; it makes no routing or certification claim and
+  is covered only by model-free fixtures.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
