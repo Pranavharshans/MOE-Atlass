@@ -7,6 +7,11 @@ optionally `named_parameters()` plus a `config` mapping/object. It never
 imports PyTorch, calls `forward`, registers hooks, reads tensor values, or
 mutates the inspected object.
 
+The runtime `load_and_scan()` bridge may supply a resolved HF/local model and
+its already-built `ModelManifest` to this same scanner. That bridge is still
+static-only: it does not tokenize, run inference, install hooks, or elevate
+the resulting report beyond `[STRUCTURE]` capability.
+
 ## What is reported
 
 The report embeds the validated `ModelManifest`, normalized facts, explainable

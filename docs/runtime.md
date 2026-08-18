@@ -61,6 +61,25 @@ without a callable `close()` still participate in the ownership lifecycle so
 successful close clears references; failed callbacks remain retryable and only
 failed callbacks are retried.
 
+## Resolved load-and-scan bridge
+
+`load_and_scan(plan)` is a one-shot convenience boundary for validated
+`HuggingFaceSource` and `LocalSource` plans. It passes the identical plan to
+`load_huggingface()` or `load_local()`, then passes the exact loaded model and
+manifest to `discovery.scan()`. It never forwards the tokenizer, runs a
+forward/generation, registers hooks, reads tensor values, writes a report, or
+adds a second loading policy.
+
+The bridge closes the loaded result on successful scan and on ordinary or
+control-flow scan failures. A scan error remains the primary error when close
+also fails; it receives only a deterministic safe note and a retryable
+`PendingRuntimeCleanup`. A cleanup failure after a successful scan is raised
+instead of publishing the report, with the same retry handle. The returned
+report is validated as a `DiscoveryReport`, must retain the loaded manifest
+value, and contains only `[STRUCTURE]` components. `InstanceSource` and
+`CustomLoaderSource` are intentionally rejected here; callers must invoke
+`load_instance()`/`load_custom()` and `discovery.scan()` manually.
+
 ## Custom loaders
 
 `load_custom(plan)` is inert unless `execute_user_code=True` is passed. Only

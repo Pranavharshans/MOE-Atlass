@@ -78,6 +78,9 @@ The foundation supports:
   manifest-ready result with explicit cleanup ownership;
 - lazily loading resolved HF/local sources through the three audited
   Transformers factories, with staged observation and retryable rollback;
+- composing one resolved HF/local load with the existing read-only scanner via
+  `runtime.load_and_scan()`, returning only a validated STRUCTURE report after
+  cleanup succeeds;
 - executing model-free tests.
 
 The optional loader does not certify a checkpoint, perform inference, trace

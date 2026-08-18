@@ -40,6 +40,9 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
   resolution, with observed manifests and transactional cleanup. This seam is
   covered only by fake model-runtime tests; real checkpoint/GPU certification
   remains deferred.
+- Cleanup-safe `moeatlas.runtime.load_and_scan()` composition for resolved
+  HF/local plans, returning the existing static `[STRUCTURE]` discovery report;
+  it does not add CLI loading or real-model certification.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

@@ -12,6 +12,11 @@ model-free suite. Those tests verify call arguments, observation, and rollback
 only; they do not change MV-01/MV-02 status and do not inspect caches or fetch
 checkpoints.
 
+Feature 10 adds `runtime.load_and_scan()` as a cleanup-safe composition of the
+resolved loader and static discovery. Its model-free tests verify dispatch,
+identity binding, report validation, and retryable cleanup only; it does not
+certify a real checkpoint or change the deferred MV-01/MV-02 status.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |
