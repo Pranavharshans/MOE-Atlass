@@ -61,6 +61,10 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
 - Pure compilation of retained static `AdapterInspection` evidence into a
   family-neutral reduced `ROUTING` `ProbePlan`; it performs no model calls,
   hook registration, decoding, event capture, storage, or certification.
+- Cleanup-safe `RoutingCaptureSession` execution over that canonical plan;
+  callers decode opaque synchronous hook payloads into retained, identity-
+  bound `RoutingEvent` values while the session enforces quota and lifecycle,
+  without a built-in tensor decoder, storage sink, or routing certification.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

@@ -100,3 +100,54 @@ The runtime tests use fake standard-library `torch`/`transformers` modules and
 lightweight tokenizer/config stubs. No socket/network/cache access or model
 artifact is used. Real checkpoint, native tensor, fused, quantized, and GPU
 behavior remains deferred to MV-01/MV-04/MV-06/MV-07.
+
+## Routing capture session
+
+`RoutingCaptureSession` is the narrow bridge from one retained static
+`AdapterInspection` and its canonical routing `ProbePlan` to validated
+`RoutingEvent` objects. Construction re-dumps and revalidates both inputs,
+rebuilds the family-neutral plan, and derives one immutable
+`RoutingCaptureTarget` per router from the same-layer MoE layer and routed
+experts. It rejects shared-expert or ambiguous component evidence before it
+ever traverses `named_modules()`.
+
+Use it as a normal context manager. The existing `HookManager` owns all hook
+registration and reverse cleanup. The caller-supplied decoder is called once
+per synchronous forward callback with the exact opaque `(module, inputs,
+output)` values and must return an exact tuple of `RoutingEvent` objects. The
+session performs no tensor reads, forward calls, tuple decoding, or value
+inference; detaching tensors, reducing router payloads, and architecture
+specific interpretation remain the caller/decoder's responsibility. Ordinary
+decoder failures are wrapped in the fixed `decode` error with the original
+exception as its cause; ordinary event validation failures use the fixed
+`events` error. Decoder KeyboardInterrupt and SystemExit propagate unchanged;
+registration and body/control-flow failures preserve the exact primary exception.
+The session may retain the caller-owned model and decoder for its lifetime,
+but does not retain synchronous callback payloads after invocation. A callback
+held after the active body, during cleanup retry, or after publication is
+inert and cannot invoke the decoder or mutate the sealed result.
+
+Only fresh, identity-bound events are retained. `max_events` bounds retained
+events, not model execution, callback invocations, or downstream storage. If
+one invocation would exceed the remaining quota, the whole invocation is
+dropped atomically; later invocations are skipped after the quota is full.
+Events, truncation, and dropped counts are unpublished until the body exits
+normally and every hook removal succeeds. Failed removals remain retryable via
+`close()`; body errors and `KeyboardInterrupt`/`SystemExit` remain exact,
+while ordinary decoder failures are fixed safe `decode` wrappers retaining
+their cause. No failed run publishes staged events.
+
+This is an opaque synchronous hook-payload boundary, not routing
+certification. It does not claim native router equivalence, expert
+specialization, or output fidelity. Hook behavior follows the official
+[PyTorch forward-hook API](https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_forward_hook).
+The reference-layout comparisons use tagged legacy [Mixtral v4.50.0
+source](https://github.com/huggingface/transformers/blob/v4.50.0/src/transformers/models/mixtral/modeling_mixtral.py)
+and [Qwen3-MoE v4.57.1
+source](https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py),
+plus pinned current [Mixtral
+source](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/mixtral/modeling_mixtral.py)
+and [Qwen3-MoE
+source](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py).
+Routing payload equivalence, passive output fidelity, overhead, and GPU
+behavior remain deferred to MV-03, MV-04, and MV-05.

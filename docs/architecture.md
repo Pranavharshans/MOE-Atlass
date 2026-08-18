@@ -95,6 +95,9 @@ The foundation supports:
   routing certification or runtime adapter behavior;
 - compiling a validated adapter inspection into a family-neutral, reduced
   `ROUTING` probe plan without calling models, adapters, or hooks;
+- capturing only caller-decoded, identity-bound `RoutingEvent` values through
+  a cleanup-safe `RoutingCaptureSession`, with retained-event quota and no
+  built-in tensor decoder or storage;
 - executing model-free tests.
 
 The optional loader and static adapter seam do not certify a checkpoint, perform inference, trace

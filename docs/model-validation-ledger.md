@@ -53,6 +53,15 @@ storage, or impose an execution/event/storage bound; native routing payload
 equivalence and capture remain deferred to MV-03. It does not certify routing
 or change the deferred MV-01/MV-02 status.
 
+Feature 16 adds the cleanup-safe `RoutingCaptureSession`. Its model-free
+tests verify canonical inspection/plan preflight, exact router contexts,
+caller-owned opaque hook decoding, identity-bound `RoutingEvent` validation,
+retained-event quota, and retryable hook cleanup. The session has no built-in
+tensor/tuple decoder, storage sink, or certification claim; detaching and
+reducing payloads remain caller responsibilities. Native routing equivalence,
+passive output fidelity, and overhead remain deferred to MV-03, MV-04, and
+MV-05; this feature does not change MV-01/MV-02 status.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

@@ -26,6 +26,7 @@ from .contracts import (
 )
 from .loader import load_custom, load_instance
 from .model_loader import load_huggingface, load_local
+from .routing import RoutingCaptureError, RoutingCaptureSession, RoutingCaptureTarget
 from .scan import load_and_scan
 
 __all__ = [
@@ -43,6 +44,9 @@ __all__ = [
     "RuntimeLoadError",
     "RuntimeObservation",
     "RuntimeValidationError",
+    "RoutingCaptureError",
+    "RoutingCaptureSession",
+    "RoutingCaptureTarget",
     "load_custom",
     "load_huggingface",
     "load_and_scan",

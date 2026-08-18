@@ -104,6 +104,44 @@ Tagged legacy and pinned current implementations can expose different router
 forward-payload conventions, so no tensor/tuple decoder is assumed. Native
 routing equivalence and capture remain deferred to MV-03.
 
+## Runtime routing capture
+
+`RoutingCaptureSession` consumes a retained `AdapterInspection` and the
+canonical family-neutral routing plan produced from it. Preflight derives
+one `RoutingCaptureTarget` for each router, binding its exact `ProbeTarget`,
+same-layer MoE component, routed expert keys, and positive top-k fact. No
+shared expert, allowlist, or guessed component identity is accepted.
+
+The session delegates module resolution and registration to `HookManager`.
+The decoder receives exactly the synchronous opaque `(module, inputs, output)`
+hook arguments and returns an exact tuple of freshly validated `RoutingEvent`
+values. Ordinary decoder failures are chained to a fixed `decode` error and
+ordinary event validation failures to a fixed `events` error. The session does
+not read tensor values, decode tuples, call forwards, or retain callback
+payloads; detaching and reducing them is the caller's responsibility. The
+caller-owned model and decoder may remain available for the session lifetime.
+Decoder KeyboardInterrupt/SystemExit, body, and control-flow failures remain
+the exact primary exception. A callback held outside the active body is inert,
+including while cleanup is awaiting a retry and after publication.
+`max_events` bounds retained events only. An over-quota
+invocation is discarded atomically, and invocations after the quota is full
+are skipped. Publication waits for normal body completion and successful
+reverse cleanup, with `close()` retrying failed removals.
+
+This boundary is observational intent and event validation, not native
+routing certification. It follows the official
+[PyTorch forward-hook API](https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_forward_hook)
+and compares only the tagged legacy [Mixtral v4.50.0
+source](https://github.com/huggingface/transformers/blob/v4.50.0/src/transformers/models/mixtral/modeling_mixtral.py)
+and [Qwen3-MoE v4.57.1
+source](https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py)
+with pinned current [Mixtral
+source](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/mixtral/modeling_mixtral.py)
+and [Qwen3-MoE
+source](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py).
+Routing equivalence, output fidelity, and overhead remain deferred to
+MV-03/MV-04/MV-05.
+
 ## Deferred fidelity boundary
 
 The synthetic fixture tests lifecycle behavior without a model runtime. Real

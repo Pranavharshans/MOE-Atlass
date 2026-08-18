@@ -130,6 +130,55 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(term=term):
                 self.assertIn(term, runtime)
 
+    def test_runtime_routing_docs_and_exports_describe_passive_boundary(self) -> None:
+        runtime = (ROOT / "docs" / "runtime.md").read_text()
+        probe = (ROOT / "docs" / "probe.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                runtime,
+                (
+                    "RoutingCaptureSession",
+                    "RoutingCaptureTarget",
+                    "max_events",
+                    "exact opaque `(module, inputs,",
+                    "detaching tensors",
+                    "exact primary exception",
+                    "caller-owned model",
+                    "MV-03",
+                    "MV-04",
+                    "MV-05",
+                ),
+            ),
+            (
+                probe,
+                (
+                    "RoutingCaptureSession",
+                    "RoutingCaptureTarget",
+                    "retained events",
+                    "decode",
+                    "control-flow",
+                    "forward-hook API",
+                    "Mixtral v4.50.0",
+                    "Qwen3-MoE v4.57.1",
+                ),
+            ),
+            (architecture, ("RoutingCaptureSession", "retained-event quota")),
+            (ledger, ("Feature 16", "RoutingCaptureSession", "MV-03")),
+            (readme, ("RoutingCaptureSession", "RoutingEvent", "certification")),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        runtime_exports = (ROOT / "src" / "moeatlas" / "runtime" / "__init__.py").read_text()
+        routing_source = (ROOT / "src" / "moeatlas" / "runtime" / "routing.py").read_text()
+        for term in ("RoutingCaptureError", "RoutingCaptureSession", "RoutingCaptureTarget"):
+            self.assertIn(term, runtime_exports)
+            self.assertIn(term, routing_source)
+        self.assertTrue((ROOT / "tests" / "test_runtime_routing.py").is_file())
+
     def test_adapter_docs_describe_static_structure_boundary(self) -> None:
         adapters = (ROOT / "docs" / "adapters.md").read_text()
         for term in (
