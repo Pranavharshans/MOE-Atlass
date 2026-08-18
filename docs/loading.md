@@ -1,10 +1,10 @@
 # Model-source and loading contracts
 
-`moeatlas.loading` is a schema/planning boundary only. It never imports
+`moeatlas.loading` remains a schema/planning boundary only. It never imports
 PyTorch, Transformers, safetensors, a custom loader, or an already-instantiated
 module; it does not resolve paths, inspect caches, contact Hugging Face, or
-download checkpoints. Runtime integration will receive an instance source's
-Python object separately from its portable identity.
+download checkpoints. The separate `moeatlas.runtime` module consumes a
+validated plan only in its explicit lazy HF/local loading calls.
 
 ## Source requests
 
@@ -36,8 +36,12 @@ target. Remote-code execution requires an explicit acknowledgement. Arbitrary
 `loader_options` remain finite JSON data. Top-level option names controlled by
 this contract cannot override audited fields such as revisions, device, dtype,
 download policy, remote code, or quantization. Nested backend-specific objects
-are preserved as data (even when they use one of those words) and cannot
-override the audited top-level policy fields.
+are preserved as data (even when they use non-security words such as `dtype`
+or `revision`) and cannot override the audited top-level policy fields.
+Credential-bearing keys and header/cookie containers are forbidden recursively
+with case- and punctuation-insensitive matching. This covers variants such as
+`Token`, `Authorization`, `api-key`, passwords, secrets, credentials, and
+`headers`; benign backend names such as `secret_sauce_mode` remain data.
 
 `DTypePolicy` describes requested loading intent. Its explicit values map to
 the existing core `DType` only as a later manifest hint; `preserve` maps to
@@ -61,5 +65,6 @@ revision/evidence set. An immutable resolved revision must pair with
 `ImmutableRevisionEvidence`: either a full 40-character Git commit or a full
 SHA-256 content digest, with the resolved revision matching the evidence. A
 branch, tag, short hash, or arbitrary “claimed” string cannot be labeled
-immutable. Creating this contract performs no resolution; model loading and
-resolution evidence remain deferred to MV-01/MV-02 and the final VM.
+immutable. Creating this contract performs no resolution. Runtime loading
+requires the existing immutable evidence and keeps real checkpoint/network/GPU
+validation deferred to MV-01/MV-02 and the final VM.

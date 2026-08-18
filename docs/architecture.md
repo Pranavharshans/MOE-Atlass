@@ -22,7 +22,7 @@ Planned internal areas:
 | `probe` | serializable plans, passive hooks, bounded policy, cleanup | Probe core |
 | `events` | versioned token, routing, and expert evidence contracts | Probe core |
 | `loading` | source requests, load policy, plan identity, resolution evidence | Probe core |
-| `runtime` | validated instance/custom execution and manifest-ready results | Useful alpha / causal beta |
+| `runtime` | validated instance/custom execution plus lazy HF/local loading | Useful alpha / causal beta |
 | `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
 | `store` | run metadata, Parquet events, and DuckDB queries | Useful alpha |
 | `server` | local FastAPI API and run progress | Useful alpha |
@@ -37,8 +37,9 @@ complete; each will arrive with a testable feature and a documented contract.
 ## Dependency boundary
 
 The foundation requires only Pydantic v2 for strict, JSON-compatible schema
-validation and does not import model libraries. PyTorch, Transformers, and
-safetensors are optional metadata in the `model` extra for later phases. This
+validation and does not import model libraries. PyTorch, Transformers,
+Accelerate, and safetensors are optional dependencies in the `model` extra.
+They remain lazy imports behind explicit resolved loading calls. This
 keeps package import, docs, and tests usable on a CPU-only machine and makes it
 impossible for the baseline test command to silently download a checkpoint.
 
@@ -75,9 +76,12 @@ The foundation supports:
 - validating model-source/loading intent without loading or resolving a model;
 - validating already-instantiated instance/custom runtime artifacts into a
   manifest-ready result with explicit cleanup ownership;
+- lazily loading resolved HF/local sources through the three audited
+  Transformers factories, with staged observation and retryable rollback;
 - executing model-free tests.
 
-The foundation does not support HF/local checkpoint loading, runtime inference,
-tracing tokens, tensor/event storage, interventions, or claiming GPU
-compatibility. The probe manager only exercises duck-typed synthetic hook
-surfaces; real PyTorch fidelity remains an explicit deferred validation item.
+The optional loader does not certify a checkpoint, perform inference, trace
+tokens, store tensors/events, intervene, or claim GPU compatibility. It is a
+small execution seam for a later VM: real network/cache behavior, native
+PyTorch fidelity, CUDA/MPS, quantization, and adapter semantics remain
+explicit deferred validation items.

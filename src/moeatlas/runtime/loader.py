@@ -175,6 +175,9 @@ def _resolution_for(plan: LoadingPlan) -> tuple[ResolvedSource, str, str, str]:
 def _build_manifest(
     plan: LoadingPlan,
     artifacts: RuntimeArtifacts,
+    *,
+    additional_warnings: tuple[str, ...] = (),
+    additional_provenance: Mapping[str, Any] | None = None,
 ) -> tuple[ModelManifest, tuple[str, ...]]:
     _preflight_model(artifacts.model)
     if artifacts.tokenizer is None:
@@ -199,7 +202,8 @@ def _build_manifest(
         model_key = make_model_key(plan.source.model_id, model_revision)
     except (TypeError, ValueError) as exc:
         raise RuntimeValidationError("runtime model identity is not canonical") from exc
-    warnings = tuple(sorted(set(plan.security_warnings)))
+    security_warnings = tuple(sorted(set(plan.security_warnings)))
+    warnings = tuple(sorted(set((*security_warnings, *additional_warnings))))
     model_evidence = resolution.resolved_model_revision_evidence
     tokenizer_evidence = resolution.resolved_tokenizer_revision_evidence
     if model_evidence is None or tokenizer_evidence is None:  # pragma: no cover
@@ -208,10 +212,26 @@ def _build_manifest(
         "loading_plan_id": plan.plan_id,
         "model_revision_evidence": model_evidence.kind.value,
         "resolution_method": resolution.resolution_method,
-        "security_warnings": list(warnings),
+        "security_warnings": list(security_warnings),
         "source_type": plan.source.source_type,
         "tokenizer_revision_evidence": tokenizer_evidence.kind.value,
     }
+    if additional_provenance:
+        normalized_provenance = _normalize_json(
+            additional_provenance,
+            path="runtime provenance",
+        )
+        if not isinstance(normalized_provenance, dict):  # pragma: no cover
+            raise RuntimeValidationError("runtime provenance must normalize to an object")
+        protected = set(provenance_metadata).intersection(normalized_provenance)
+        if protected:
+            raise RuntimeValidationError(
+                "additional runtime provenance cannot override core metadata: "
+                + ", ".join(sorted(protected))
+            )
+        provenance_metadata.update(normalized_provenance)
+    if additional_warnings:
+        provenance_metadata["runtime_warnings"] = list(sorted(set(additional_warnings)))
     try:
         manifest = ModelManifest(
             model_key=model_key,
@@ -252,9 +272,20 @@ def _cleanup_after_validation_failure(
         _add_cleanup_note(original, cleanup_error)
 
 
-def _load_artifacts(plan: LoadingPlan, artifacts: RuntimeArtifacts) -> LoadedModel:
+def _load_artifacts(
+    plan: LoadingPlan,
+    artifacts: RuntimeArtifacts,
+    *,
+    additional_warnings: tuple[str, ...] = (),
+    additional_provenance: Mapping[str, Any] | None = None,
+) -> LoadedModel:
     try:
-        manifest, warnings = _build_manifest(plan, artifacts)
+        manifest, warnings = _build_manifest(
+            plan,
+            artifacts,
+            additional_warnings=additional_warnings,
+            additional_provenance=additional_provenance,
+        )
     except BaseException as exc:
         _cleanup_after_validation_failure(artifacts, exc)
         raise

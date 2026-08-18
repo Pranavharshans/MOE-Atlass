@@ -7,6 +7,11 @@ No model files are downloaded by the repository setup or model-free test
 commands. A package being importable is not model validation. A passing CPU
 unit test is not GPU compatibility evidence.
 
+Feature 9 adds lazy HF/local execution with fake optional modules in the
+model-free suite. Those tests verify call arguments, observation, and rollback
+only; they do not change MV-01/MV-02 status and do not inspect caches or fetch
+checkpoints.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

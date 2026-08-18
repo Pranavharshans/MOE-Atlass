@@ -1,10 +1,16 @@
 # Runtime execution boundary
 
-`moeatlas.runtime` is the first runtime integration slice. It validates and
-records already-instantiated `InstanceSource` objects and explicitly opted-in
-`CustomLoaderSource` callables. It does not import PyTorch, Transformers, or
-safetensors, inspect caches, contact a model hub, or load HF/local checkpoints.
-Those paths remain deferred to MV-01 and the final VM.
+`moeatlas.runtime` has two explicit seams. `InstanceSource` and
+`CustomLoaderSource` execution remains model-runtime-free. `load_huggingface()`
+and `load_local()` are lazy optional
+loaders: they import `torch`/`transformers` only after a matching source,
+immutable model and tokenizer resolution, policy, and local-path preflight
+have passed. Importing `moeatlas.runtime` itself never imports those packages.
+
+The loader is not model certification. It uses the exact resolved revisions,
+does not use requested branch names, and keeps real checkpoint/network/cache,
+GPU, quantization, and adapter validation deferred to MV-01/MV-02 and the
+final VM.
 
 ## Runtime artifacts and manifests
 
@@ -23,6 +29,18 @@ and the observed dtype/device/architecture. It hashes a recursively validated,
 finite config copy and carries deterministic plan security warnings into both
 manifest warnings and provenance metadata.
 
+For HF sources, both resolutions must be full Git commit evidence because the
+Hub `revision=` argument cannot bind a content-digest pseudo-reference. Local
+sources use the exact declared directory and always set
+`local_files_only=True`; their immutable evidence may be an external content
+attestation. Exposed HF commit hashes are checked against the resolved commits.
+
+The loader forwards `torch_dtype` only for an explicit dtype policy, forwards a
+copied non-empty device map, and requires Accelerate for an explicit map or
+`device="auto"`. `preserve` still imports and validates torch but sends no
+dtype kwarg. Observed dtype, architecture, device map, and warnings come from
+the returned objects, never from the requested policy.
+
 ## Ownership and cleanup
 
 Instance resources are caller-owned by default: omit `cleanup`. An explicit
@@ -38,6 +56,11 @@ transient or permanent cleanup failures.
 is added as a note so the body exception remains the raised error. A caller can
 retry the result's cleanup afterward.
 
+HF/local calls own every acquired config, tokenizer, and model object. Objects
+without a callable `close()` still participate in the ownership lifecycle so
+successful close clears references; failed callbacks remain retryable and only
+failed callbacks are retried.
+
 ## Custom loaders
 
 `load_custom(plan)` is inert unless `execute_user_code=True` is passed. Only
@@ -47,6 +70,7 @@ must return exactly `RuntimeArtifacts`; tuples, mappings, and convenience
 return shapes are rejected. Import and callable failures retain their original
 exception as the cause. No loader registry or plugin framework is introduced.
 
-The runtime tests use only the standard-library synthetic MoE fixture and
-lightweight tokenizer/config stubs. Real checkpoint, native tensor, fused,
-quantized, and GPU behavior remains deferred to MV-01/MV-04/MV-06/MV-07.
+The runtime tests use fake standard-library `torch`/`transformers` modules and
+lightweight tokenizer/config stubs. No socket/network/cache access or model
+artifact is used. Real checkpoint, native tensor, fused, quantized, and GPU
+behavior remains deferred to MV-01/MV-04/MV-06/MV-07.

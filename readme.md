@@ -11,9 +11,9 @@ expert specialization.
 The repository is being implemented feature by feature against the
 [MoEAtlas product requirements](docs/specification/MoEAtlas_PRD_v1.docx).
 The current release contains the repository foundation, canonical manifest
-contracts, static discovery/probe contracts, and normalized event schemas.
-Model loading, runtime instrumentation, storage, analysis, and the local UI
-remain planned phases rather than advertised as complete features.
+contracts, static discovery/probe contracts, normalized event schemas, and
+explicit runtime loading seams. Storage, analysis, and the local UI remain
+planned phases; real checkpoint and GPU certification are deliberately deferred.
 
 ## Current status
 
@@ -28,14 +28,18 @@ remain planned phases rather than advertised as complete features.
 - Versioned normalized token, routing, and expert event contracts with
   portable identities and capability-driven partial evidence.
 - Phase 0 `moeatlas scan fixture:synthetic` command producing a complete,
-  deterministic STRUCTURE discovery report; real model loading remains
-  deferred.
+  deterministic STRUCTURE discovery report; HF/local CLI scan integration
+  remains deferred.
 - Strict model-source and loading-plan schemas covering HF/local/instance/
   custom intent, offline defaults, policy warnings, and external revision
   evidence without performing loading.
 - Validated runtime execution for already-instantiated `InstanceSource` and
   explicitly opted-in `CustomLoaderSource` artifacts, including observed
-  manifests and retryable cleanup ownership; HF/local loading remains deferred.
+  manifests and retryable cleanup ownership.
+- Lazy HF/local loading through optional Transformers factories after immutable
+  resolution, with observed manifests and transactional cleanup. This seam is
+  covered only by fake model-runtime tests; real checkpoint/GPU certification
+  remains deferred.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
@@ -55,8 +59,8 @@ uv run --locked moeatlas doctor --json
 ```
 
 The foundation runtime uses Pydantic v2 for strict manifest validation. The
-optional `model` extra describes dependencies that later model-runtime
-features may use; it is intentionally not installed by the commands above.
+optional `model` extra contains dependencies for the explicit lazy HF/local
+runtime calls; it is intentionally not installed by the commands above.
 
 Run the model-free tests without downloading a checkpoint:
 
@@ -72,12 +76,14 @@ uv run --locked moeatlas scan fixture:synthetic
 uv run --locked moeatlas scan fixture:synthetic --output report.json
 ```
 
-Only `fixture:synthetic` is supported in Phase 0. HF/local loading, cache
-inspection, and checkpoint downloads remain deferred to the final VM workflow.
+Only `fixture:synthetic` is supported by the Phase 0 CLI scan. HF/local CLI
+scan integration, cache inspection, and real checkpoint validation remain
+deferred to the final VM workflow.
 
-The loading contracts are schema-only and intentionally do not load a model:
-see [loading contracts](docs/loading.md) before using them in later runtime
-integration.
+The loading contracts are schema-only and intentionally do not load a model;
+the optional runtime loader is a separate explicit call that requires the
+`model` extra and immutable resolution evidence. See [loading contracts](docs/loading.md)
+and [runtime loading](docs/runtime.md) before using it.
 
 The standard-library test discovery command is also available inside the
 locked environment:

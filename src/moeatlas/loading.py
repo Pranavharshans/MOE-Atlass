@@ -15,7 +15,7 @@ import re
 from enum import Enum
 from typing import Annotated, Any, Literal, Self, TypeAlias
 
-from pydantic import Field, StrictBool, StrictStr, field_validator, model_validator
+from pydantic import ConfigDict, Field, StrictBool, StrictStr, field_validator, model_validator
 
 from .core import (
     DType,
@@ -36,26 +36,154 @@ _SHA256_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _RESERVED_LOADER_OPTION_KEYS = frozenset(
     {
         "allow_downloads",
+        "access_token",
+        "auth_token",
+        "cache_dir",
+        "config",
         "device",
         "device_map",
         "dtype",
+        "download_policy",
         "load_in_4bit",
         "load_in_8bit",
         "local_files_only",
         "model_id",
         "model_revision",
         "offline",
+        "offload_folder",
+        "path",
+        "proxies",
         "quantization",
         "quantization_config",
         "remote_code_acknowledged",
         "requested_revision",
         "revision",
+        "source_type",
+        "token",
         "tokenizer_id",
         "tokenizer_revision",
         "torch_dtype",
         "trust_remote_code",
+        "use_auth_token",
+        "force_download",
+        "loader_reference",
     }
 )
+_SECRET_LOADER_OPTION_KEYS = frozenset(
+    {
+        "access_token",
+        "api_key",
+        "api_secret",
+        "api_token",
+        "apikey",
+        "auth",
+        "auth_header",
+        "auth_token",
+        "authorization",
+        "authentication",
+        "bearer",
+        "client_secret",
+        "cookie",
+        "cookies",
+        "cookie_header",
+        "credential",
+        "credentials",
+        "password",
+        "passwd",
+        "passphrase",
+        "proxies",
+        "secret",
+        "secrets",
+        "secret_key",
+        "token",
+        "use_auth_token",
+    }
+)
+_CREDENTIAL_CONTAINER_KEYS = frozenset(
+    {
+        "cookie_header",
+        "cookie_headers",
+        "cookies",
+        "extra_header",
+        "extra_headers",
+        "header",
+        "headers",
+        "http_header",
+        "http_headers",
+        "request_header",
+        "request_headers",
+        "response_header",
+        "response_headers",
+    }
+)
+_SECRET_SUFFIXES = ("_credential", "_credentials", "_password", "_passwd", "_passphrase")
+_SECRET_PREFIXES = ("client_", "server_", "service_", "app_", "api_", "oauth_")
+_CREDENTIAL_WORD = re.compile(
+    r"(?:^|_)(?:token|password|passwd|passphrase|credential|credentials|cookie|cookies)(?:_|$)"
+)
+_AUTH_WORD = re.compile(r"(?:^|_)(?:auth|authorization|bearer)(?:_|$)")
+_HEADER_WORD = re.compile(r"(?:^|_)(?:header|headers)(?:_|$)")
+_API_KEY_WORD = re.compile(r"(?:^|_)api_?key(?:_|$)")
+_SECRET_WORD = re.compile(
+    r"(?:^|_)(?:client|server|service|app|api|oauth|jwt|session)_secret(?:s)?(?:_|$)"
+)
+
+
+def _normalize_loader_option_key(key: str) -> str:
+    """Normalize option keys for deterministic, case-insensitive policy checks."""
+
+    # Split both lower-to-upper and acronym-to-word transitions before
+    # casefolding so ``accessToken``, ``xApiKey``, and ``HTTPHeaders`` cannot
+    # bypass the same policy as snake/kebab case.
+    camel = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", key)
+    camel = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", camel)
+    return re.sub(r"[^a-z0-9]+", "_", camel.casefold()).strip("_")
+
+
+def _is_credential_loader_key(key: str) -> bool:
+    """Return whether a key could carry a credential or authorization header.
+
+    This deliberately targets credential-shaped names rather than every key
+    containing words such as ``secret``.  For example, a backend-specific
+    ``secret_sauce_mode`` remains valid while ``client_secret`` and
+    ``x-api-key`` are rejected.
+    """
+
+    normalized = _normalize_loader_option_key(key)
+    if normalized in _SECRET_LOADER_OPTION_KEYS or normalized in _CREDENTIAL_CONTAINER_KEYS:
+        return True
+    if (
+        _CREDENTIAL_WORD.search(normalized)
+        or _AUTH_WORD.search(normalized)
+        or _HEADER_WORD.search(normalized)
+        or _API_KEY_WORD.search(normalized)
+        or _SECRET_WORD.search(normalized)
+    ):
+        return True
+    if normalized.endswith(_SECRET_SUFFIXES):
+        return True
+    if normalized.endswith("_token") or normalized.endswith("_api_key"):
+        return True
+    if normalized in {"private_key", "signing_key", "encryption_key"}:
+        return True
+    if normalized in {"secret_token", "secret_value", "secret_key"}:
+        return True
+    if normalized.endswith(("_secret", "_secrets")) and normalized.startswith(_SECRET_PREFIXES):
+        return True
+    if normalized.startswith("api_") and normalized.endswith(("_key", "_token", "_secret")):
+        return True
+    return False
+
+
+_NORMALIZED_RESERVED_LOADER_OPTION_KEYS = frozenset(
+    _normalize_loader_option_key(key) for key in _RESERVED_LOADER_OPTION_KEYS
+)
+
+
+def _is_reserved_loader_option_key(key: str) -> bool:
+    """Return whether a top-level option would override audited loader policy."""
+
+    return _normalize_loader_option_key(key) in _NORMALIZED_RESERVED_LOADER_OPTION_KEYS
 
 
 class SourceKind(str, Enum):
@@ -132,6 +260,9 @@ class QuantizationPolicy(str, Enum):
 class VersionedLoadingModel(StrictManifestModel):
     """Shared strict/frozen schema and JSON behavior for loading contracts."""
 
+    # Loading options may contain credentials supplied by an API caller.  Do
+    # not let Pydantic echo those values in a ValidationError's input context.
+    model_config = ConfigDict(hide_input_in_errors=True)
     schema_version: Literal["1.0"] = Field(default=LOADING_SCHEMA_VERSION, frozen=True)
 
     def to_dict(self) -> dict[str, Any]:
@@ -201,6 +332,10 @@ def _validate_json_node(value: Any) -> None:
         for key, nested in value.items():
             if not isinstance(key, str):
                 raise TypeError("loader options object keys must be strings")
+            if _is_credential_loader_key(key):
+                raise _ReservedLoaderOptionError(
+                    "loader options cannot contain credential-bearing keys or headers"
+                )
             _validate_json_node(nested)
     elif isinstance(value, list | tuple):
         for nested in value:
@@ -224,7 +359,9 @@ def _freeze_json(value: Any) -> Any:
 
 def _validate_json_options(value: dict[str, Any]) -> dict[str, Any]:
     try:
-        reserved = sorted(set(value).intersection(_RESERVED_LOADER_OPTION_KEYS))
+        reserved = sorted(
+            key for key in value if isinstance(key, str) and _is_reserved_loader_option_key(key)
+        )
         if reserved:
             raise _ReservedLoaderOptionError(
                 "loader_options top-level keys are reserved; set the audited policy "

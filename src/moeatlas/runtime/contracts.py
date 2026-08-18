@@ -22,6 +22,22 @@ class CustomLoaderExecutionError(RuntimeLoadError):
     """Raised when an explicitly opted-in custom loader cannot execute."""
 
 
+class ModelRuntimeDependencyError(RuntimeLoadError):
+    """Raised when the optional model-runtime extra is unavailable."""
+
+
+class ModelLoadError(RuntimeLoadError):
+    """Raised for a stage-specific HF/local loading failure."""
+
+    def __init__(self, stage: str, message: str) -> None:
+        self.stage = stage
+        super().__init__(f"{stage}: {message}")
+
+
+class ModelObservationError(RuntimeLoadError):
+    """Raised when loaded runtime facts cannot be observed safely."""
+
+
 class RuntimeCleanupError(RuntimeLoadError):
     """Raised when owned runtime cleanup fails and remains retryable."""
 
@@ -64,6 +80,10 @@ class PendingRuntimeCleanup:
         callback = self._callback
         try:
             callback()
+        except RuntimeCleanupError as exc:
+            self._last_error = exc
+            setattr(exc, "pending_cleanup", self)
+            raise
         except BaseException as exc:
             self._last_error = exc
             error = RuntimeCleanupError((exc,))
@@ -159,6 +179,9 @@ class LoadedModel:
         callback = self._cleanup_callback
         try:
             callback()
+        except RuntimeCleanupError:
+            self._closed = False
+            raise
         except BaseException as exc:
             self._closed = False
             raise RuntimeCleanupError((exc,)) from exc
@@ -219,6 +242,9 @@ __all__ = [
     "CustomLoaderExecutionError",
     "LoadResult",
     "LoadedModel",
+    "ModelLoadError",
+    "ModelObservationError",
+    "ModelRuntimeDependencyError",
     "PendingRuntimeCleanup",
     "RuntimeArtifacts",
     "RuntimeCleanupError",
