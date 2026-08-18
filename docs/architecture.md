@@ -19,7 +19,7 @@ Planned internal areas:
 | --- | --- | --- |
 | `core` | typed identities, manifests, capabilities, and shared contracts | Probe core |
 | `discovery` | static traversal and confidence-scored MoE candidates | Probe core |
-| `probe` | passive hooks, reductions, event emission, cleanup | Probe core |
+| `probe` | serializable plans, passive hooks, bounded policy, cleanup | Probe core |
 | `runtime` | prompts, datasets, generation, and interventions | Useful alpha / causal beta |
 | `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
 | `store` | run metadata, Parquet events, and DuckDB queries | Useful alpha |
@@ -64,9 +64,11 @@ The foundation supports:
 - validating versioned model/component manifests and deterministic identities;
 - statically traversing a duck-typed module tree into a STRUCTURE-only
   discovery report with confidence and warnings;
+- resolving strict probe plans and managing torch-free synthetic hook
+  lifecycles with transactional cleanup;
 - executing model-free tests.
 
 The foundation does not support loading a checkpoint, runtime inference,
-registering hooks, tracing tokens, or claiming GPU compatibility. Static
-discovery is deliberately separate from those runtime claims and remains
-tracked alongside explicit deferred validation items.
+tracing tokens, tensor/event storage, interventions, or claiming GPU
+compatibility. The probe manager only exercises duck-typed synthetic hook
+surfaces; real PyTorch fidelity remains an explicit deferred validation item.

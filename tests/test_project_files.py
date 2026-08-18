@@ -16,6 +16,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "model-validation-ledger.md",
             ROOT / "docs" / "schemas.md",
             ROOT / "docs" / "discovery.md",
+            ROOT / "docs" / "probe.md",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -42,6 +43,12 @@ class ProjectFilesTests(unittest.TestCase):
         for term in ("named_modules()", "confidence", "STRUCTURE", "dry-run", "MV-02"):
             with self.subTest(term=term):
                 self.assertIn(term, discovery)
+
+    def test_probe_docs_describe_bounded_lifecycle(self) -> None:
+        probe = (ROOT / "docs" / "probe.md").read_text()
+        for term in ("ProbePlan", "HookManager", "raw_opt_in", "reverse", "MV-04"):
+            with self.subTest(term=term):
+                self.assertIn(term, probe)
 
 
 if __name__ == "__main__":

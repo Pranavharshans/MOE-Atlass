@@ -22,9 +22,11 @@ the local UI are planned phases rather than advertised as complete features.
   deterministic portable identity helpers.
 - Read-only, model-runtime-independent static MoE discovery with confidence-
   scored candidates, normalized expert/top-k facts, and STRUCTURE manifests.
+- Strict serializable probe plans with deterministic target resolution and a
+  torch-free transactional hook lifecycle manager.
 - Model-free test harness for the foundation and schemas.
-- PyTorch, Transformers, and checkpoint/GPU validation explicitly deferred to
-  the final VM phase.
+- Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
+  to the final VM phase.
 - No model files are downloaded by the repository tests or setup.
 
 Check the [model-validation ledger](docs/model-validation-ledger.md) before

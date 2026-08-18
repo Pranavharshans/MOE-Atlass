@@ -71,7 +71,9 @@ are evidence tiers, not semantic expert names.
   either input part to avoid ambiguous keys.
 - `make_component_key()` produces a SHA-256 digest over the semantic identity
   tuple, independent of Python's randomized hash seed or local filesystem.
-  `ComponentManifest` recomputes that digest and rejects a mismatched key.
+  `parse_component_key()` validates the canonical
+  `component:<64 lowercase hex>` form, and `ComponentManifest` recomputes that digest
+  and rejects a mismatched key.
 - `make_config_hash()` hashes canonical JSON with sorted keys and returns a
   `sha256:<hex>` token.
 - Device maps, tensor shapes, warnings, and provenance metadata are JSON

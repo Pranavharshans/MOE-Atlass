@@ -11,6 +11,7 @@ from typing import Any
 
 _WINDOWS_ABSOLUTE = re.compile(r"^[A-Za-z]:/")
 _URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+_COMPONENT_KEY = re.compile(r"^component:([0-9a-f]{64})$")
 
 
 def canonical_identifier(value: str, *, field_name: str = "identifier") -> str:
@@ -155,3 +156,20 @@ def make_component_key(
         "module_path": stable_module_path,
     }
     return f"component:{stable_digest(payload)}"
+
+
+def parse_component_key(component_key: str) -> str:
+    """Validate and return the digest from a canonical component key.
+
+    Component keys are intentionally opaque, lowercase SHA-256 identities.
+    Requiring the complete ``component:<64 lowercase hex>`` shape prevents a
+    probe target from carrying an ambiguous human label that cannot be linked
+    back to a canonical component manifest.
+    """
+
+    if not isinstance(component_key, str):
+        raise TypeError(f"component_key must be a string, got {type(component_key).__name__}")
+    match = _COMPONENT_KEY.fullmatch(component_key)
+    if match is None:
+        raise ValueError("component_key must use the canonical component:<64 lowercase hex> form")
+    return match.group(1)

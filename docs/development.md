@@ -51,6 +51,12 @@ The discovery scanner is intentionally a dry-run-free boundary. Do not add
 hooks, adapters, forward calls, or a checkpoint loader to it; those belong to
 the later runtime features and require separate validation evidence.
 
+Probe plans and the passive hook manager are the next boundary. Keep plans
+JSON-serializable and keep callbacks outside the plan object. Hook tests must
+use the standard-library fixture for lifecycle behavior; real PyTorch
+signature, equivalence, and GPU checks remain deferred to MV-04 and the final
+VM.
+
 ## Packaging notes
 
 `pyproject.toml` uses a `src/` layout and exposes the `moeatlas` console
