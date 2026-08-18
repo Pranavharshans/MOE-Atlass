@@ -83,5 +83,17 @@ are evidence tiers, not semantic expert names.
 - Adapter provenance is all-or-nothing: `adapter` and `adapter_version` must
   either both be present or both be absent.
 
+## Static adapter manifests
+
+`moeatlas.adapters` provides three additional versioned manifests:
+`AdapterDescriptor`, `AdapterDetection`, and `AdapterInspection`. A descriptor
+contains only portable identity/compatibility text; detection is a strict
+finite score with deterministic evidence and warnings; inspection binds both
+to a validated `DiscoveryReport`. Detection is evidence strength, not a
+probability or certification. Inspection reports are restricted to exactly
+`[STRUCTURE]` components with `CaptureProvenance(source=STATIC_STRUCTURE,
+verified=False)` and the descriptor name/version. No adapter registry or
+entry-point metadata is part of the schema.
+
 The `core` package intentionally contains no PyTorch, Transformers, or
 safetensors imports. Model-dependent discovery and capture are later features.

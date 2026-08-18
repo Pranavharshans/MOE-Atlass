@@ -43,7 +43,11 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
   remains deferred.
 - Cleanup-safe `moeatlas.runtime.load_and_scan()` composition for resolved
   HF/local plans, returning the existing static `[STRUCTURE]` discovery report;
-  it does not add CLI loading or real-model certification.
+  plan-file CLI scanning uses this same bridge; real-model certification
+  remains deferred.
+- Explicit caller-supplied static semantic-adapter contracts with strict
+  descriptor/detection/inspection manifests; adapters remain STRUCTURE-only,
+  unregistered, and model-runtime-independent.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

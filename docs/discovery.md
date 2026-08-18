@@ -2,7 +2,7 @@
 
 `moeatlas.discovery.scan(model, model_manifest)` produces a strict,
 versioned `DiscoveryReport` from a PyTorch-compatible object. The scanner is
-runtime-independent: it uses only a callable `named_modules()` method, and
+runtime-independent dry-run analysis: it uses only a callable `named_modules()` method, and
 optionally `named_parameters()` plus a `config` mapping/object. It never
 imports PyTorch, calls `forward`, registers hooks, reads tensor values, or
 mutates the inspected object.
@@ -79,9 +79,11 @@ the reported top-k, or that an expert is specialized. Those claims belong in
 the deferred model-validation ledger (especially MV-02 and later runtime
 checks).
 
-The Phase 0 CLI exposes this scanner only through the explicit
-`fixture:synthetic` source. It does not turn a local path or model ID into a
-loader request. The next runtime features may add dry-run inference, passive
-hooks, and architecture adapters. They must consume this report as an input,
-preserve its provenance, and downgrade capabilities when semantic behavior is
-not verified. Real model loading remains deferred to Phase 1 and MV-01/MV-02.
+The positional `MODEL` form of the Phase 0 CLI accepts only the explicit
+`fixture:synthetic` source; it does not turn a local path or model ID into a
+loader request. The separate `--loading-plan PLAN.json` form accepts one
+validated, already-resolved Hugging Face or local `LoadingPlan` and passes it
+through the runtime bridge. Static semantic adapters may consume this report
+as an input, but must preserve its provenance and `[STRUCTURE]` capability;
+they cannot claim runtime behavior or elevate a component. Real checkpoint
+certification remains deferred to Phase 1 and MV-01/MV-02.

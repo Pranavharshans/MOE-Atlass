@@ -48,14 +48,17 @@ then run them only in the final VM phase when the user provisions that
 environment.
 
 The discovery scanner is intentionally a dry-run-free boundary. Do not add
-hooks, adapters, forward calls, or a checkpoint loader to it; those belong to
-the later runtime features and require separate validation evidence.
+hooks, forward calls, or a checkpoint loader to it. Static semantic adapters
+may consume its report through the separate `moeatlas.adapters` protocol, but
+they must preserve `[STRUCTURE]` capability and cannot perform runtime model
+actions. Runtime capture and architecture certification require separate
+validation evidence.
 
-Probe plans and the passive hook manager are the next boundary. Keep plans
-JSON-serializable and keep callbacks outside the plan object. Hook tests must
-use the standard-library fixture for lifecycle behavior; real PyTorch
+Probe plans and the passive hook manager are shipped boundaries. Keep plans
+JSON-serializable and callbacks outside the plan object. Their model-free
+tests use the standard-library fixture for lifecycle behavior; real PyTorch
 signature, equivalence, and GPU checks remain deferred to MV-04 and the final
-VM.
+VM. Future runtime work must preserve the same explicit boundaries.
 
 ## Packaging notes
 

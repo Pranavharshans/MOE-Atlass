@@ -22,6 +22,11 @@ strict plan parsing, source/resolution preflight, unchanged delegation, and
 publication safety only; it does not resolve or certify a real checkpoint and
 does not change the deferred MV-01/MV-02 status.
 
+Feature 12 adds the caller-supplied static semantic-adapter protocol. Its
+model-free tests verify strict manifests, identity binding, STRUCTURE-only
+provenance, safe error boundaries, and no-runtime-action behavior only; it does
+not certify any architecture or change the deferred MV-01/MV-02 status.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

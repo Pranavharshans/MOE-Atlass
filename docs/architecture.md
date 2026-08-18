@@ -26,7 +26,7 @@ Planned internal areas:
 | `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
 | `store` | run metadata, Parquet events, and DuckDB queries | Useful alpha |
 | `server` | local FastAPI API and run progress | Useful alpha |
-| `adapters` | architecture-specific semantic decoding and capabilities | Useful alpha |
+| `adapters` | explicit static semantic protocol and STRUCTURE-only inspection | Useful alpha |
 | `cli` | headless commands and diagnostics | Foundation / all phases |
 
 The foundation `cli` and diagnostics modules, the `core` capability/identity/
@@ -84,10 +84,13 @@ The foundation supports:
 - scanning an explicitly supplied, already-resolved HF/local `LoadingPlan`
   JSON file through that same runtime bridge without reconstructing or mutating
   the plan;
+- inspecting one caller-supplied static semantic adapter with strict,
+  versioned descriptor/detection/report contracts, without a registry or
+  optional model imports;
 - executing model-free tests.
 
-The optional loader does not certify a checkpoint, perform inference, trace
+The optional loader and static adapter seam do not certify a checkpoint, perform inference, trace
 tokens, store tensors/events, intervene, or claim GPU compatibility. It is a
 small execution seam for a later VM: real network/cache behavior, native
-PyTorch fidelity, CUDA/MPS, quantization, and adapter semantics remain
+PyTorch fidelity, CUDA/MPS, quantization, runtime adapter semantics, and architecture certification remain
 explicit deferred validation items.

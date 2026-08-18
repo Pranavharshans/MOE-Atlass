@@ -21,6 +21,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "cli.md",
             ROOT / "docs" / "loading.md",
             ROOT / "docs" / "runtime.md",
+            ROOT / "docs" / "adapters.md",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -44,7 +45,16 @@ class ProjectFilesTests(unittest.TestCase):
 
     def test_discovery_docs_describe_static_boundary(self) -> None:
         discovery = (ROOT / "docs" / "discovery.md").read_text()
-        for term in ("named_modules()", "confidence", "STRUCTURE", "dry-run", "MV-02"):
+        for term in (
+            "named_modules()",
+            "confidence",
+            "STRUCTURE",
+            "dry-run",
+            "MV-02",
+            "fixture:synthetic",
+            "--loading-plan",
+            "Hugging Face",
+        ):
             with self.subTest(term=term):
                 self.assertIn(term, discovery)
 
@@ -119,6 +129,20 @@ class ProjectFilesTests(unittest.TestCase):
         ):
             with self.subTest(term=term):
                 self.assertIn(term, runtime)
+
+    def test_adapter_docs_describe_static_structure_boundary(self) -> None:
+        adapters = (ROOT / "docs" / "adapters.md").read_text()
+        for term in (
+            "AdapterDescriptor",
+            "AdapterDetection",
+            "AdapterInspection",
+            "STRUCTURE",
+            "STATIC_STRUCTURE",
+            "KeyboardInterrupt",
+            "SystemExit",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, adapters)
 
 
 if __name__ == "__main__":
