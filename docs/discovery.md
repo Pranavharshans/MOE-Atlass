@@ -74,8 +74,9 @@ the reported top-k, or that an expert is specialized. Those claims belong in
 the deferred model-validation ledger (especially MV-02 and later runtime
 checks).
 
-The next runtime features may add dry-run inference, passive hooks, and
-architecture adapters. They must consume this report as an input, preserve
-its provenance, and downgrade capabilities when semantic behavior is not
-verified. This feature intentionally does not implement those operations or a
-CLI scan command.
+The Phase 0 CLI exposes this scanner only through the explicit
+`fixture:synthetic` source. It does not turn a local path or model ID into a
+loader request. The next runtime features may add dry-run inference, passive
+hooks, and architecture adapters. They must consume this report as an input,
+preserve its provenance, and downgrade capabilities when semantic behavior is
+not verified. Real model loading remains deferred to Phase 1 and MV-01/MV-02.

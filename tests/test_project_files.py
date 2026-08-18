@@ -18,6 +18,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "discovery.md",
             ROOT / "docs" / "probe.md",
             ROOT / "docs" / "events.md",
+            ROOT / "docs" / "cli.md",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -64,6 +65,19 @@ class ProjectFilesTests(unittest.TestCase):
         ):
             with self.subTest(term=term):
                 self.assertIn(term, events)
+
+    def test_cli_docs_describe_phase_zero_scan_boundary(self) -> None:
+        cli = (ROOT / "docs" / "cli.md").read_text()
+        for term in (
+            "fixture:synthetic",
+            "DiscoveryReport",
+            "--force",
+            "atomically",
+            "MV-01/MV-02",
+            "does not inspect local paths",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, cli)
 
 
 if __name__ == "__main__":

@@ -65,6 +65,8 @@ The foundation supports:
 - validating versioned model/component manifests and deterministic identities;
 - statically traversing a duck-typed module tree into a STRUCTURE-only
   discovery report with confidence and warnings;
+- emitting that report through the explicit model-free
+  `scan fixture:synthetic` CLI source;
 - resolving strict probe plans and managing torch-free synthetic hook
   lifecycles with transactional cleanup;
 - validating normalized, capability-aware token/routing/expert events without

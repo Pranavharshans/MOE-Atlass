@@ -1,5 +1,5 @@
-"""Small standard-library fixtures used by model-free MoEAtlas tests."""
+"""Compatibility exports for the package-owned model-free fixtures."""
 
-from .synthetic_moe import SyntheticMoE, SyntheticParameter
+from moeatlas.fixtures import SyntheticConfig, SyntheticMoE, SyntheticParameter
 
-__all__ = ["SyntheticMoE", "SyntheticParameter"]
+__all__ = ["SyntheticConfig", "SyntheticMoE", "SyntheticParameter"]

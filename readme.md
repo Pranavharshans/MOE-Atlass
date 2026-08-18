@@ -27,6 +27,9 @@ remain planned phases rather than advertised as complete features.
   torch-free transactional hook lifecycle manager.
 - Versioned normalized token, routing, and expert event contracts with
   portable identities and capability-driven partial evidence.
+- Phase 0 `moeatlas scan fixture:synthetic` command producing a complete,
+  deterministic STRUCTURE discovery report; real model loading remains
+  deferred.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
@@ -55,6 +58,16 @@ Run the model-free tests without downloading a checkpoint:
 uv run --locked pytest -q
 uv run --locked ruff check src tests
 ```
+
+Run the deterministic Phase 0 semantic scan:
+
+```bash
+uv run --locked moeatlas scan fixture:synthetic
+uv run --locked moeatlas scan fixture:synthetic --output report.json
+```
+
+Only `fixture:synthetic` is supported in Phase 0. HF/local loading, cache
+inspection, and checkpoint downloads remain deferred to the final VM workflow.
 
 The standard-library test discovery command is also available inside the
 locked environment:
