@@ -20,6 +20,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "events.md",
             ROOT / "docs" / "cli.md",
             ROOT / "docs" / "loading.md",
+            ROOT / "docs" / "runtime.md",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -94,6 +95,20 @@ class ProjectFilesTests(unittest.TestCase):
         ):
             with self.subTest(term=term):
                 self.assertIn(term, loading)
+
+    def test_runtime_docs_describe_owned_execution_boundary(self) -> None:
+        runtime = (ROOT / "docs" / "runtime.md").read_text()
+        for term in (
+            "RuntimeArtifacts",
+            "InstanceSource",
+            "CustomLoaderSource",
+            "execute_user_code=True",
+            "PendingRuntimeCleanup",
+            "named_modules()",
+            "MV-01",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, runtime)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,9 @@ remain planned phases rather than advertised as complete features.
 - Strict model-source and loading-plan schemas covering HF/local/instance/
   custom intent, offline defaults, policy warnings, and external revision
   evidence without performing loading.
+- Validated runtime execution for already-instantiated `InstanceSource` and
+  explicitly opted-in `CustomLoaderSource` artifacts, including observed
+  manifests and retryable cleanup ownership; HF/local loading remains deferred.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

@@ -22,7 +22,7 @@ Planned internal areas:
 | `probe` | serializable plans, passive hooks, bounded policy, cleanup | Probe core |
 | `events` | versioned token, routing, and expert evidence contracts | Probe core |
 | `loading` | source requests, load policy, plan identity, resolution evidence | Probe core |
-| `runtime` | prompts, datasets, generation, and interventions | Useful alpha / causal beta |
+| `runtime` | validated instance/custom execution and manifest-ready results | Useful alpha / causal beta |
 | `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
 | `store` | run metadata, Parquet events, and DuckDB queries | Useful alpha |
 | `server` | local FastAPI API and run progress | Useful alpha |
@@ -73,9 +73,11 @@ The foundation supports:
 - validating normalized, capability-aware token/routing/expert events without
   capturing tensors or writing storage;
 - validating model-source/loading intent without loading or resolving a model;
+- validating already-instantiated instance/custom runtime artifacts into a
+  manifest-ready result with explicit cleanup ownership;
 - executing model-free tests.
 
-The foundation does not support loading a checkpoint, runtime inference,
+The foundation does not support HF/local checkpoint loading, runtime inference,
 tracing tokens, tensor/event storage, interventions, or claiming GPU
 compatibility. The probe manager only exercises duck-typed synthetic hook
 surfaces; real PyTorch fidelity remains an explicit deferred validation item.
