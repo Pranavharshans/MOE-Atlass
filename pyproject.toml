@@ -33,8 +33,12 @@ dependencies = [
 # Kept optional so importing and testing the foundation never pulls a model
 # runtime or a large accelerator stack into a contributor's environment.
 dev = [
+    "duckdb>=1.4.5,<1.5",
     "pytest>=8.3,<9",
     "ruff>=0.12,<0.13",
+]
+store = [
+    "duckdb>=1.4.5,<1.5",
 ]
 model = [
     "accelerate>=1.0",

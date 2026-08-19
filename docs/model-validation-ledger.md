@@ -85,6 +85,16 @@ failures. It is not tokenization, prompt/generation, dataset, storage, CLI,
 server, or UI infrastructure; no model files are downloaded and MV-03 through
 MV-08 remain `deferred`. This feature does not change MV-01/MV-02 status.
 
+Feature 19 adds the experimental bounded routing-shard prerequisite. Its
+model-free DuckDB tests verify exact preflight, content-addressed fixed-path
+layout, redaction, ordered nullable ZSTD Parquet schemas, exact row identities
+and values, manifest/checksum and byte-tamper rejection, symlink/mode safety,
+reopen/list validation, idempotence, conflict rejection, and safe staged
+failure behavior. It is not a full workspace/catalog, persistent database,
+metadata synthesizer, migration, compaction, query, layer partition, export,
+CLI, server, UI, heatmap, prompt, expert metric, or performance subsystem.
+ST-01 through ST-04 remain deferred; this feature does not change MV-01/MV-08.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |
@@ -97,6 +107,15 @@ MV-08 remain `deferred`. This feature does not change MV-01/MV-02 status.
 | MV-06 | Run CUDA validation on the provisioned VM | deferred | GPU model/driver/CUDA, command, logs, artifact path |
 | MV-07 | Validate a fused/quantized or otherwise limited execution path | deferred | backend/quantization settings, capability downgrade, trace evidence |
 | MV-08 | Re-run the complete model-dependent suite after packaging | deferred | installed wheel/version, test report, model cache location, result |
+
+## Storage checks
+
+| ID | Check | Current status | Required evidence before completion |
+| --- | --- | --- | --- |
+| ST-01 | Validate one complete legacy and packed routing shard on the target VM | deferred | exact command, DuckDB version, manifest and Parquet artifacts |
+| ST-02 | Validate reopen/list and idempotent/conflict behavior on the target filesystem | deferred | commands, corruption/recovery cases, artifact paths |
+| ST-03 | Validate durability, permissions, and crash/rename-fsync recovery | deferred | filesystem, failure injection, modes, fsync/recovery logs |
+| ST-04 | Validate scale, workspace/catalog integration, and any query surface | deferred | separately approved scope, benchmark, schema, and compatibility evidence |
 
 ## Final VM execution record
 

@@ -74,6 +74,12 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
   pre-hook complete-event budgeting, exactly-once model execution, and a
   frozen output/event result; tokenization, generation, storage, and UI remain
   outside this boundary. It performs one model forward per invocation.
+- `EXPERIMENTAL` bounded routing-shard persistence for complete Feature 18
+  results: content-addressed fixed-path manifests plus ZSTD token/routing
+  Parquet, explicit token-text redaction, sequential idempotence, conflict
+  checks, and non-mutating reopen/list validation. This is a shard prerequisite,
+  not a full workspace/catalog, query, CLI, server, UI, heatmap, prompt, or
+  expert-metric subsystem; see [storage](docs/storage.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

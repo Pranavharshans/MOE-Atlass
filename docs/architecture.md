@@ -24,7 +24,7 @@ Planned internal areas:
 | `loading` | source requests, load policy, plan identity, resolution evidence | Probe core |
 | `runtime` | validated instance/custom execution plus lazy HF/local loading | Useful alpha / causal beta |
 | `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
-| `store` | run metadata, Parquet events, and DuckDB queries | Useful alpha |
+| `store` | bounded content-addressed routing shards (Feature 19) | Experimental prerequisite |
 | `server` | local FastAPI API and run progress | Useful alpha |
 | `adapters` | explicit static semantic protocol, Mixtral/Qwen3-MoE structure adapters, and STRUCTURE-only inspection | Useful alpha |
 | `cli` | headless commands and diagnostics | Foundation / all phases |
@@ -130,3 +130,12 @@ this seam. After any initial enter, body, or exit failure it makes exactly one
 internal `session.close()` retry, re-raises the exact primary exception, and
 leaves persistent cleanup as a caller-owned `PendingRuntimeCleanup` handle;
 capability remains `EXPERIMENTAL` and MV-03 through MV-08 stay deferred.
+
+Feature 19 adds only a bounded routing-shard prerequisite above that result:
+DuckDB writes fixed ZSTD Parquet rows and a strict manifest into one
+content-addressed shard, with sequential idempotence and reopen validation.
+It is not a full workspace/catalog, persistent database, migration, compaction,
+query, layer partition, DataFrame/export, CLI, server, UI, heatmap, prompt,
+expert-metric, or performance subsystem. Storage capability remains
+experimental and ST-01 through ST-04 are deferred; MV-01 through MV-08 remain
+unchanged.

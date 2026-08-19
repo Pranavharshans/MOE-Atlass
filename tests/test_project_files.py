@@ -22,6 +22,10 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "loading.md",
             ROOT / "docs" / "runtime.md",
             ROOT / "docs" / "adapters.md",
+            ROOT / "docs" / "storage.md",
+            ROOT / "src" / "moeatlas" / "store" / "__init__.py",
+            ROOT / "src" / "moeatlas" / "store" / "routing_shards.py",
+            ROOT / "tests" / "test_store_routing_shards.py",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -434,6 +438,61 @@ class ProjectFilesTests(unittest.TestCase):
             self.assertIn(term, source)
             self.assertIn(term, exports)
         self.assertTrue((ROOT / "tests" / "test_runtime_routing_forward.py").is_file())
+
+    def test_routing_shard_storage_docs_and_surface_are_present(self) -> None:
+        storage = (ROOT / "docs" / "storage.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                storage,
+                (
+                    "append_mixtral_routing_shard",
+                    "list_mixtral_routing_shards",
+                    "Feature 18",
+                    "tokens.parquet",
+                    "routing.parquet",
+                    "ZSTD",
+                    "content-addressed",
+                    "redaction",
+                    "manifest_type",
+                    "store_schema_version",
+                    "writer_name",
+                    "sha256:<64hex>",
+                    "opaque Feature 18 output",
+                    "event_index",
+                    "token_text",
+                    "token_text_stored",
+                    "layer_key",
+                    "router_logit",
+                    "probability",
+                    "weight",
+                    "selected",
+                    "nullable",
+                    "not a full workspace/catalog",
+                    "dependency",
+                    "reopen",
+                ),
+            ),
+            (architecture, ("Feature 19", "ST-01", "ST-04", "MV-01 through MV-08")),
+            (ledger, ("Feature 19", "ST-01", "ST-04", "does not change MV-01/MV-08")),
+            (readme, ("routing-shard", "storage", "workspace/catalog")),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "store" / "routing_shards.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "store" / "__init__.py").read_text()
+        for term in (
+            "STORE_SCHEMA_VERSION",
+            "RoutingShardError",
+            "RoutingShardReceipt",
+            "append_mixtral_routing_shard",
+            "list_mixtral_routing_shards",
+        ):
+            self.assertIn(term, source)
+            self.assertIn(term, exports)
 
 
 if __name__ == "__main__":
