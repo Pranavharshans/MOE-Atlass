@@ -25,6 +25,7 @@ from .contracts import (
     RuntimeValidationError,
 )
 from .loader import load_custom, load_instance
+from .mixtral_routing import MixtralRoutingDecoder
 from .model_loader import load_huggingface, load_local
 from .routing import RoutingCaptureError, RoutingCaptureSession, RoutingCaptureTarget
 from .scan import load_and_scan
@@ -38,6 +39,7 @@ __all__ = [
     "ModelLoadError",
     "ModelObservationError",
     "ModelRuntimeDependencyError",
+    "MixtralRoutingDecoder",
     "PendingRuntimeCleanup",
     "RuntimeArtifacts",
     "RuntimeCleanupError",

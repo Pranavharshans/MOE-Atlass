@@ -62,6 +62,19 @@ reducing payloads remain caller responsibilities. Native routing equivalence,
 passive output fidelity, and overhead remain deferred to MV-03, MV-04, and
 MV-05; this feature does not change MV-01/MV-02 status.
 
+Feature 17 adds the experimental `MixtralRoutingDecoder` as an explicit
+one-forward caller decoder over fresh `AdapterInspection` and `TokenEvent`
+values. Model-free tests cover exact Mixtral descriptor/layout binding,
+legacy-indexed logits, packed logits/scores/indices, strict tensor-like
+conversion order, deterministic top-k/tie rejection, score
+softmax/top-k/renormalization cross-checks, context identity, single-use
+router invocation, and integration through `RoutingCaptureSession` for both
+layouts. The decoder does not load a model, download/cache artifacts, infer
+tokens, invoke a tokenizer/runner/generation path, retain tensors, write
+storage, or claim routing certification. No model files are downloaded; MV-03
+through MV-08 remain `deferred`, and this feature does not change MV-01/MV-02
+status.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

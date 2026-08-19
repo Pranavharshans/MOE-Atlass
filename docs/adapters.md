@@ -156,3 +156,30 @@ The tagged legacy and pinned current implementations can expose different
 router forward-payload conventions; this compiler assumes no tensor/tuple
 decoder and treats the plan as intent only. Native routing payload
 equivalence and capture remain deferred to MV-03.
+
+## Mixtral routing evidence boundary
+
+`MixtralRoutingDecoder` is a separate, explicit runtime decoder for the exact
+`huggingface-mixtral-static` descriptor. It consumes one fresh
+`AdapterInspection` and an exact non-empty tuple of caller-supplied
+`TokenEvent` rows. The tuple order is authoritative for the router's token
+rows; no tokenizer, generation runner, padding inference, storage, or model
+loading is introduced. A decoder is single-use per router path so a one-forward
+caller cannot silently combine payloads from separate executions.
+
+Router capture metadata must consistently identify either the
+`legacy_indexed` or `packed` layout. Legacy `[tokens, experts]` logits produce
+only observed selected logits, with no inferred probability or weight. Packed
+`(logits, scores, indices)` evidence requires native integer indices and native
+finite weights to agree with deterministic softmax/top-k renormalization.
+Ambiguous selected/cutoff ties, shape mismatches, non-finite values, and
+tampered router/layer/expert bindings are rejected. Conversion is strictly
+`detach -> cpu -> float -> tolist` for logits/scores and `detach -> cpu ->
+tolist` for indices, with no tensor-runtime or NumPy import and no raw tensor
+retention.
+
+This decoder publishes `RoutingEvent` values with an `EXPERIMENTAL` evidence
+boundary only; it does not elevate static components to `FULL` or claim
+routing certification. Native equivalence, passive output fidelity, routing
+overhead, GPU behavior, fused/quantized paths, and packaging revalidation stay
+deferred to MV-03 through MV-08.

@@ -151,3 +151,38 @@ and [Qwen3-MoE
 source](https://github.com/huggingface/transformers/blob/64f30450dbfd1d02f610ad7080535cb906637fb9/src/transformers/models/qwen3_moe/modeling_qwen3_moe.py).
 Routing payload equivalence, passive output fidelity, overhead, and GPU
 behavior remain deferred to MV-03, MV-04, and MV-05.
+
+## Mixtral routing decoder (experimental)
+
+`MixtralRoutingDecoder(inspection, token_events)` is the explicit decoder for
+one already validated Mixtral inspection. It is a narrow one-forward caller
+boundary: each `RoutingCaptureTarget` is bound to the exact router key/path,
+same-layer MoE component, contiguous ordered experts, expert count, and
+routed top-k. A decoder instance accepts one successful invocation per router
+path. The supplied `TokenEvent` tuple is the authoritative row order; the
+decoder does not infer tokens, drop padding, call a tokenizer, run a
+generation/runner, or retain hook tensors.
+
+The inspection is freshly revalidated and must carry the exact
+`huggingface-mixtral-static` descriptor (`1.0`, family `mixtral`). Router
+capture provenance must agree on one layout: `legacy_indexed` or `packed`.
+Legacy evidence is an exact `[tokens, experts]` router-logit tensor-like
+value. Deterministic top-k identifies selected expert/rank pairs, but only the
+observed selected `router_logit` is emitted; probability and weight are not
+inferred. Selected/cutoff ties are rejected. Packed evidence is the exact
+`(logits, scores, indices)` tuple with `[tokens, experts]`, `[tokens, top-k]`,
+and `[tokens, top-k]` shapes. Native integer indices and finite weights are
+checked against deterministic softmax/top-k renormalization before observed
+selected logits and native weights are emitted.
+
+Tensor-like conversion is deliberately fixed to
+`detach() -> cpu() -> float() -> tolist()` for logits/scores and
+`detach() -> cpu() -> tolist()` for integer indices. The decoder imports no
+tensor runtime, NumPy, or optional dependency, and retains only fresh
+`RoutingEvent` values. It is an experimental observation helper, not a
+tokenizer, runner, generation engine, storage sink, UI, or routing
+certification mechanism. Its capability boundary is `EXPERIMENTAL`.
+It is not a tokenizer; it is not a runner, and it is not a generation API.
+Model-dependent validation remains deferred to
+MV-03, MV-04, MV-05, MV-06, MV-07, and MV-08; this feature does not certify a
+checkpoint or change the ledger's deferred status.

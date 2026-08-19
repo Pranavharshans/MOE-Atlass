@@ -105,3 +105,14 @@ tokens, store tensors/events, intervene, or claim GPU compatibility. It is a
 small execution seam for a later VM: real network/cache behavior, native
 PyTorch fidelity, CUDA/MPS, quantization, runtime adapter semantics, and architecture certification remain
 explicit deferred validation items.
+
+The experimental Mixtral routing decoder remains inside this same runtime
+boundary. `MixtralRoutingDecoder` binds one caller-provided token-row sequence
+to exact router paths and same-layer contiguous expert identities, then emits
+only validated `RoutingEvent` evidence. It is one-forward, one-successful-
+invocation-per-router, and has no tokenizer, generation runner, storage sink,
+server, UI, auto-selection registry, or model download path. Legacy and packed
+payloads are distinct evidence contracts; neither changes static component
+capabilities or creates a routing certification claim. Native equivalence,
+passive output fidelity, overhead, fused/quantized behavior, GPU execution,
+and packaging checks remain deferred to MV-03 through MV-08.

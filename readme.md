@@ -65,6 +65,10 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
   callers decode opaque synchronous hook payloads into retained, identity-
   bound `RoutingEvent` values while the session enforces quota and lifecycle,
   without a built-in tensor decoder, storage sink, or routing certification.
+- Experimental `MixtralRoutingDecoder` support for one-forward caller binding
+  of exact `legacy_indexed` logits or packed `(logits, scores, indices)`
+  payloads into observed selected `RoutingEvent` values; it performs no token
+  inference, tensor retention, model loading, or routing certification.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
@@ -72,6 +76,15 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
 
 Check the [model-validation ledger](docs/model-validation-ledger.md) before
 interpreting a local test result as model compatibility evidence.
+
+The experimental `MixtralRoutingDecoder` consumes an exact fresh
+`AdapterInspection` and non-empty ordered `TokenEvent` tuple. It binds each
+router's key/path, same-layer contiguous experts, count, and top-k, and allows
+one successful invocation per router path. Legacy payloads emit observed
+selected logits only; packed payloads additionally emit native weights after
+strict softmax/top-k/renormalization checks. Its evidence remains
+`EXPERIMENTAL`; native equivalence and runtime/GPU validation stay deferred to
+MV-03 through MV-08.
 
 ## Quick start
 

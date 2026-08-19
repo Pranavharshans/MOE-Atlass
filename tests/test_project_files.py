@@ -322,6 +322,56 @@ class ProjectFilesTests(unittest.TestCase):
             self.assertIn(term, exports)
         self.assertTrue((ROOT / "tests" / "test_adapter_probe_planning.py").is_file())
 
+    def test_mixtral_routing_decoder_docs_and_exports_are_present(self) -> None:
+        runtime = (ROOT / "docs" / "runtime.md").read_text()
+        adapters = (ROOT / "docs" / "adapters.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                runtime,
+                (
+                    "MixtralRoutingDecoder",
+                    "one-forward caller",
+                    "legacy_indexed",
+                    "packed",
+                    "TokenEvent",
+                    "not a tokenizer",
+                    "not a runner",
+                    "EXPERIMENTAL",
+                    "MV-03",
+                    "MV-08",
+                ),
+            ),
+            (
+                adapters,
+                (
+                    "MixtralRoutingDecoder",
+                    "one-forward",
+                    "legacy_indexed",
+                    "packed",
+                    "softmax/top-k renormalization",
+                    "EXPERIMENTAL",
+                    "routing certification",
+                    "MV-03",
+                    "MV-08",
+                ),
+            ),
+            (architecture, ("MixtralRoutingDecoder", "one-forward", "MV-03", "MV-08")),
+            (ledger, ("Feature 17", "MixtralRoutingDecoder", "MV-03", "MV-08")),
+            (readme, ("MixtralRoutingDecoder", "EXPERIMENTAL", "MV-03", "MV-08")),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "runtime" / "mixtral_routing.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "runtime" / "__init__.py").read_text()
+        for term in ("MixtralRoutingDecoder", "RoutingCaptureTarget", "TokenEvent", "RoutingEvent"):
+            self.assertIn(term, source)
+        self.assertIn("MixtralRoutingDecoder", exports)
+        self.assertTrue((ROOT / "tests" / "test_mixtral_routing_decoder.py").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()
