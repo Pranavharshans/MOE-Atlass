@@ -204,6 +204,16 @@ PRD. The intended progression is:
 4. research and causal workflows;
 5. certified compatibility, plugin SDK, packaging, and benchmarks.
 
+MoEAtlas will not ship as a Mixtral-only tool. Mixtral remains the reference
+regression family, while current Qwen MoE, DeepSeek MoE, and MiniMax MoE are v1
+end-to-end compatibility requirements. Unknown architectures retain a generic
+static-discovery fallback. Family tensor layouts stay inside adapters and
+decoders; normalized events, storage, analysis, APIs, and UI stay model-neutral.
+No family is called certified until an exact immutable revision passes loading,
+inspection, routing capture/decoding, persistence, and visualization on the
+final GPU VM. The compatibility matrix is reviewed against official revisions
+again at release time rather than relying on a moving “latest” label.
+
 ## Evidence and validation policy
 
 MoEAtlas separates routing association, internal behavior, causal effect, and
@@ -218,3 +228,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and
 [docs/development.md](docs/development.md) for the model-free test contract,
 feature workflow, and validation boundary. The project is licensed under the
 [Apache License 2.0](LICENSE); model and dataset licenses remain external.
+
+Runtime also provides an EXPERIMENTAL bounded plain-text Mixtral prompt-prefill
+wrapper. It borrows a validated `LoadedModel`, enforces caller budgets, and
+delegates exactly one passive routing forward; tokenizer and checkpoint fidelity
+remain deferred to the final VM.
+
+The intended model-free composition is explicit and manual: call prefill once,
+append its returned `MixtralRoutingForwardResult` with
+`append_mixtral_routing_shard(...)`, rebuild the read-only run inventory with
+`list_mixtral_routing_runs(...)`, aggregate a selected run with
+`aggregate_mixtral_routing_load(...)`, and finally pass that matrix to
+`render_mixtral_routing_load_heatmap(...)`. Prefill does not append, inventory,
+aggregate, render, or expose a server/wire/progress surface on the caller's
+behalf; each later action remains independently bounded and auditable.

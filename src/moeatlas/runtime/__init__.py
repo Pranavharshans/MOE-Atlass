@@ -27,6 +27,7 @@ from .contracts import (
 from .loader import load_custom, load_instance
 from .mixtral_routing import MixtralRoutingDecoder
 from .model_loader import load_huggingface, load_local
+from .prompt_prefill import MixtralPromptPrefillError, run_mixtral_prompt_prefill
 from .routing import RoutingCaptureError, RoutingCaptureSession, RoutingCaptureTarget
 from .routing_forward import MixtralRoutingForwardResult, run_mixtral_routing_forward
 from .scan import load_and_scan
@@ -42,6 +43,7 @@ __all__ = [
     "ModelRuntimeDependencyError",
     "MixtralRoutingDecoder",
     "MixtralRoutingForwardResult",
+    "MixtralPromptPrefillError",
     "PendingRuntimeCleanup",
     "RuntimeArtifacts",
     "RuntimeCleanupError",
@@ -52,6 +54,7 @@ __all__ = [
     "RoutingCaptureSession",
     "RoutingCaptureTarget",
     "run_mixtral_routing_forward",
+    "run_mixtral_prompt_prefill",
     "load_custom",
     "load_huggingface",
     "load_and_scan",

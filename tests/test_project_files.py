@@ -35,6 +35,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_analysis_routing_heatmap.py",
             ROOT / "tests" / "test_cli_heatmap.py",
             ROOT / "tests" / "test_cli_routing_runs.py",
+            ROOT / "src" / "moeatlas" / "runtime" / "prompt_prefill.py",
+            ROOT / "tests" / "test_runtime_prompt_prefill.py",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -45,6 +47,56 @@ class ProjectFilesTests(unittest.TestCase):
         self.assertIn("Status: deferred", ledger)
         self.assertIn("No model files are downloaded", ledger)
         self.assertIn("final VM", ledger)
+
+    def test_prompt_prefill_docs_and_surface_are_present(self) -> None:
+        runtime = (ROOT / "docs" / "runtime.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        source = (ROOT / "src" / "moeatlas" / "runtime" / "__init__.py").read_text()
+        for text, terms in (
+            (
+                runtime,
+                (
+                    "run_mixtral_prompt_prefill",
+                    "max_prompt_chars",
+                    "tokenize",
+                    "encoding",
+                    "pending-handle",
+                    "no progress stream",
+                ),
+            ),
+            (
+                architecture,
+                (
+                    "Feature 24",
+                    "server endpoint",
+                    "wire/view-model contract",
+                    "Feature 19 append",
+                ),
+            ),
+            (
+                ledger,
+                (
+                    "Feature 24 prompt prefill",
+                    "Status: deferred",
+                    "115 focused cases",
+                    "Prompts, paths",
+                ),
+            ),
+            (
+                readme,
+                (
+                    "append_mixtral_routing_shard",
+                    "list_mixtral_routing_runs",
+                    "aggregate_mixtral_routing_load",
+                    "render_mixtral_routing_load_heatmap",
+                ),
+            ),
+            (source, ("MixtralPromptPrefillError", "run_mixtral_prompt_prefill")),
+        ):
+            for term in terms:
+                self.assertIn(term, text)
 
     def test_schema_docs_describe_version_and_capability_policy(self) -> None:
         schemas = (ROOT / "docs" / "schemas.md").read_text()

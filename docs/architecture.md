@@ -174,3 +174,33 @@ full reopen validation; a caller chooses the `run_key` later when invoking
 Feature 20/21, and no latest-run or catalog state is owned here. The CLI
 publishes JSON through the existing atomic writer only after the inventory is
 complete, and inventory cleanup remains internal with no partial value.
+
+The EXPERIMENTAL prompt-prefill seam accepts plain text, borrows the caller's
+validated model/tokenizer, and composes exactly one bounded Feature 18 forward;
+it is not a generation, storage, or CLI subsystem. Feature 24 intentionally
+does not introduce a server endpoint, websocket/progress channel, React view,
+or JSON wire/view-model contract: the Python result is the existing Feature 18
+result and callers explicitly choose the later Feature 19 append, Feature 23
+inventory, Feature 20 analysis, and Feature 21 export actions. A future server
+may define a separate versioned wire contract after these local seams are
+validated; keeping that boundary out now prevents prompt/runtime objects from
+leaking into persistence or UI state.
+
+## Multi-family release constitution
+
+MoEAtlas is model-neutral by design; Mixtral is the reference and regression
+implementation, not the product boundary. Family-specific module paths, router
+payloads, tensor layouts, and decoding rules belong only in isolated static
+adapters and runtime decoders. Normalized events, immutable storage, analysis,
+Python/CLI/server APIs, and every visualization must consume shared contracts
+without branching on a model family.
+
+Version 1 release acceptance requires end-to-end evidence for current
+Mistral/Mixtral, current Qwen MoE, DeepSeek MoE, and MiniMax MoE families, plus
+the existing generic static-discovery fallback for unknown architectures. For
+each certified family, the compatibility matrix must name exact immutable model
+and tokenizer revisions and prove loading, structural inspection, routing
+capture/decoding, normalized events, persistence, analysis, and visualization.
+Code-only or fake-model evidence remains EXPERIMENTAL. Certification requires
+real checkpoint and GPU runs on the final VM, followed by a release-time review
+of official upstream revisions; no moving `latest` reference is evidence.

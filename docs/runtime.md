@@ -225,3 +225,83 @@ wrapper is `EXPERIMENTAL` and is not a tokenizer, prompt builder, or generation 
 It is not a dataset pipeline, storage sink, CLI, server, or UI. Model-dependent
 equivalence, output fidelity, overhead, GPU, fused/quantized, and packaging
 validation remain deferred to MV-03 through MV-08; ledger status is unchanged.
+
+### Feature 24: bounded prompt prefill (EXPERIMENTAL)
+
+`run_mixtral_prompt_prefill(loaded, inspection, plan, prompt, *, run_key,
+sequence_id, add_special_tokens, max_prompt_chars, max_tokens, max_events)` performs one plain-text tokenizer call and
+delegates one Feature 18 forward. Strict manifests, plans, identifiers, and
+positive budgets are revalidated before hooks, model execution, or tensor
+materialization. Tokenizer failures use `tokenize`; encoding failures use
+`encoding`. The complete event budget is checked before detach/cpu/tolist.
+`LoadedModel` is borrowed: this seam never closes, enters, mutates, evaluates,
+generates, or otherwise owns the model/tokenizer. Real tokenizer/checkpoint and
+GPU validation remain deferred to the final VM.
+
+Example composition (given an already-open `loaded` handle and its validated
+`inspection` and canonical `plan`; every later stage is a separate caller
+action):
+
+```python
+from pathlib import Path
+
+from moeatlas.analysis import (
+    aggregate_mixtral_routing_load,
+    render_mixtral_routing_load_heatmap,
+)
+from moeatlas.runtime import run_mixtral_prompt_prefill
+from moeatlas.store import append_mixtral_routing_shard, list_mixtral_routing_runs
+
+workspace = Path("./moeatlas-workspace")  # This directory must already exist.
+run_key = "run-1"
+max_matrix_cells = 4096
+expected_events = (
+    256 * len(plan.targets) * inspection.report.facts.routed_top_k
+)
+result = run_mixtral_prompt_prefill(
+    loaded, inspection, plan, "A short prompt", run_key=run_key,
+    sequence_id="sequence-1", add_special_tokens=False,
+    max_prompt_chars=4096, max_tokens=256, max_events=expected_events,
+)
+append_mixtral_routing_shard(workspace, result)  # Token text is redacted by default.
+inventory = list_mixtral_routing_runs(
+    workspace,
+    max_runs=32,
+    max_shards=1024,
+    max_event_rows=1_000_000,
+    max_source_bytes=1_000_000_000,
+)
+assert inventory.runs[0].run_key == run_key
+matrix = aggregate_mixtral_routing_load(
+    workspace,
+    inspection,
+    run_key=run_key,
+    max_routing_rows=1_000_000,
+    max_source_bytes=1_000_000_000,
+    max_matrix_cells=max_matrix_cells,
+)
+html = render_mixtral_routing_load_heatmap(
+    matrix, metric="load_ratios", max_cells=max_matrix_cells
+)
+```
+
+The tokenizer call is exactly `tokenizer(prompt, add_special_tokens=..., padding=False,
+truncation=False, return_attention_mask=True, return_token_type_ids=False,
+return_tensors="pt")`; the returned mapping must contain only `input_ids` and
+`attention_mask`, each shaped `(1, N)`. Callers may then append the resulting
+events to the separate Feature 19 shard workflow or inventory/heatmap workflow;
+prefill itself never stores or publishes them.
+
+The prompt, encoding mapping, tensor-like values, and raw hook payloads are
+transient. Each exact string returned by `convert_ids_to_tokens` is deliberately
+retained as `TokenEvent.token_text`, and every emitted token has phase `PREFILL`.
+Feature 19 redacts those pieces only when the caller uses its default
+`store_token_text=False`; opting in stores them. The result otherwise contains
+only fresh token and routing events plus the caller-owned model output. No path,
+model/tokenizer object, cache, network request, or raw tensor is written or
+retained by this seam. A tokenizer/converter ordinary exception is
+reported with the fixed `tokenize` or `encoding` stage while
+`KeyboardInterrupt`/`SystemExit` and a Feature 18 body exception remain the
+exact primary control-flow exception; cleanup follows Feature 18's retryable
+pending-handle contract. The seam has no progress stream, live subscription,
+server endpoint, wire/view-model schema, generation loop, or UI state.

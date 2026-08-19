@@ -143,6 +143,18 @@ not change MV-01 through MV-08; ST-04 remains deferred.
 
 ## Deferred checks
 
+### Required v1 family compatibility matrix
+
+The final release matrix must contain separate rows for current
+Mistral/Mixtral, current Qwen MoE, DeepSeek MoE, and MiniMax MoE revisions. Each
+row must record immutable model and tokenizer revisions and evidence for load,
+static inspection, routing decode/capture, normalized events, persistence,
+analysis, and visualization. The generic scanner remains the static fallback
+for unknown MoE architectures but is not routing certification. All family rows
+are currently `deferred`; existing Mixtral and Qwen3 model-free fixtures are
+reference evidence only. A release-time official-source review is mandatory
+because upstream “latest” revisions and tensor layouts can change.
+
 | ID | Check | Current status | Required evidence before completion |
 | --- | --- | --- | --- |
 | MV-01 | Load a small, pinned real MoE checkpoint through the first certified adapter | deferred | model ID and immutable revision, license, download source, loader config, output |
@@ -189,3 +201,15 @@ Known limitations:
 Each row becomes `passed`, `failed`, or `blocked` only with the evidence named
 in its final column. If a model cannot expose a semantic signal, record the
 capability tier and limitation instead of treating missing data as a test pass.
+
+## Feature 24 prompt prefill
+
+Status: deferred. The model-free Feature 24 evidence suite currently collects
+115 focused cases and covers strict preflight side-effect gates, one tokenizer
+call, exact mapping/shape/materialization/converter contracts, token-event
+construction, legacy and packed Feature 18 composition, exact control-flow and
+retryable cleanup behavior, non-retention, and AST hardkills. Prompts, paths,
+raw tensors, and model/tokenizer objects are not persisted by the seam. Real
+tokenizer behavior, checkpoint compatibility, GPU routing fidelity, and
+performance still require the final provisioned VM; no model files are
+downloaded here.
