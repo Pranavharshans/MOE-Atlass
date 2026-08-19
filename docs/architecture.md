@@ -23,7 +23,7 @@ Planned internal areas:
 | `events` | versioned token, routing, and expert evidence contracts | Probe core |
 | `loading` | source requests, load policy, plan identity, resolution evidence | Probe core |
 | `runtime` | validated instance/custom execution plus lazy HF/local loading | Useful alpha / causal beta |
-| `analysis` | routing, load, association, behavior, and causal metrics | Research beta |
+| `analysis` | bounded routing-load aggregation and later association/behavior/causal metrics | Research beta |
 | `store` | bounded content-addressed routing shards (Feature 19) | Experimental prerequisite |
 | `server` | local FastAPI API and run progress | Useful alpha |
 | `adapters` | explicit static semantic protocol, Mixtral/Qwen3-MoE structure adapters, and STRUCTURE-only inspection | Useful alpha |
@@ -139,3 +139,16 @@ query, layer partition, DataFrame/export, CLI, server, UI, heatmap, prompt,
 expert-metric, or performance subsystem. Storage capability remains
 experimental and ST-01 through ST-04 are deferred; MV-01 through MV-08 remain
 unchanged.
+
+Feature 20 adds the experimental, read-only routing-load matrix above those
+shards. The caller supplies an exact Mixtral inspection and strict row, source
+byte, and matrix-cell budgets; analysis uses the inspection-published full
+contiguous
+layer/expert universe and never discovers axes from observed rows. It reads
+one run across all committed shards, validates complete token-layer-rank
+coverage, computes count/share/load-ratio matrices, closes its one in-memory
+connection before constructing the value result, and retains no path,
+connection, raw row, inspection, or token text. This is not a catalog,
+persistent analysis database, query API, metric/specialization claim, or
+model/tokenizer/generation path; ST-04 and MV-01 through MV-08 remain
+deferred.

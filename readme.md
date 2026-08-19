@@ -12,8 +12,10 @@ The repository is being implemented feature by feature against the
 [MoEAtlas product requirements](docs/specification/MoEAtlas_PRD_v1.docx).
 The current release contains the repository foundation, canonical manifest
 contracts, static discovery/probe contracts, normalized event schemas, and
-explicit runtime loading seams. Storage, analysis, and the local UI remain
-planned phases; real checkpoint and GPU certification are deliberately deferred.
+explicit runtime loading seams. Experimental bounded routing-shard storage and
+read-only routing-load analysis are available; the local UI, full
+catalog/query surfaces, and real checkpoint/GPU certification remain
+deliberately deferred.
 
 ## Current status
 
@@ -80,6 +82,12 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
   checks, and non-mutating reopen/list validation. This is a shard prerequisite,
   not a full workspace/catalog, query, CLI, server, UI, heatmap, prompt, or
   expert-metric subsystem; see [storage](docs/storage.md).
+- `EXPERIMENTAL` bounded `aggregate_mixtral_routing_load()` analysis over one
+  run's complete Feature 19 shards, using the exact inspection-published
+  Mixtral layer/expert universe and strict source/row/cell budgets. It returns
+  only value-owned count/share/load-ratio matrices; it does not infer axes,
+  write analysis output, expose raw rows, or claim specialization. See
+  [analysis](docs/analysis.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

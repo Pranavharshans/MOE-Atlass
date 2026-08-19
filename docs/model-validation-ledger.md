@@ -95,6 +95,17 @@ metadata synthesizer, migration, compaction, query, layer partition, export,
 CLI, server, UI, heatmap, prompt, expert metric, or performance subsystem.
 ST-01 through ST-04 remain deferred; this feature does not change MV-01/MV-08.
 
+Feature 20 adds the experimental, read-only bounded routing-load matrix over
+complete Feature 19 shards. Model-free tests verify exact inspection-derived
+axes, fresh inspection digest/provenance, strict source/row/cell budgets,
+legacy and packed aggregation, complete token-layer-rank coverage, explicit
+zero-count experts, count/share/load-ratio formulas, safe source/query
+failures, connection cleanup, no raw-row/token-text/result-retention path, and
+no network/cache/model imports. It does not write analysis output, infer an
+expert universe, create a catalog or persistent database, expose raw rows,
+calculate specialization/probability/entropy metrics, or change MV-01 through
+MV-08. ST-04 remains deferred.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

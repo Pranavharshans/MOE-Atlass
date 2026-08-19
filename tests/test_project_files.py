@@ -23,9 +23,13 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "runtime.md",
             ROOT / "docs" / "adapters.md",
             ROOT / "docs" / "storage.md",
+            ROOT / "docs" / "analysis.md",
+            ROOT / "src" / "moeatlas" / "analysis" / "__init__.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "routing_load.py",
             ROOT / "src" / "moeatlas" / "store" / "__init__.py",
             ROOT / "src" / "moeatlas" / "store" / "routing_shards.py",
             ROOT / "tests" / "test_store_routing_shards.py",
+            ROOT / "tests" / "test_analysis_routing_load.py",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -490,6 +494,52 @@ class ProjectFilesTests(unittest.TestCase):
             "RoutingShardReceipt",
             "append_mixtral_routing_shard",
             "list_mixtral_routing_shards",
+        ):
+            self.assertIn(term, source)
+            self.assertIn(term, exports)
+
+    def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
+        analysis = (ROOT / "docs" / "analysis.md").read_text()
+        storage = (ROOT / "docs" / "storage.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis,
+                (
+                    "Feature 20",
+                    "aggregate_mixtral_routing_load",
+                    "MixtralRoutingLoadMatrix",
+                    "legacy_indexed",
+                    "packed",
+                    "max_routing_rows",
+                    "max_source_bytes",
+                    "max_matrix_cells",
+                    "assignment_counts",
+                    "assignment_shares",
+                    "load_ratios",
+                    "zero-count experts",
+                    "not a catalog",
+                    "ST-04",
+                    "MV-01 through MV-08",
+                ),
+            ),
+            (storage, ("Feature 20", "does not alter shard bytes")),
+            (architecture, ("Feature 20", "inspection-published", "ST-04")),
+            (ledger, ("Feature 20", "zero-count experts", "ST-04 remains deferred")),
+            (readme, ("aggregate_mixtral_routing_load", "analysis")),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "analysis" / "routing_load.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "ROUTING_LOAD_SCHEMA_VERSION",
+            "RoutingLoadError",
+            "MixtralRoutingLoadMatrix",
+            "aggregate_mixtral_routing_load",
         ):
             self.assertIn(term, source)
             self.assertIn(term, exports)

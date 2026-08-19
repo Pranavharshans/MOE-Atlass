@@ -97,8 +97,14 @@ its store/shard/event identity and contiguous `event_index`; token text is
 redacted by default, while router numeric fields retain the nullable evidence
 shape of the frozen event contract.
 
+Feature 20 may read these fixed shards through its bounded routing-load
+aggregation seam. It revalidates the complete committed sources and uses the
+inspection-published layer/expert universe; it does not alter shard bytes or
+persist analysis output.
+
 This is a bounded shard prerequisite, not a full workspace/catalog service.
 It does not synthesize run metadata, migrate, compact, query, partition by
 layer, export DataFrames, add a persistent database, or provide a CLI, server,
 UI, heatmap, prompt, expert metric, or performance claim. Analysis/catalog
-work remains deferred; model-dependent MV-01 through MV-08 remain unchanged.
+work remains deferred; ST-04 and model-dependent MV-01 through MV-08 remain
+unchanged.

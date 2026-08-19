@@ -605,6 +605,208 @@ def _read_rows(
                 raise _error("reopen", exc)
 
 
+def _read_rows_with_connection(
+    connection: Any, path: Path, columns: tuple[tuple[str, str], ...]
+) -> tuple[tuple[Any, ...], ...]:
+    """Read and schema-check one parquet file on a caller-owned connection."""
+
+    description = connection.execute(
+        "DESCRIBE SELECT * FROM read_parquet(?)", [str(path)]
+    ).fetchall()
+    actual = tuple((row[0], row[1]) for row in description)
+    if actual != columns:
+        raise ValueError("parquet schema is not exact")
+    rows = connection.execute(
+        "SELECT * FROM read_parquet(?) ORDER BY event_index", [str(path)]
+    ).fetchall()
+    return tuple(rows)
+
+
+def _read_shard_manifest(
+    shard: Path,
+    run_key: str,
+    duckdb: Any,
+    *,
+    validate_files: bool = True,
+) -> tuple[dict[str, object], str]:
+    """Validate fixed shard identity/manifest/files without opening parquet data."""
+
+    try:
+        if shard.is_symlink() or not shard.is_dir():
+            raise ValueError("committed shard is not a directory")
+        if {item.name for item in shard.iterdir()} != _FINAL_NAMES:
+            raise ValueError("committed shard contains unsupported entries")
+        manifest_path = shard / _MANIFEST_FILE
+        if manifest_path.is_symlink() or not manifest_path.is_file():
+            raise ValueError("managed shard manifest is not a regular file")
+        manifest_bytes = manifest_path.read_bytes()
+        if not manifest_bytes.endswith(b"\n") or manifest_bytes[:-1].endswith(b"\n"):
+            raise ValueError("manifest newline is not exact")
+        manifest_payload = json.loads(manifest_bytes[:-1].decode("utf-8"))
+        name = shard.name
+        if not name.startswith(_SHARD_PREFIX):
+            raise ValueError("committed shard name is invalid")
+        shard_key = f"shard:{name.removeprefix(_SHARD_PREFIX)}"
+        if _SHARD_KEY.fullmatch(shard_key) is None:
+            raise ValueError("committed shard key is invalid")
+        manifest = _strict_manifest(manifest_payload, run_key, shard_key, duckdb)
+        if manifest_bytes != _manifest_bytes(manifest):
+            raise ValueError("manifest bytes are not canonical")
+        if validate_files:
+            _validate_file_metadata(shard, manifest)
+        return manifest, shard_key
+    except RoutingShardError:
+        raise
+    except Exception as exc:
+        raise _error("reopen", exc)
+
+
+def _reconstruct_shard_with_connection(
+    shard: Path,
+    run_key: str,
+    duckdb: Any,
+    connection: Any,
+) -> _ShardData:
+    """Reopen one shard using a caller-owned connection."""
+
+    manifest, shard_key = _read_shard_manifest(shard, run_key, duckdb)
+    try:
+        token_rows = _read_rows_with_connection(connection, shard / _TOKENS_FILE, _TOKEN_COLUMNS)
+        routing_rows = _read_rows_with_connection(
+            connection, shard / _ROUTING_FILE, _ROUTING_COLUMNS
+        )
+        if (
+            len(token_rows) != manifest["token_count"]
+            or len(routing_rows) != manifest["routing_count"]
+        ):
+            raise ValueError("parquet row counts do not match manifest")
+        token_events: list[TokenEvent] = []
+        for index, row in enumerate(token_rows):
+            _validate_token_row(row, index, shard_key, manifest["token_text_stored"])
+            token_text = row[10] if manifest["token_text_stored"] else ""
+            token_events.append(
+                TokenEvent(
+                    schema_version=row[3],
+                    event_type=row[4],
+                    token_key=row[5],
+                    run_key=row[6],
+                    sequence_id=row[7],
+                    token_pos=row[8],
+                    token_id=row[9],
+                    token_text=token_text,
+                    phase=row[12],
+                )
+            )
+        routing_events: list[RoutingEvent] = []
+        for index, row in enumerate(routing_rows):
+            _validate_routing_row(row, index, shard_key)
+            routing_events.append(
+                RoutingEvent(
+                    schema_version=row[3],
+                    event_type=row[4],
+                    token_key=row[5],
+                    layer_key=row[6],
+                    rank=row[7],
+                    expert_key=row[8],
+                    router_logit=row[9],
+                    probability=row[10],
+                    weight=row[11],
+                    selected=row[12],
+                )
+            )
+        token_events_tuple = tuple(token_events)
+        routing_events_tuple = tuple(routing_events)
+        _validate_routing_links(token_events_tuple, routing_events_tuple)
+        _, _, semantic = _semantic_rows(
+            token_events_tuple,
+            routing_events_tuple,
+            store_token_text=manifest["token_text_stored"],
+        )
+        if _shard_key(semantic) != manifest["shard_key"]:
+            raise ValueError("committed shard semantic digest mismatch")
+    except RoutingShardError:
+        raise
+    except Exception as exc:
+        raise _error("reopen", exc)
+
+    receipt = RoutingShardReceipt(
+        schema_version=STORE_SCHEMA_VERSION,
+        shard_key=manifest["shard_key"],
+        run_key=run_key,
+        relative_path=_relative_path(run_key, shard_key),
+        token_count=manifest["token_count"],
+        routing_count=manifest["routing_count"],
+        token_text_stored=manifest["token_text_stored"],
+        created=False,
+    )
+    return _ShardData(
+        receipt=receipt,
+        token_rows=token_rows,
+        routing_rows=routing_rows,
+        token_keys=frozenset(row[5] for row in token_rows),
+        routing_links=frozenset((row[5], row[6], row[7]) for row in routing_rows),
+    )
+
+
+def _validate_routing_universe(
+    shard: _ShardData,
+    layer_keys: tuple[str, ...],
+    expert_keys: tuple[tuple[str, ...], ...],
+    routed_top_k: int,
+) -> None:
+    """Validate token-complete layer/rank coverage without exposing raw rows."""
+
+    token_keys = tuple(row[5] for row in shard.token_rows)
+    if len(token_keys) != len(set(token_keys)):
+        raise ValueError("shard contains duplicate token identities")
+    expected_layers = set(layer_keys)
+    coverage: dict[str, dict[str, set[int]]] = {
+        token_key: {layer_key: set() for layer_key in layer_keys} for token_key in token_keys
+    }
+    expert_coverage: dict[str, dict[str, set[str]]] = {
+        token_key: {layer_key: set() for layer_key in layer_keys} for token_key in token_keys
+    }
+    expected_ranks = set(range(routed_top_k))
+    for row in shard.routing_rows:
+        token_key, layer_key, rank, expert_key = row[5], row[6], row[7], row[8]
+        if token_key not in coverage or layer_key not in expected_layers:
+            raise ValueError("shard routing references an unknown token or layer")
+        layer_position = layer_keys.index(layer_key)
+        if expert_key not in expert_keys[layer_position]:
+            raise ValueError("shard routing references an unknown expert")
+        if type(rank) is not int or isinstance(rank, bool) or rank not in expected_ranks:
+            raise ValueError("shard routing rank is not in the exact top-k range")
+        coverage[token_key][layer_key].add(rank)
+        expert_coverage[token_key][layer_key].add(expert_key)
+    expected_assignments = len(token_keys) * len(layer_keys) * routed_top_k
+    if len(shard.routing_rows) != expected_assignments:
+        raise ValueError("shard routing assignment count is incomplete")
+    if any(ranks != expected_ranks for layers in coverage.values() for ranks in layers.values()):
+        raise ValueError("shard routing does not cover every token-layer rank")
+    if any(
+        len(experts) != routed_top_k
+        for layers in expert_coverage.values()
+        for experts in layers.values()
+    ):
+        raise ValueError("shard routing does not cover distinct experts per token-layer")
+
+
+def _validate_routing_load_source(
+    shard: Path,
+    run_key: str,
+    duckdb: Any,
+    connection: Any,
+    layer_keys: tuple[str, ...],
+    expert_keys: tuple[tuple[str, ...], ...],
+    routed_top_k: int,
+) -> tuple[frozenset[str], frozenset[tuple[str, str, int]]]:
+    """Reopen and validate one source, returning only identity summaries."""
+
+    data = _reconstruct_shard_with_connection(shard, run_key, duckdb, connection)
+    _validate_routing_universe(data, layer_keys, expert_keys, routed_top_k)
+    return data.token_keys, data.routing_links
+
+
 def _validate_file_metadata(shard: Path, manifest: dict[str, object]) -> None:
     files = manifest["files"]
     if type(files) is not dict:
