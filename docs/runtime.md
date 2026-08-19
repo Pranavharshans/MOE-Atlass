@@ -186,3 +186,42 @@ It is not a tokenizer; it is not a runner, and it is not a generation API.
 Model-dependent validation remains deferred to
 MV-03, MV-04, MV-05, MV-06, MV-07, and MV-08; this feature does not certify a
 checkpoint or change the ledger's deferred status.
+
+## One-forward Mixtral execution (experimental)
+
+`run_mixtral_routing_forward(model, inspection, plan, token_events,
+model_kwargs, *, max_events)` is the single-forward prerequisite above the
+passive capture seam. The caller supplies an already callable model, the
+freshly validated exact Mixtral inspection and canonical routing `ProbePlan`,
+an exact non-empty tuple of caller-tokenized `TokenEvent` rows, and an exact
+dictionary of model keyword arguments. The tuple row order is authoritative;
+the wrapper does not infer tokens, padding, prompts, or sequence boundaries,
+and requires one common run and phase.
+
+The wrapper computes the complete-event budget before registering hooks or
+traversing the model: `len(token_events) * len(canonical_targets) * routed_top_k`.
+An insufficient `max_events` is rejected before model execution. Keyword
+arguments are shallow-copied before hooks are entered; values, including
+tensor-like values, are not inspected or copied. The caller model is invoked
+exactly once as `model(**copied_model_kwargs)`, then existing
+`RoutingCaptureSession` cleanup semantics run for success, ordinary failure,
+`KeyboardInterrupt`, `SystemExit`, and cleanup failure.
+
+After any initial enter, body, or exit failure, the wrapper calls
+`session.close()` exactly once internally. The invocation is terminal: it
+re-raises the exact primary exception even when that internal retry succeeds.
+If the retry also fails, no result is published; the existing
+`PendingRuntimeCleanup` is attached under both `pending_cleanup` and
+`pending_runtime_cleanup` so the caller can retry cleanup.
+
+Only a complete, non-truncated, zero-dropped capture publishes a
+`MixtralRoutingForwardResult`. The frozen, slots, identity-equality result
+retains only the exact caller-owned output object and fresh token/routing
+events; its output identity is preserved and hidden from `repr`. Every supplied token must be
+represented, every route must reference a supplied token, links must be unique
+by token/layer/rank, and all routes must be selected. No partial result is
+published on model, decoder, event, budget, hook, or cleanup failure. The
+wrapper is `EXPERIMENTAL` and is not a tokenizer, prompt builder, or generation runner.
+It is not a dataset pipeline, storage sink, CLI, server, or UI. Model-dependent
+equivalence, output fidelity, overhead, GPU, fused/quantized, and packaging
+validation remain deferred to MV-03 through MV-08; ledger status is unchanged.

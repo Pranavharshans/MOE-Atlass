@@ -69,6 +69,11 @@ planned phases; real checkpoint and GPU certification are deliberately deferred.
   of exact `legacy_indexed` logits or packed `(logits, scores, indices)`
   payloads into observed selected `RoutingEvent` values; it performs no token
   inference, tensor retention, model loading, or routing certification.
+- `EXPERIMENTAL` `run_mixtral_routing_forward()` support for one caller-supplied
+  model forward with caller-tokenized `TokenEvent` rows, shallow-copied kwargs,
+  pre-hook complete-event budgeting, exactly-once model execution, and a
+  frozen output/event result; tokenization, generation, storage, and UI remain
+  outside this boundary. It performs one model forward per invocation.
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

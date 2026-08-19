@@ -372,6 +372,69 @@ class ProjectFilesTests(unittest.TestCase):
         self.assertIn("MixtralRoutingDecoder", exports)
         self.assertTrue((ROOT / "tests" / "test_mixtral_routing_decoder.py").is_file())
 
+    def test_mixtral_routing_forward_docs_and_exports_are_present(self) -> None:
+        runtime = (ROOT / "docs" / "runtime.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                runtime,
+                (
+                    "run_mixtral_routing_forward",
+                    "single-forward prerequisite",
+                    "caller-tokenized",
+                    "row order",
+                    "padding",
+                    "one common run and phase",
+                    "exactly once",
+                    "session.close()",
+                    "exactly once internally",
+                    "exact primary exception",
+                    "PendingRuntimeCleanup",
+                    "pending_cleanup",
+                    "pending_runtime_cleanup",
+                    "complete-event budget",
+                    "output identity",
+                    "not a tokenizer",
+                    "generation runner",
+                    "storage sink",
+                    "EXPERIMENTAL",
+                    "MV-03",
+                    "MV-08",
+                ),
+            ),
+            (
+                architecture,
+                (
+                    "run_mixtral_routing_forward",
+                    "caller-tokenized",
+                    "exactly once",
+                    "internal `session.close()` retry",
+                    "exact primary exception",
+                    "caller-owned `PendingRuntimeCleanup` handle",
+                    "complete-event budget",
+                    "EXPERIMENTAL",
+                    "MV-03",
+                    "MV-08",
+                ),
+            ),
+            (ledger, ("Feature 18", "run_mixtral_routing_forward", "MV-03", "MV-08")),
+            (
+                readme,
+                ("run_mixtral_routing_forward", "caller-tokenized", "frozen", "one model forward"),
+            ),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "runtime" / "routing_forward.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "runtime" / "__init__.py").read_text()
+        for term in ("MixtralRoutingForwardResult", "run_mixtral_routing_forward"):
+            self.assertIn(term, source)
+            self.assertIn(term, exports)
+        self.assertTrue((ROOT / "tests" / "test_runtime_routing_forward.py").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,7 @@ from .loader import load_custom, load_instance
 from .mixtral_routing import MixtralRoutingDecoder
 from .model_loader import load_huggingface, load_local
 from .routing import RoutingCaptureError, RoutingCaptureSession, RoutingCaptureTarget
+from .routing_forward import MixtralRoutingForwardResult, run_mixtral_routing_forward
 from .scan import load_and_scan
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "ModelObservationError",
     "ModelRuntimeDependencyError",
     "MixtralRoutingDecoder",
+    "MixtralRoutingForwardResult",
     "PendingRuntimeCleanup",
     "RuntimeArtifacts",
     "RuntimeCleanupError",
@@ -49,6 +51,7 @@ __all__ = [
     "RoutingCaptureError",
     "RoutingCaptureSession",
     "RoutingCaptureTarget",
+    "run_mixtral_routing_forward",
     "load_custom",
     "load_huggingface",
     "load_and_scan",

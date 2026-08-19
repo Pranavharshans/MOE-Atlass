@@ -75,6 +75,16 @@ storage, or claim routing certification. No model files are downloaded; MV-03
 through MV-08 remain `deferred`, and this feature does not change MV-01/MV-02
 status.
 
+Feature 18 adds the experimental `run_mixtral_routing_forward()` one-forward
+wrapper and frozen `MixtralRoutingForwardResult`. Model-free tests verify
+canonical preflight, caller-tokenized row binding, shallow keyword copying,
+pre-hook complete-event budgeting, exactly one model call, legacy/packed
+capture, fresh result events, output identity/ownership, no partial
+publication, and authoritative hook cleanup for ordinary and control-flow
+failures. It is not tokenization, prompt/generation, dataset, storage, CLI,
+server, or UI infrastructure; no model files are downloaded and MV-03 through
+MV-08 remain `deferred`. This feature does not change MV-01/MV-02 status.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

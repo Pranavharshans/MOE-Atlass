@@ -116,3 +116,17 @@ payloads are distinct evidence contracts; neither changes static component
 capabilities or creates a routing certification claim. Native equivalence,
 passive output fidelity, overhead, fused/quantized behavior, GPU execution,
 and packaging checks remain deferred to MV-03 through MV-08.
+
+Feature 18 keeps one-forward execution as a caller-owned runtime boundary.
+`run_mixtral_routing_forward()` receives caller-tokenized row tokens and
+caller model kwargs, shallow-copies only the kwargs mapping, and invokes the
+callable model exactly once under the canonical passive `RoutingCaptureSession`.
+It computes the complete-event budget before hooks/model traversal and
+publishes only a frozen `MixtralRoutingForwardResult` after cleanup and event
+postconditions succeed. The result owns no model or decoder and retains the
+exact caller output identity plus fresh event copies. Tokenization, prompts,
+padding, generation, datasets, storage, CLI, server, and UI remain outside
+this seam. After any initial enter, body, or exit failure it makes exactly one
+internal `session.close()` retry, re-raises the exact primary exception, and
+leaves persistent cleanup as a caller-owned `PendingRuntimeCleanup` handle;
+capability remains `EXPERIMENTAL` and MV-03 through MV-08 stay deferred.
