@@ -131,6 +131,16 @@ caller-created `inspection.to_json()` document, the optional DuckDB `store`
 extra, exact lowercase `.html` output, and existing atomic `--force`/failure
 cleanup semantics; it does not replace the Feature 20/21 value contracts.
 
+Feature 23 adds model-free bounded routing-run inventory. Tests cover exact
+required decimal budgets, absent-tree emptiness without DuckDB, run/shard
+candidate and staging validation, hash-derived ordering, exact three-file
+source-byte accounting, declared/actual event budgets, complete Feature 19
+reopen and conflict validation, redaction policy, deterministic serialization,
+in-memory connection cleanup, and atomic JSON CLI publication. The inventory is
+not a catalog, latest-run selector, metadata synthesizer, raw-row export,
+model/inference path, or persistent database. It remains EXPERIMENTAL and does
+not change MV-01 through MV-08; ST-04 remains deferred.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

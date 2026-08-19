@@ -10,7 +10,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ..core import stable_digest, validate_stable_identifier
 from ..events import EVENT_SCHEMA_VERSION, RoutingEvent, TokenEvent
@@ -22,6 +22,7 @@ from ..runtime.routing_forward import (
 )
 
 STORE_SCHEMA_VERSION = "1.0"
+ROUTING_RUN_INVENTORY_SCHEMA_VERSION = "1.0"
 
 _DUCKDB_MIN = (1, 4, 5)
 _DUCKDB_MAX = (1, 5, 0)
@@ -94,6 +95,154 @@ class RoutingShardError(RuntimeError):
             raise ValueError("routing shard error stage is not supported")
         self.stage = stage
         super().__init__(f"routing shard failed at {stage}")
+
+
+class RoutingRunInventoryError(RuntimeError):
+    """Safe fixed-stage failure for the bounded run inventory."""
+
+    def __init__(self, stage: Literal["budget", "index"]) -> None:
+        if stage not in {"budget", "index"}:
+            raise ValueError("routing run inventory error stage is not supported")
+        self.stage = stage
+        super().__init__(f"routing run inventory failed at {stage}")
+
+
+@dataclass(frozen=True, slots=True)
+class MixtralRoutingRunSummary:
+    """Immutable summary of the committed shards belonging to one run."""
+
+    run_key: str
+    shard_keys: tuple[str, ...]
+    shard_count: int
+    token_count: int
+    routing_count: int
+    source_bytes: int
+    token_text_policy: str
+
+    def __post_init__(self) -> None:
+        if type(self.run_key) is not str:
+            raise TypeError("run_key must be an exact string")
+        validate_stable_identifier(self.run_key, field_name="run_key")
+        if type(self.shard_keys) is not tuple or not self.shard_keys:
+            raise TypeError("shard_keys must be a non-empty tuple")
+        if any(
+            type(key) is not str or _SHARD_KEY.fullmatch(key) is None for key in self.shard_keys
+        ):
+            raise ValueError("shard_keys must be canonical shard digests")
+        if tuple(sorted(set(self.shard_keys))) != self.shard_keys:
+            raise ValueError("shard_keys must be sorted and unique")
+        for name in ("shard_count", "token_count", "routing_count", "source_bytes"):
+            value = getattr(self, name)
+            if type(value) is not int or isinstance(value, bool):
+                raise TypeError(f"{name} must be a strict integer")
+            if value <= 0:
+                raise ValueError(f"{name} must be positive")
+        if self.shard_count != len(self.shard_keys):
+            raise ValueError("shard_count must match shard_keys")
+        if type(self.token_text_policy) is not str:
+            raise TypeError("token_text_policy must be an exact string")
+        if self.token_text_policy not in {"redacted", "stored", "mixed"}:
+            raise ValueError("token_text_policy is unsupported")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "run_key": self.run_key,
+            "shard_keys": list(self.shard_keys),
+            "shard_count": self.shard_count,
+            "token_count": self.token_count,
+            "routing_count": self.routing_count,
+            "source_bytes": self.source_bytes,
+            "token_text_policy": self.token_text_policy,
+        }
+
+    def to_json(self) -> str:
+        return json.dumps(
+            self.to_dict(),
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MixtralRoutingRunInventory:
+    """Immutable bounded inventory of all committed routing shards."""
+
+    schema_version: str
+    manifest_type: str
+    store_schema_version: str
+    event_schema_version: str
+    run_count: int
+    shard_count: int
+    token_count: int
+    routing_count: int
+    source_bytes: int
+    runs: tuple[MixtralRoutingRunSummary, ...]
+
+    def __post_init__(self) -> None:
+        for name in (
+            "schema_version",
+            "manifest_type",
+            "store_schema_version",
+            "event_schema_version",
+        ):
+            if type(getattr(self, name)) is not str:
+                raise TypeError(f"{name} must be an exact string")
+        if self.schema_version != ROUTING_RUN_INVENTORY_SCHEMA_VERSION:
+            raise ValueError("schema_version is unsupported")
+        if self.manifest_type != "mixtral_routing_run_inventory":
+            raise ValueError("manifest_type is unsupported")
+        if self.store_schema_version != STORE_SCHEMA_VERSION:
+            raise ValueError("store_schema_version is unsupported")
+        if self.event_schema_version != EVENT_SCHEMA_VERSION:
+            raise ValueError("event_schema_version is unsupported")
+        if type(self.runs) is not tuple or any(
+            type(run) is not MixtralRoutingRunSummary for run in self.runs
+        ):
+            raise TypeError("runs must be a tuple of exact run summaries")
+        for name in ("run_count", "shard_count", "token_count", "routing_count", "source_bytes"):
+            value = getattr(self, name)
+            if type(value) is not int or isinstance(value, bool):
+                raise TypeError(f"{name} must be a strict integer")
+            if value < 0:
+                raise ValueError(f"{name} must be non-negative")
+        if self.run_count != len(self.runs):
+            raise ValueError("run_count must match runs")
+        run_keys = tuple(run.run_key for run in self.runs)
+        if len(set(run_keys)) != len(run_keys) or run_keys != tuple(sorted(run_keys)):
+            raise ValueError("runs must be sorted by run_key")
+        if self.shard_count != sum(run.shard_count for run in self.runs):
+            raise ValueError("shard_count must match runs")
+        if self.token_count != sum(run.token_count for run in self.runs):
+            raise ValueError("token_count must match runs")
+        if self.routing_count != sum(run.routing_count for run in self.runs):
+            raise ValueError("routing_count must match runs")
+        if self.source_bytes != sum(run.source_bytes for run in self.runs):
+            raise ValueError("source_bytes must match runs")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "manifest_type": self.manifest_type,
+            "store_schema_version": self.store_schema_version,
+            "event_schema_version": self.event_schema_version,
+            "run_count": self.run_count,
+            "shard_count": self.shard_count,
+            "token_count": self.token_count,
+            "routing_count": self.routing_count,
+            "source_bytes": self.source_bytes,
+            "runs": [run.to_dict() for run in self.runs],
+        }
+
+    def to_json(self) -> str:
+        return json.dumps(
+            self.to_dict(),
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1140,10 +1289,409 @@ def list_mixtral_routing_shards(
     return tuple(shard.receipt for shard in _existing_shards(run_parent, stable_run_key, duckdb))
 
 
+@dataclass(frozen=True, slots=True)
+class _InventoryShard:
+    run_key: str
+    shard_key: str
+    shard: Path
+    manifest: dict[str, object]
+    source_bytes: int
+
+
+def _inventory_error(
+    stage: Literal["budget", "index"], cause: BaseException
+) -> RoutingRunInventoryError:
+    error = RoutingRunInventoryError(stage)
+    error.__cause__ = cause
+    return error
+
+
+def _validate_inventory_budget(value: object, name: str) -> int:
+    if type(value) is not int or isinstance(value, bool):
+        raise TypeError(f"{name} must be a strict positive integer")
+    if value <= 0:
+        raise ValueError(f"{name} must be a strict positive integer")
+    return value
+
+
+def _inventory_manifest_bytes(path: Path, max_source_bytes: int) -> tuple[bytes, int]:
+    try:
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("managed shard manifest is not a regular file")
+        size = path.stat().st_size
+        if size > max_source_bytes:
+            raise RoutingRunInventoryError("budget")
+        with path.open("rb") as stream:
+            payload = stream.read(max_source_bytes + 1)
+        if len(payload) > max_source_bytes:
+            raise RoutingRunInventoryError("budget")
+        return payload, size
+    except RoutingRunInventoryError:
+        raise
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        raise _error("reopen", exc)
+
+
+def _inventory_basic_manifest(
+    payload: bytes,
+    run_key: str | None,
+    shard_key: str,
+) -> dict[str, object]:
+    if not payload.endswith(b"\n") or payload[:-1].endswith(b"\n"):
+        raise ValueError("manifest newline is not exact")
+    parsed = json.loads(payload[:-1].decode("utf-8"))
+    if type(parsed) is not dict or set(parsed) != _MANIFEST_KEYS:
+        raise ValueError("manifest shape is not exact")
+    if parsed["manifest_type"] != "routing_shard":
+        raise ValueError("manifest type is unsupported")
+    if parsed["store_schema_version"] != STORE_SCHEMA_VERSION:
+        raise ValueError("store schema version is unsupported")
+    if parsed["event_schema_version"] != EVENT_SCHEMA_VERSION:
+        raise ValueError("event schema version is unsupported")
+    if type(parsed["run_key"]) is not str:
+        raise ValueError("manifest run identity is invalid")
+    validate_stable_identifier(parsed["run_key"], field_name="run_key")
+    if run_key is not None and parsed["run_key"] != run_key:
+        raise ValueError("run identity is inconsistent")
+    if parsed["shard_key"] != shard_key or _SHARD_KEY.fullmatch(shard_key) is None:
+        raise ValueError("manifest shard identity mismatch")
+    for name in ("token_count", "routing_count"):
+        value = parsed[name]
+        if type(value) is not int or isinstance(value, bool) or value <= 0:
+            raise ValueError("manifest event count is invalid")
+    if type(parsed["token_text_stored"]) is not bool:
+        raise ValueError("manifest redaction value is invalid")
+    files = parsed["files"]
+    if type(files) is not dict or set(files) != {_TOKENS_FILE, _ROUTING_FILE}:
+        raise ValueError("manifest file set is not exact")
+    for name in (_TOKENS_FILE, _ROUTING_FILE):
+        info = files[name]
+        if type(info) is not dict or set(info) != _FILE_INFO_KEYS:
+            raise ValueError("manifest file metadata is not exact")
+        if info["name"] != name:
+            raise ValueError("manifest file name is invalid")
+        if type(info["bytes"]) is not int or isinstance(info["bytes"], bool) or info["bytes"] <= 0:
+            raise ValueError("manifest file size is invalid")
+        if type(info["sha256"]) is not str or _FILE_DIGEST.fullmatch(info["sha256"]) is None:
+            raise ValueError("manifest file digest is invalid")
+    return parsed
+
+
+def _inventory_shards_for_run(
+    run_parent: Path,
+    run_digest: str,
+    max_source_bytes: int,
+    max_shards_remaining: int,
+) -> tuple[_InventoryShard, ...]:
+    try:
+        children = tuple(run_parent.iterdir())
+    except Exception as exc:
+        raise _inventory_error("index", exc)
+    committed: list[tuple[Path, str]] = []
+    for child in children:
+        if _STAGING_NAME.fullmatch(child.name):
+            try:
+                valid = not child.is_symlink() and child.is_dir()
+            except Exception as exc:
+                raise _inventory_error("index", exc)
+            if not valid:
+                raise _inventory_error("index", ValueError("managed staging entry is invalid"))
+            continue
+        if child.name.startswith(".staging-"):
+            raise _inventory_error("index", ValueError("managed staging entry name is invalid"))
+        if not child.name.startswith(_SHARD_PREFIX):
+            raise _inventory_error(
+                "index", ValueError("managed run directory contains an extra entry")
+            )
+        shard_key = f"shard:{child.name.removeprefix(_SHARD_PREFIX)}"
+        if _SHARD_KEY.fullmatch(shard_key) is None:
+            raise _inventory_error("index", ValueError("committed shard key is invalid"))
+        try:
+            if child.is_symlink() or not child.is_dir():
+                raise ValueError("committed shard is not a directory")
+            if {item.name for item in child.iterdir()} != _FINAL_NAMES:
+                raise ValueError("committed shard contains unsupported entries")
+        except Exception as exc:
+            raise _error("reopen", exc)
+        committed.append((child, shard_key))
+
+    if len(committed) > max_shards_remaining:
+        raise RoutingRunInventoryError("budget")
+
+    result: list[_InventoryShard] = []
+    known_run_key: str | None = None
+    for shard, shard_key in sorted(committed, key=lambda item: item[1]):
+        manifest_path = shard / _MANIFEST_FILE
+        token_path = shard / _TOKENS_FILE
+        routing_path = shard / _ROUTING_FILE
+        payload, manifest_bytes = _inventory_manifest_bytes(manifest_path, max_source_bytes)
+        try:
+            manifest = _inventory_basic_manifest(payload, known_run_key, shard_key)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except RoutingRunInventoryError:
+            raise
+        except Exception as exc:
+            raise _error("reopen", exc)
+        known_run_key = str(manifest["run_key"])
+        if _run_digest(known_run_key) != run_digest:
+            raise _inventory_error("index", ValueError("run directory digest mismatch"))
+        try:
+            for path in (token_path, routing_path):
+                if path.is_symlink() or not path.is_file():
+                    raise ValueError("managed shard file is not a regular file")
+            source_bytes = manifest_bytes + token_path.stat().st_size + routing_path.stat().st_size
+        except Exception as exc:
+            raise _error("reopen", exc)
+        result.append(
+            _InventoryShard(
+                run_key=known_run_key,
+                shard_key=shard_key,
+                shard=shard,
+                manifest=manifest,
+                source_bytes=source_bytes,
+            )
+        )
+    return tuple(result)
+
+
+def _inventory_index(
+    workspace: Path,
+    *,
+    max_runs: int,
+    max_shards: int,
+    max_event_rows: int,
+    max_source_bytes: int,
+) -> tuple[tuple[_InventoryShard, ...], ...]:
+    root = workspace / _ROUTING_ROOT
+    version = root / _ROUTING_VERSION
+    try:
+        if root.is_symlink():
+            raise ValueError("managed routing root is a symlink")
+        if not root.exists():
+            return ()
+        if not root.is_dir():
+            raise ValueError("managed routing root is not a directory")
+        root_entries = tuple(root.iterdir())
+        if not root_entries:
+            return ()
+        if len(root_entries) != 1 or root_entries[0].name != _ROUTING_VERSION:
+            raise ValueError("routing root contains unsupported entries")
+        if version.is_symlink():
+            raise ValueError("managed routing version is a symlink")
+        if not version.exists():
+            return ()
+        if not version.is_dir():
+            raise ValueError("managed routing version is not a directory")
+        children = tuple(version.iterdir())
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        raise _inventory_error("index", exc)
+
+    run_dirs: list[tuple[Path, str]] = []
+    for child in children:
+        if not child.name.startswith(_RUN_PREFIX):
+            raise _inventory_error("index", ValueError("routing version contains an extra entry"))
+        digest = child.name.removeprefix(_RUN_PREFIX)
+        if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            raise _inventory_error("index", ValueError("run directory name is invalid"))
+        try:
+            if child.is_symlink() or not child.is_dir():
+                raise ValueError("run directory is not a regular directory")
+        except Exception as exc:
+            raise _inventory_error("index", exc)
+        run_dirs.append((child, digest))
+    if len(run_dirs) > max_runs:
+        raise RoutingRunInventoryError("budget")
+
+    all_runs: list[tuple[_InventoryShard, ...]] = []
+    shard_total = 0
+    source_total = 0
+    event_total = 0
+    for run_parent, digest in sorted(run_dirs, key=lambda item: item[1]):
+        shards = _inventory_shards_for_run(
+            run_parent,
+            digest,
+            max_source_bytes,
+            max_shards - shard_total,
+        )
+        shard_total += len(shards)
+        if shard_total > max_shards:
+            raise RoutingRunInventoryError("budget")
+        for shard in shards:
+            source_total += shard.source_bytes
+            event_total += int(shard.manifest["token_count"]) + int(shard.manifest["routing_count"])
+        if source_total > max_source_bytes or event_total > max_event_rows:
+            raise RoutingRunInventoryError("budget")
+        if shards:
+            all_runs.append(shards)
+    return tuple(all_runs)
+
+
+def _inventory_count_rows(connection: Any, path: Path) -> int:
+    try:
+        row = connection.execute("SELECT COUNT(*) FROM read_parquet(?)", [str(path)]).fetchone()
+        if type(row) is not tuple or len(row) != 1 or type(row[0]) is not int:
+            raise ValueError("parquet count is not an integer")
+        return row[0]
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except RoutingShardError:
+        raise
+    except Exception as exc:
+        raise _error("reopen", exc)
+
+
+def _close_inventory_connection(
+    connection: Any, primary: BaseException | None
+) -> BaseException | None:
+    close_failure: BaseException | None = None
+    try:
+        connection.close()
+    except BaseException as first:
+        try:
+            connection.close()
+        except BaseException as second:
+            close_failure = first if isinstance(first, KeyboardInterrupt | SystemExit) else second
+            if not isinstance(close_failure, KeyboardInterrupt | SystemExit):
+                close_failure = _error("reopen", first)
+    if close_failure is not None:
+        if primary is None:
+            return close_failure
+        primary.add_note("routing run inventory cleanup failed")
+    return primary
+
+
+def list_mixtral_routing_runs(
+    workspace: str | Path,
+    *,
+    max_runs: int,
+    max_shards: int,
+    max_event_rows: int,
+    max_source_bytes: int,
+) -> MixtralRoutingRunInventory:
+    """Return a bounded, read-only inventory of all committed routing runs."""
+
+    max_runs = _validate_inventory_budget(max_runs, "max_runs")
+    max_shards = _validate_inventory_budget(max_shards, "max_shards")
+    max_event_rows = _validate_inventory_budget(max_event_rows, "max_event_rows")
+    max_source_bytes = _validate_inventory_budget(max_source_bytes, "max_source_bytes")
+    path = _validate_workspace(workspace)
+    indexed = _inventory_index(
+        path,
+        max_runs=max_runs,
+        max_shards=max_shards,
+        max_event_rows=max_event_rows,
+        max_source_bytes=max_source_bytes,
+    )
+    if not indexed:
+        return MixtralRoutingRunInventory(
+            schema_version=ROUTING_RUN_INVENTORY_SCHEMA_VERSION,
+            manifest_type="mixtral_routing_run_inventory",
+            store_schema_version=STORE_SCHEMA_VERSION,
+            event_schema_version=EVENT_SCHEMA_VERSION,
+            run_count=0,
+            shard_count=0,
+            token_count=0,
+            routing_count=0,
+            source_bytes=0,
+            runs=(),
+        )
+
+    duckdb = _load_duckdb()
+    connection: Any | None = None
+    primary: BaseException | None = None
+    summaries: list[MixtralRoutingRunSummary] = []
+    try:
+        connection = duckdb.connect(database=":memory:")
+        actual_events = 0
+        for run_shards in indexed:
+            for source in run_shards:
+                token_rows = _inventory_count_rows(connection, source.shard / _TOKENS_FILE)
+                routing_rows = _inventory_count_rows(connection, source.shard / _ROUTING_FILE)
+                actual_events += token_rows + routing_rows
+                if actual_events > max_event_rows:
+                    raise RoutingRunInventoryError("budget")
+                if (
+                    token_rows != source.manifest["token_count"]
+                    or routing_rows != source.manifest["routing_count"]
+                ):
+                    raise _error("reopen", ValueError("parquet row counts do not match manifest"))
+        for run_shards in indexed:
+            data: list[_ShardData] = []
+            seen_tokens: set[str] = set()
+            seen_links: set[tuple[str, str, int]] = set()
+            for source in run_shards:
+                actual = _reconstruct_shard_with_connection(
+                    source.shard, source.run_key, duckdb, connection
+                )
+                if actual.receipt.shard_key != source.shard_key:
+                    raise _error("reopen", ValueError("shard identity changed during reopen"))
+                if seen_tokens.intersection(actual.token_keys) or seen_links.intersection(
+                    actual.routing_links
+                ):
+                    raise _error("conflict", ValueError("committed shards overlap identities"))
+                seen_tokens.update(actual.token_keys)
+                seen_links.update(actual.routing_links)
+                data.append(actual)
+            if not data:
+                continue
+            run_key = data[0].receipt.run_key
+            if any(item.receipt.run_key != run_key for item in data):
+                raise _error("reopen", ValueError("run identity changed during reopen"))
+            receipts = tuple(
+                sorted((item.receipt for item in data), key=lambda item: item.shard_key)
+            )
+            policies = {"stored" if item.token_text_stored else "redacted" for item in receipts}
+            policy = policies.pop() if len(policies) == 1 else "mixed"
+            summaries.append(
+                MixtralRoutingRunSummary(
+                    run_key=run_key,
+                    shard_keys=tuple(item.shard_key for item in receipts),
+                    shard_count=len(receipts),
+                    token_count=sum(item.token_count for item in receipts),
+                    routing_count=sum(item.routing_count for item in receipts),
+                    source_bytes=sum(source.source_bytes for source in run_shards),
+                    token_text_policy=policy,
+                )
+            )
+    except BaseException as exc:
+        if isinstance(exc, KeyboardInterrupt | SystemExit | RoutingShardError):
+            primary = exc
+        else:
+            primary = _error("reopen", exc)
+    finally:
+        if connection is not None:
+            primary = _close_inventory_connection(connection, primary)
+    if primary is not None:
+        raise primary
+    ordered = tuple(sorted(summaries, key=lambda item: item.run_key))
+    return MixtralRoutingRunInventory(
+        schema_version=ROUTING_RUN_INVENTORY_SCHEMA_VERSION,
+        manifest_type="mixtral_routing_run_inventory",
+        store_schema_version=STORE_SCHEMA_VERSION,
+        event_schema_version=EVENT_SCHEMA_VERSION,
+        run_count=len(ordered),
+        shard_count=sum(item.shard_count for item in ordered),
+        token_count=sum(item.token_count for item in ordered),
+        routing_count=sum(item.routing_count for item in ordered),
+        source_bytes=sum(item.source_bytes for item in ordered),
+        runs=ordered,
+    )
+
+
 __all__ = [
     "STORE_SCHEMA_VERSION",
+    "ROUTING_RUN_INVENTORY_SCHEMA_VERSION",
     "RoutingShardError",
     "RoutingShardReceipt",
+    "RoutingRunInventoryError",
+    "MixtralRoutingRunSummary",
+    "MixtralRoutingRunInventory",
     "append_mixtral_routing_shard",
     "list_mixtral_routing_shards",
+    "list_mixtral_routing_runs",
 ]

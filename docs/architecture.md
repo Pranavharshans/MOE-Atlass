@@ -167,3 +167,10 @@ model, tokenizer, browser, network, cache, generation, or alternate storage
 path; status, publication, and control-flow semantics remain CLI-only. The
 optional DuckDB `store` extra is the only required runtime dependency. The
 command is EXPERIMENTAL and MV-01 through MV-08 remain deferred.
+
+Feature 23 adds only a bounded routing-run inventory over the immutable
+Feature 19 tree. It rebuilds summaries on demand with required budgets and
+full reopen validation; a caller chooses the `run_key` later when invoking
+Feature 20/21, and no latest-run or catalog state is owned here. The CLI
+publishes JSON through the existing atomic writer only after the inventory is
+complete, and inventory cleanup remains internal with no partial value.

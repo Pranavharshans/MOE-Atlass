@@ -98,6 +98,11 @@ deliberately deferred.
   enforces canonical decimal byte/row/source/cell budgets, delegates aggregate
   and render exactly once, and reuses the existing atomic writer. See
   [CLI](docs/cli.md).
+- `EXPERIMENTAL` Feature 23 bounded `moeatlas routing-runs WORKSPACE` inventory
+  over committed Feature 19 shards. Required budgets preserve exact run/shard
+  ordering, counts, source bytes, and redacted/stored/mixed token-text policy;
+  no latest-run selector, catalog, raw-row export, model, cache, or inference
+  path is created. See [storage](docs/storage.md) and [CLI](docs/cli.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
@@ -124,6 +129,15 @@ DuckDB `store` extra, and exact lowercase `.html` output; existing files use
 `--force`, while failed atomic publication leaves no partial artifact. It does
 not tokenize, load models, inspect caches, use a browser or network, or change
 MV-01 through MV-08; see [CLI](docs/cli.md).
+
+The bounded `moeatlas routing-runs WORKSPACE` command rebuilds deterministic
+JSON inventory from committed shards with required run, shard, event-row, and
+source-byte budgets. It is read-only, lazy with respect to the optional DuckDB
+`store` extra, atomic only when an explicit `.json` output is requested, and
+does not synthesize unavailable model, adapter, layout, inspection, timestamp,
+or status metadata. Use the explicit `run_key` with the Feature 20/21 heatmap;
+inventory is a rebuild primitive rather than a general run registry. It does
+not change MV-01 through MV-08; see [storage](docs/storage.md).
 
 ## Quick start
 

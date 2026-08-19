@@ -108,3 +108,35 @@ layer, export DataFrames, add a persistent database, or provide a CLI, server,
 UI, heatmap, prompt, expert metric, or performance claim. Analysis/catalog
 work remains deferred; ST-04 and model-dependent MV-01 through MV-08 remain
 unchanged.
+
+## Bounded routing-run inventory
+
+Feature 23 adds a read-only inventory primitive over the committed shard tree.
+Call it as `list_mixtral_routing_runs(workspace, *, max_runs, max_shards,
+max_event_rows, max_source_bytes)`.
+All four budgets are required positive, non-bool integers. It scans only
+`routing/v1`, counts run and committed-shard candidates before DuckDB, sums the
+exact three managed files per shard, bounds declared and actual event rows,
+then reuses the complete Feature 19 reopen validator, so malformed or corrupt
+committed sources retain safe reopen/conflict failures. An absent `routing/v1`
+is a canonical empty inventory and does not import DuckDB or mutate the
+workspace.
+
+`MixtralRoutingRunInventory` has schema version `1.0`, manifest type
+`mixtral_routing_run_inventory`, exact totals, and lexically ordered
+`MixtralRoutingRunSummary` values. Each summary preserves canonical shard keys,
+exact source bytes, and `redacted`, `stored`, or `mixed` token-text policy.
+`to_json()` is compact deterministic JSON with UTF-8 characters, no NaN, and
+no trailing newline. Inventory exposes only fixed `budget` and `index` errors;
+existing shard dependency, reopen, conflict, and workspace errors retain their
+Feature 19 fixed-stage contract.
+
+The inventory uses one bounded in-memory DuckDB connection, closes it on every
+ordinary and control-flow path, retries a failed close once, and publishes no
+value until cleanup and full reopen validation succeed. It is a rebuildable
+read-only primitive, not a persistent database, workspace catalog, migration,
+repair, compaction, query API, or general run registry. A caller supplies the
+`run_key` to Feature 20/21 heatmap aggregation; inventory does not choose a
+latest run or synthesize unavailable model, adapter, layout, inspection, time
+tags, timestamp, or status metadata. It remains EXPERIMENTAL; ST-04 and MV-01 through
+MV-08 remain deferred.

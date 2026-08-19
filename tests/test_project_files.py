@@ -30,9 +30,11 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "store" / "__init__.py",
             ROOT / "src" / "moeatlas" / "store" / "routing_shards.py",
             ROOT / "tests" / "test_store_routing_shards.py",
+            ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
             ROOT / "tests" / "test_analysis_routing_heatmap.py",
             ROOT / "tests" / "test_cli_heatmap.py",
+            ROOT / "tests" / "test_cli_routing_runs.py",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -163,6 +165,66 @@ class ProjectFilesTests(unittest.TestCase):
             "write_report_atomic",
         ):
             self.assertIn(term, source)
+
+    def test_routing_run_inventory_docs_and_surface_are_present(self) -> None:
+        storage = (ROOT / "docs" / "storage.md").read_text()
+        cli = (ROOT / "docs" / "cli.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                storage,
+                (
+                    "Feature 23",
+                    "list_mixtral_routing_runs",
+                    "max_event_rows",
+                    "max_source_bytes",
+                    "mixtral_routing_run_inventory",
+                    "redacted",
+                    "stored",
+                    "mixed",
+                    "latest run",
+                    "ST-04",
+                ),
+            ),
+            (
+                cli,
+                (
+                    "moeatlas routing-runs WORKSPACE",
+                    "--max-runs",
+                    "--max-shards",
+                    "--max-event-rows",
+                    "--max-source-bytes",
+                    ".json",
+                    "saved routing run inventory to ",
+                    "write_report_atomic",
+                    "--force",
+                ),
+            ),
+            (architecture, ("Feature 23", "routing-run inventory", "latest-run")),
+            (ledger, ("Feature 23", "declared/actual event budgets", "atomic JSON CLI")),
+            (readme, ("moeatlas routing-runs WORKSPACE", "run registry")),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "store" / "routing_shards.py").read_text()
+        for term in (
+            "ROUTING_RUN_INVENTORY_SCHEMA_VERSION",
+            "RoutingRunInventoryError",
+            "MixtralRoutingRunSummary",
+            "MixtralRoutingRunInventory",
+            "list_mixtral_routing_runs",
+        ):
+            self.assertIn(term, source)
+        cli_source = (ROOT / "src" / "moeatlas" / "cli.py").read_text()
+        for term in (
+            "_preflight_routing_runs_output",
+            "_run_routing_run_inventory",
+            "routing-runs",
+        ):
+            self.assertIn(term, cli_source)
 
     def test_loading_docs_describe_schema_only_boundary(self) -> None:
         loading = (ROOT / "docs" / "loading.md").read_text()

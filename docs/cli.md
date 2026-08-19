@@ -91,3 +91,36 @@ DuckDB is reported as the fixed dependency-stage error. `KeyboardInterrupt`
 and `SystemExit` remain control-flow exceptions. Install the optional `store`
 extra for DuckDB; no model, tokenizer, browser, network, cache, or generation
 path is involved.
+
+## Bounded routing-run inventory
+
+Feature 23 exposes a deterministic read-only inventory command:
+
+```bash
+moeatlas routing-runs WORKSPACE \
+  --max-runs 100 --max-shards 1000 \
+  --max-event-rows 1000000 --max-source-bytes 100000000
+
+moeatlas routing-runs WORKSPACE \
+  --max-runs 100 --max-shards 1000 --max-event-rows 1000000 \
+  --max-source-bytes 100000000 --output inventory.json
+```
+
+Every budget is required and must be a canonical positive decimal integer.
+Without `--output`, compact inventory JSON plus one newline is written only to
+stdout. With `--output`, the exact lowercase `.json` suffix is required, the
+parent must already exist, and publication delegates once to the existing
+`write_report_atomic()` path; existing files require `--force`. Success emits
+only `saved routing run inventory to <path>` on stderr in file mode. `--force`
+without an output is rejected before workspace traversal or DuckDB import.
+
+The command inventories committed Feature 19 shards, including exact run and
+shard ordering, token/routing totals, source-byte totals, and redaction policy.
+It does not create a catalog, infer a latest run, inspect model/cache files,
+load a model, read token text, use a browser/network, or write the workspace.
+Install the optional DuckDB `store` extra for non-empty inventories. Missing or
+corrupt sources retain fixed Feature 19 stage messages; malformed index and
+budget failures use `routing run inventory failed at index|budget`; unexpected
+failures use the fixed `moeatlas routing-runs: routing run inventory failed`.
+KeyboardInterrupt and SystemExit remain control-flow exceptions. The command
+is EXPERIMENTAL and does not alter MV-01 through MV-08.

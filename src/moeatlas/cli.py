@@ -30,6 +30,7 @@ _HEATMAP_LOAD_STAGES = frozenset({"inspection", "budget", "source", "query"})
 _HEATMAP_SHARD_STAGES = frozenset(
     {"dependency", "workspace", "write", "publish", "reopen", "conflict"}
 )
+_INVENTORY_STAGES = frozenset({"budget", "index"})
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -140,6 +141,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="replace an existing --output file",
     )
     heatmap.set_defaults(handler=_handle_heatmap, _heatmap_parser=heatmap)
+
+    routing_runs = subparsers.add_parser(
+        "routing-runs",
+        help="inventory committed Mixtral routing runs",
+        description=(
+            "Inventory immutable, inspection-free Mixtral routing shards. All four "
+            "budgets are required canonical positive decimal integers."
+        ),
+        epilog=(
+            "The inventory is read-only and bounded by max-runs, max-shards, "
+            "max-event-rows, and max-source-bytes. No model, tokenizer, network, "
+            "cache, catalog, or generation path is used. --output uses the exact "
+            "lowercase .json suffix and write_report_atomic()."
+        ),
+    )
+    routing_runs.add_argument("workspace", metavar="WORKSPACE")
+    routing_runs.add_argument("--max-runs", required=True, metavar="N")
+    routing_runs.add_argument("--max-shards", required=True, metavar="N")
+    routing_runs.add_argument("--max-event-rows", required=True, metavar="N")
+    routing_runs.add_argument("--max-source-bytes", required=True, metavar="N")
+    routing_runs.add_argument("--output", metavar="INVENTORY.json")
+    routing_runs.add_argument(
+        "--force",
+        action="store_true",
+        help="replace an existing --output file",
+    )
+    routing_runs.set_defaults(handler=_handle_routing_runs, _routing_runs_parser=routing_runs)
     return parser
 
 
@@ -408,6 +436,127 @@ def _handle_heatmap(args: argparse.Namespace) -> int:
         return 2
 
     print(f"saved routing heatmap to {output}", file=sys.stderr)
+    return 0
+
+
+def _parse_inventory_budget(raw: object, field_name: str) -> int:
+    if type(raw) is not str or _CANONICAL_DECIMAL.fullmatch(raw) is None:
+        raise _HeatmapInputError(
+            f"--{field_name.replace('_', '-')} must be a canonical positive decimal integer"
+        )
+    try:
+        value = int(raw, 10)
+    except (ValueError, OverflowError) as exc:
+        raise _HeatmapInputError(
+            f"--{field_name.replace('_', '-')} must be a canonical positive decimal integer"
+        ) from exc
+    if value > sys.maxsize:
+        raise _HeatmapInputError(f"--{field_name.replace('_', '-')} is too large for this platform")
+    return value
+
+
+def _preflight_routing_runs_output(raw_output: object, *, force: object) -> Path | None:
+    if raw_output is None:
+        if force:
+            raise _HeatmapInputError("--force requires --output PATH")
+        return None
+    if type(raw_output) is not str or not raw_output:
+        raise _HeatmapInputError("--output must be a non-empty path")
+    if type(force) is not bool:
+        raise _HeatmapInputError("--force must be a boolean")
+    try:
+        target = Path(raw_output)
+        if target.suffix != ".json":
+            raise _HeatmapInputError("output must have the exact .json suffix")
+        if os.path.lexists(target):
+            if target.is_dir():
+                raise _HeatmapInputError("output path is a directory")
+            if not force:
+                raise _HeatmapInputError("output already exists; pass --force to replace it")
+        parent = target.parent
+        if not parent.exists():
+            raise _HeatmapInputError("output parent does not exist")
+        if not parent.is_dir():
+            raise _HeatmapInputError("output parent is not a directory")
+    except _HeatmapInputError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise _HeatmapInputError("output path is not usable") from exc
+    return target
+
+
+def _run_routing_run_inventory(
+    workspace: str,
+    *,
+    max_runs: int,
+    max_shards: int,
+    max_event_rows: int,
+    max_source_bytes: int,
+):
+    from .store import list_mixtral_routing_runs
+
+    return list_mixtral_routing_runs(
+        workspace,
+        max_runs=max_runs,
+        max_shards=max_shards,
+        max_event_rows=max_event_rows,
+        max_source_bytes=max_source_bytes,
+    )
+
+
+def _write_routing_runs_report(payload: str, output: Path, *, force: bool) -> Path:
+    """Delegate inventory publication to the existing atomic report writer."""
+
+    writer = write_report_atomic
+    return writer(payload, output, force=force)
+
+
+def _safe_routing_runs_failure(exc: Exception) -> str:
+    from .store import RoutingRunInventoryError, RoutingShardError
+
+    if type(exc) is RoutingRunInventoryError and exc.stage in _INVENTORY_STAGES:
+        message = f"routing run inventory failed at {exc.stage}"
+        if str(exc) == message:
+            return message
+    if type(exc) is RoutingShardError and exc.stage in _HEATMAP_SHARD_STAGES:
+        message = f"routing shard failed at {exc.stage}"
+        if str(exc) == message:
+            return message
+    return "routing run inventory failed"
+
+
+def _handle_routing_runs(args: argparse.Namespace) -> int:
+    try:
+        budgets = {
+            name: _parse_inventory_budget(getattr(args, name), name)
+            for name in ("max_runs", "max_shards", "max_event_rows", "max_source_bytes")
+        }
+        output_path = _preflight_routing_runs_output(args.output, force=args.force)
+        inventory = _run_routing_run_inventory(
+            args.workspace,
+            max_runs=budgets["max_runs"],
+            max_shards=budgets["max_shards"],
+            max_event_rows=budgets["max_event_rows"],
+            max_source_bytes=budgets["max_source_bytes"],
+        )
+        payload = inventory.to_json() + "\n"
+        if output_path is None:
+            sys.stdout.write(payload)
+            return 0
+        output = _write_routing_runs_report(payload, output_path, force=args.force)
+    except _HeatmapInputError as exc:
+        print(f"moeatlas routing-runs: {exc}", file=sys.stderr)
+        return 2
+    except ScanOutputError as exc:
+        print(f"moeatlas routing-runs: {exc}", file=sys.stderr)
+        return 2
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        print(f"moeatlas routing-runs: {_safe_routing_runs_failure(exc)}", file=sys.stderr)
+        return 2
+
+    print(f"saved routing run inventory to {output}", file=sys.stderr)
     return 0
 
 
