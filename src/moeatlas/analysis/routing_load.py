@@ -469,13 +469,13 @@ def aggregate_mixtral_routing_load(
 
     # Validate the managed workspace/run boundary before importing the optional
     # store dependency, so absent or malformed source is deterministic offline.
-    _storage._validate_workspace(workspace)
+    workspace_path = _storage._validate_workspace(workspace)
     _storage._validate_run_key(run_key)
-    if _storage._existing_run_parent(workspace, run_key) is None:
+    if _storage._existing_run_parent(workspace_path, run_key) is None:
         raise _error("source", ValueError("run has no committed routing shards"))
     duckdb = _storage._load_duckdb()
     _, sources = _validate_sources(
-        workspace,
+        workspace_path,
         run_key,
         duckdb,
         max_routing_rows,

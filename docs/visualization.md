@@ -15,7 +15,10 @@ import webbrowser
 
 from moeatlas.analysis import render_mixtral_routing_load_heatmap
 
-# `matrix` is an existing MixtralRoutingLoadMatrix from Feature 20.
+# `inspection` is an existing AdapterInspection and `matrix` is an existing
+# MixtralRoutingLoadMatrix from Feature 20.
+inspection_path = Path("inspection.json")
+inspection_path.write_text(inspection.to_json(), encoding="utf-8")
 html = render_mixtral_routing_load_heatmap(
     matrix,
     metric="load_ratios",
@@ -55,3 +58,24 @@ Feature 20 value; it is not a UI, server, catalog, prompt, metric, or
 model-validation claim. Tokenization, generation, checkpoint execution, and
 MV-01 through MV-08 remain deferred. Feature 21 does not alter stored shard
 bytes or the Feature 20 matrix contract.
+
+Feature 22 provides the bounded CLI composition for callers who already have
+an inspection JSON document and Feature 19 workspace:
+
+```bash
+moeatlas heatmap /data/routing \
+  --inspection inspection.json --run-key run-1 --metric load_ratios \
+  --max-inspection-bytes 1000000 --max-routing-rows 1000000 \
+  --max-source-bytes 100000000 --max-matrix-cells 100000 \
+  --output routing-load.html
+```
+
+The CLI validates the output destination first, reads the bounded non-symlink
+inspection, aggregates and renders exactly once, and publishes through the
+existing `write_report_atomic()` atomic writer. Output must end in lowercase
+`.html`; existing files require `--force`, and failed publication leaves no
+partial artifact or temporary file. Install the optional DuckDB `store` extra
+for a real Feature 19 workspace. It remains a thin, model-free composition boundary;
+tokenization, checkpoint loading, browser automation, and generation are not
+part of this command. Feature 22 is `EXPERIMENTAL` and does not change
+MV-01 through MV-08.

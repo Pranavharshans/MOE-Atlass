@@ -119,6 +119,18 @@ effect.` The returned string is the permanent portable static HTML export path;
 the renderer does not save or open it, and a future React UI is separate. It
 remains EXPERIMENTAL and does not change MV-01 through MV-08.
 
+Feature 22 adds the model-free bounded `moeatlas heatmap WORKSPACE` command.
+Tests cover required canonical decimal budgets, output preflight before input
+or optional dependencies, bounded non-symlink inspection reads, strict
+inspection parsing, exactly-once aggregate/render delegation for legacy and
+packed shards and all three metrics, atomic publication, race/cleanup safety,
+offline operation, and unchanged KeyboardInterrupt/SystemExit semantics. It
+does not load a model, inspect a cache, use a browser/network, or change
+MV-01 through MV-08; the command remains EXPERIMENTAL. The CLI requires a
+caller-created `inspection.to_json()` document, the optional DuckDB `store`
+extra, exact lowercase `.html` output, and existing atomic `--force`/failure
+cleanup semantics; it does not replace the Feature 20/21 value contracts.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

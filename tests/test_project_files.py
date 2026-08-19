@@ -32,6 +32,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
             ROOT / "tests" / "test_analysis_routing_heatmap.py",
+            ROOT / "tests" / "test_cli_heatmap.py",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -103,6 +104,65 @@ class ProjectFilesTests(unittest.TestCase):
         ):
             with self.subTest(term=term):
                 self.assertIn(term, cli)
+
+    def test_cli_heatmap_docs_and_model_free_surface_are_present(self) -> None:
+        cli = (ROOT / "docs" / "cli.md").read_text()
+        visualization = (ROOT / "docs" / "visualization.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                cli,
+                (
+                    "moeatlas heatmap WORKSPACE",
+                    "--inspection",
+                    "--max-inspection-bytes",
+                    "--max-routing-rows",
+                    "--max-source-bytes",
+                    "--max-matrix-cells",
+                    "canonical positive decimal",
+                    "non-symlink",
+                    "exactly once",
+                    "write_report_atomic",
+                    ".html",
+                    "--force",
+                    "store",
+                    "saved routing heatmap to ",
+                    "temporary file",
+                    "KeyboardInterrupt",
+                    "SystemExit",
+                ),
+            ),
+            (
+                visualization,
+                (
+                    "Feature 22",
+                    "moeatlas heatmap",
+                    "non-symlink",
+                    "exactly once",
+                    "inspection.to_json()",
+                    ".html",
+                    "DuckDB `store` extra",
+                    "EXPERIMENTAL",
+                ),
+            ),
+            (architecture, ("Feature 22", "moeatlas heatmap WORKSPACE", "exactly once")),
+            (ledger, ("Feature 22", "canonical decimal", "non-symlink", "exactly-once")),
+            (readme, ("moeatlas heatmap WORKSPACE", "atomic publication")),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "cli.py").read_text()
+        for term in (
+            "_parse_heatmap_budget",
+            "_preflight_heatmap_output",
+            "_read_heatmap_inspection",
+            "_run_heatmap_analysis",
+            "write_report_atomic",
+        ):
+            self.assertIn(term, source)
 
     def test_loading_docs_describe_schema_only_boundary(self) -> None:
         loading = (ROOT / "docs" / "loading.md").read_text()

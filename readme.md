@@ -93,6 +93,11 @@ deliberately deferred.
   complete accessible zero-inclusive HTML tables, deterministic global heat
   bins, frozen provenance, and no JavaScript, external resource, storage, or
   model boundary. See [visualization](docs/visualization.md).
+- `EXPERIMENTAL` Feature 22 bounded `moeatlas heatmap WORKSPACE` CLI composition over a
+  caller-supplied inspection document and stored run. It preflights output,
+  enforces canonical decimal byte/row/source/cell budgets, delegates aggregate
+  and render exactly once, and reuses the existing atomic writer. See
+  [CLI](docs/cli.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
@@ -109,6 +114,16 @@ selected logits only; packed payloads additionally emit native weights after
 strict softmax/top-k/renormalization checks. Its evidence remains
 `EXPERIMENTAL`; native equivalence and runtime/GPU validation stay deferred to
 MV-03 through MV-08.
+
+The bounded `moeatlas heatmap WORKSPACE` command is the CLI publication path
+for an existing inspection JSON and Feature 19 run. It reads the inspection
+under a strict byte budget, applies row/source/cell budgets, delegates Feature
+20 aggregation and Feature 21 rendering exactly once, and reuses atomic publication.
+It requires a caller-created `inspection.to_json()` document, the optional
+DuckDB `store` extra, and exact lowercase `.html` output; existing files use
+`--force`, while failed atomic publication leaves no partial artifact. It does
+not tokenize, load models, inspect caches, use a browser or network, or change
+MV-01 through MV-08; see [CLI](docs/cli.md).
 
 ## Quick start
 
