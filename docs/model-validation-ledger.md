@@ -106,6 +106,19 @@ expert universe, create a catalog or persistent database, expose raw rows,
 calculate specialization/probability/entropy metrics, or change MV-01 through
 MV-08. ST-04 remains deferred.
 
+Feature 21 adds a model-free, dependency-free static HTML heatmap over an
+accepted Feature 20 matrix. Tests cover exact metric and cell-budget
+validation, fresh matrix reconstruction, both layouts, complete zero-inclusive
+tables, provenance/count/shard preservation, deterministic global heat-0..8
+bins using zero-only heat-0 and `1 + min(7, int((v / m) * 8))` for positive
+values, accessible headers, escaped canonical keys and values, strict CSP,
+offline operation, and absence of JavaScript, external resources, storage, or
+model execution. The exact visible warning is `Routing load only. Selection
+frequency is association evidence, not expert specialization or causal
+effect.` The returned string is the permanent portable static HTML export path;
+the renderer does not save or open it, and a future React UI is separate. It
+remains EXPERIMENTAL and does not change MV-01 through MV-08.
+
 ## Deferred checks
 
 | ID | Check | Current status | Required evidence before completion |

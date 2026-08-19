@@ -24,12 +24,14 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "adapters.md",
             ROOT / "docs" / "storage.md",
             ROOT / "docs" / "analysis.md",
+            ROOT / "docs" / "visualization.md",
             ROOT / "src" / "moeatlas" / "analysis" / "__init__.py",
             ROOT / "src" / "moeatlas" / "analysis" / "routing_load.py",
             ROOT / "src" / "moeatlas" / "store" / "__init__.py",
             ROOT / "src" / "moeatlas" / "store" / "routing_shards.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
+            ROOT / "tests" / "test_analysis_routing_heatmap.py",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -541,6 +543,53 @@ class ProjectFilesTests(unittest.TestCase):
             "MixtralRoutingLoadMatrix",
             "aggregate_mixtral_routing_load",
         ):
+            self.assertIn(term, source)
+            self.assertIn(term, exports)
+
+    def test_routing_heatmap_visualization_docs_and_surface_are_present(self) -> None:
+        visualization = (ROOT / "docs" / "visualization.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                visualization,
+                (
+                    "Feature 21",
+                    "render_mixtral_routing_load_heatmap",
+                    "assignment_counts",
+                    "assignment_shares",
+                    "load_ratios",
+                    "max_cells",
+                    "zero-count experts",
+                    "heat-0",
+                    "heat-8",
+                    "1 + min(7, int((v / m) * 8))",
+                    "Routing load only. Selection frequency is association evidence, not expert "
+                    "specialization or causal effect.",
+                    "details",
+                    "shard count",
+                    "Content-Security-Policy",
+                    "JavaScript",
+                    "artifact.write_text",
+                    "webbrowser.open",
+                    "permanent",
+                    "React",
+                    "not a replacement",
+                    "EXPERIMENTAL",
+                    "MV-01",
+                ),
+            ),
+            (architecture, ("Feature 21", "static HTML heatmap", "heat bins")),
+            (ledger, ("Feature 21", "heat-0..8", "MV-01 through MV-08")),
+            (readme, ("render_mixtral_routing_load_heatmap", "visualization")),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "analysis" / "routing_heatmap.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in ("ROUTING_HEATMAP_SCHEMA_VERSION", "render_mixtral_routing_load_heatmap"):
             self.assertIn(term, source)
             self.assertIn(term, exports)
 

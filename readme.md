@@ -88,6 +88,11 @@ deliberately deferred.
   only value-owned count/share/load-ratio matrices; it does not infer axes,
   write analysis output, expose raw rows, or claim specialization. See
   [analysis](docs/analysis.md).
+- `EXPERIMENTAL` dependency-free `render_mixtral_routing_load_heatmap()` output
+  over one accepted routing-load matrix, with exact metric/cell validation,
+  complete accessible zero-inclusive HTML tables, deterministic global heat
+  bins, frozen provenance, and no JavaScript, external resource, storage, or
+  model boundary. See [visualization](docs/visualization.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

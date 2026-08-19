@@ -152,3 +152,9 @@ connection, raw row, inspection, or token text. This is not a catalog,
 persistent analysis database, query API, metric/specialization claim, or
 model/tokenizer/generation path; ST-04 and MV-01 through MV-08 remain
 deferred.
+
+Feature 21 adds only a dependency-free static HTML heatmap over one accepted
+Feature 20 matrix. It preserves caller-owned axes, provenance, counts, shard
+keys, zero-inclusive cells, and deterministic global heat bins; it creates no
+UI, server, catalog, storage, model, or specialization claim. The artifact is
+EXPERIMENTAL and MV-01 through MV-08 remain deferred.
