@@ -28,6 +28,7 @@ from .loader import load_custom, load_instance
 from .mixtral_routing import MixtralRoutingDecoder
 from .model_loader import load_huggingface, load_local
 from .prompt_prefill import MixtralPromptPrefillError, run_mixtral_prompt_prefill
+from .qwen3_5_routing import Qwen3_5RoutingDecoder
 from .routing import RoutingCaptureError, RoutingCaptureSession, RoutingCaptureTarget
 from .routing_forward import MixtralRoutingForwardResult, run_mixtral_routing_forward
 from .scan import load_and_scan
@@ -44,6 +45,7 @@ __all__ = [
     "MixtralRoutingDecoder",
     "MixtralRoutingForwardResult",
     "MixtralPromptPrefillError",
+    "Qwen3_5RoutingDecoder",
     "PendingRuntimeCleanup",
     "RuntimeArtifacts",
     "RuntimeCleanupError",

@@ -358,10 +358,35 @@ def _build_contexts(
     facts = inspection.report.facts
     expert_count = facts.expert_count
     routed_top_k = facts.routed_top_k
+    # Older static reports omit shared-expert facts.  Treat that omission as
+    # the model-neutral zero count so every target layer is checked by the
+    # same rule; an explicit zero is also a valid strict fact for families
+    # without shared experts.
+    shared_expert_count = facts.shared_expert_count
+    if shared_expert_count is None:
+        shared_expert_count = 0
     if type(expert_count) is not int or type(routed_top_k) is not int:
         raise ValueError("routing facts must provide strict expert_count and routed_top_k")
     if expert_count <= 0 or routed_top_k <= 0 or routed_top_k > expert_count:
         raise ValueError("routing facts must have positive top-k within expert count")
+    if type(shared_expert_count) is not int or isinstance(shared_expert_count, bool):
+        raise ValueError("routing facts must provide a strict shared expert count")
+    if shared_expert_count < 0:
+        raise ValueError("routing facts must provide a non-negative shared expert count")
+
+    all_shared_experts = [
+        component for component in components if component.kind is ComponentKind.SHARED_EXPERT
+    ]
+    if any(
+        component.shared is not True
+        or component.routed is not False
+        or component.expert_index is not None
+        for component in all_shared_experts
+    ):
+        raise ValueError("shared experts must be non-routed and unindexed")
+    shared_paths = [component.module_path for component in all_shared_experts]
+    if len(set(shared_paths)) != len(shared_paths):
+        raise ValueError("shared expert module paths must be unique")
 
     contexts: dict[str, RoutingCaptureTarget] = {}
     for target in plan.targets:
@@ -378,11 +403,21 @@ def _build_contexts(
         ]
         if len(layers) != 1:
             raise ValueError("each router must have one same-layer MoE layer")
-        if any(
-            component.kind is ComponentKind.SHARED_EXPERT and component.layer_index == layer_index
+        shared_experts = [
+            component
             for component in components
+            if component.kind is ComponentKind.SHARED_EXPERT
+            and component.layer_index == layer_index
+        ]
+        if any(
+            component.shared is not True
+            or component.routed is not False
+            or component.expert_index is not None
+            for component in shared_experts
         ):
-            raise ValueError("shared experts are not valid routing targets")
+            raise ValueError("same-layer shared experts must be non-routed and unindexed")
+        if len(shared_experts) != shared_expert_count:
+            raise ValueError("same-layer shared expert count does not match discovery facts")
         experts = [
             component
             for component in components

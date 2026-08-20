@@ -305,3 +305,15 @@ reported with the fixed `tokenize` or `encoding` stage while
 exact primary control-flow exception; cleanup follows Feature 18's retryable
 pending-handle contract. The seam has no progress stream, live subscription,
 server endpoint, wire/view-model schema, generation loop, or UI state.
+## Qwen3.5 routing decoder (model-free)
+
+`Qwen3_5RoutingDecoder` is family-isolated to the official Qwen3.5 static
+descriptor and packed `(router_logits, router_scores, router_indices)` capture.
+It validates full-logit stable-softmax/top-k semantics, excludes shared
+experts, freshens `RoutingEvent` values, rejects ties and malformed payloads,
+and allows one successful invocation per router. It performs no model loading
+or tensor-runtime imports. Runtime/checkpoint equivalence, GPU validation, and
+release-time revision review remain deferred to the final VM.
+`RoutingCaptureSession` validates any shared-expert metadata present in a
+static report but excludes those components from `RoutingCaptureTarget`
+`expert_keys`; this is a shared model-neutral rule, not a Qwen-specific branch.

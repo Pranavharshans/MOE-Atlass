@@ -17,6 +17,7 @@ from moeatlas import runtime as runtime_package
 from moeatlas.adapters import (
     AdapterInspection,
     MixtralStaticAdapter,
+    Qwen3_5MoeStaticAdapter,
     Qwen3MoeStaticAdapter,
     build_routing_probe_plan,
     inspect_static_adapter,
@@ -38,6 +39,10 @@ from moeatlas.runtime import (
 )
 
 from .fixtures import MixtralForCausalLM, Qwen3MoeForCausalLM
+from .fixtures.qwen3_5_moe import (
+    Qwen3_5MoeForCausalLM,
+    Qwen3_5MoeForConditionalGeneration,
+)
 
 
 def _manifest(architecture: str) -> ModelManifest:
@@ -57,6 +62,12 @@ def _inspection(architecture: str, layout: str) -> AdapterInspection:
     if architecture == "mixtral":
         model = MixtralForCausalLM(layout=layout)
         adapter = MixtralStaticAdapter()
+    elif architecture == "qwen3_5_moe":
+        model = Qwen3_5MoeForConditionalGeneration(layout=layout)
+        adapter = Qwen3_5MoeStaticAdapter()
+    elif architecture == "qwen3_5_moe_text":
+        model = Qwen3_5MoeForCausalLM(layout=layout)
+        adapter = Qwen3_5MoeStaticAdapter()
     else:
         model = Qwen3MoeForCausalLM(layout=layout)
         adapter = Qwen3MoeStaticAdapter()
@@ -142,6 +153,10 @@ class _HookModel:
     def __init__(self, architecture: str, layout: str) -> None:
         if architecture == "mixtral":
             source = MixtralForCausalLM(layout=layout)
+        elif architecture == "qwen3_5_moe":
+            source = Qwen3_5MoeForConditionalGeneration(layout=layout)
+        elif architecture == "qwen3_5_moe_text":
+            source = Qwen3_5MoeForCausalLM(layout=layout)
         else:
             source = Qwen3MoeForCausalLM(layout=layout)
         self.config = source.config
@@ -149,7 +164,7 @@ class _HookModel:
         self.nodes: dict[str, _HookModule] = {}
         self.removal_log: list[str] = []
         for path, module in self._entries:
-            if path and path.endswith(".gate"):
+            if path and (path.endswith(".gate") or path.endswith(".mlp.gate")):
                 node = _HookModule(path, removal_log=self.removal_log)
                 self.nodes[path] = node
                 self._entries[self._entries.index((path, module))] = (path, node)
@@ -367,6 +382,8 @@ def test_public_surface_signatures_slots_and_exports_are_exact() -> None:
         ("mixtral", "packed"),
         ("qwen3_moe", "legacy_indexed"),
         ("qwen3_moe", "packed"),
+        ("qwen3_5_moe", "packed"),
+        ("qwen3_5_moe_text", "packed"),
     ],
 )
 def test_successful_session_passes_exact_context_and_hook_arguments(
@@ -442,6 +459,254 @@ def test_successful_session_passes_exact_context_and_hook_arguments(
         for path, hook_point, module in session._manager.resolved_plan.bindings
     ) == tuple((path, HookPoint.FORWARD, model.nodes[path]) for path in expected_routers)
     assert all(node.callbacks == [] for node in model.nodes.values())
+
+
+@pytest.mark.parametrize("architecture", ["qwen3_5_moe", "qwen3_5_moe_text"])
+def test_shared_experts_are_validated_but_excluded_from_routing_context(
+    architecture: str,
+) -> None:
+    session, model, inspection = _session(architecture, "packed")
+    shared = [
+        component
+        for component in inspection.report.components
+        if component.kind is ComponentKind.SHARED_EXPERT
+    ]
+    assert shared
+    assert all(component.shared is True and component.routed is False for component in shared)
+    layer_by_key = {
+        component.component_key: component.layer_index
+        for component in inspection.report.components
+        if component.kind is ComponentKind.MOE_LAYER
+    }
+    for context in session._contexts.values():
+        layer_index = layer_by_key[context.layer_key]
+        same_layer_shared = [
+            component for component in shared if component.layer_index == layer_index
+        ]
+        assert same_layer_shared
+        assert all(
+            component.component_key not in context.expert_keys for component in same_layer_shared
+        )
+    assert all(node.callbacks == [] for node in model.nodes.values())
+
+
+def _tamper_qwen35_shared_report(inspection: AdapterInspection, case: str) -> AdapterInspection:
+    components = list(inspection.report.components)
+    shared_position = next(
+        index
+        for index, component in enumerate(components)
+        if component.kind is ComponentKind.SHARED_EXPERT
+    )
+    shared = components[shared_position]
+    report_update: dict[str, object] = {}
+    if case == "count_mismatch":
+        report_update["facts"] = inspection.report.facts.model_copy(
+            update={"shared_expert_count": 0, "shared_expert_count_source": "fixture.none"}
+        )
+    elif case == "missing_count_with_shared":
+        report_update["facts"] = inspection.report.facts.model_copy(
+            update={"shared_expert_count": None, "shared_expert_count_source": None}
+        )
+    elif case == "positive_count_missing":
+        del components[shared_position]
+    elif case == "positive_count_extra":
+        components.append(shared.model_copy(update={"module_path": shared.module_path + ".extra"}))
+    elif case == "duplicate_path":
+        components.append(shared)
+        report_update["facts"] = inspection.report.facts.model_copy(
+            update={"shared_expert_count": 2, "shared_expert_count_source": "fixture.duplicate"}
+        )
+    elif case == "wrong_shared_flag":
+        components[shared_position] = shared.model_copy(update={"shared": False})
+    elif case == "wrong_routed_flag":
+        components[shared_position] = shared.model_copy(update={"routed": True})
+    elif case == "wrong_index":
+        components[shared_position] = shared.model_copy(update={"expert_index": 0})
+    elif case == "wrong_layer":
+        components[shared_position] = shared.model_copy(update={"layer_index": 1})
+    else:
+        raise AssertionError(f"unknown shared tamper case: {case}")
+    report_update["components"] = components
+    return inspection.model_copy(
+        update={"report": inspection.report.model_copy(update=report_update)}
+    )
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["count_mismatch", "wrong_shared_flag", "wrong_routed_flag", "wrong_index", "wrong_layer"],
+)
+def test_shared_count_flags_index_and_layer_are_model_neutral_contracts(
+    case: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class ForbiddenModel:
+        @property
+        def named_modules(self):
+            raise AssertionError("invalid shared-expert evidence must not traverse the model")
+
+    base = _inspection("qwen3_5_moe", "packed")
+    inspection = _tamper_qwen35_shared_report(base, case)
+    plan = build_routing_probe_plan(base)
+
+    def return_tampered(cls, payload: object) -> AdapterInspection:
+        del cls, payload
+        return inspection
+
+    monkeypatch.setattr(AdapterInspection, "model_validate", classmethod(return_tampered))
+    with pytest.raises(RoutingCaptureError) as exc_info:
+        RoutingCaptureSession(ForbiddenModel(), base, plan, lambda *args: (), max_events=1)
+    assert exc_info.value.stage == "preflight"
+
+
+@pytest.mark.parametrize(
+    "case", ["missing_count_with_shared", "positive_count_missing", "positive_count_extra"]
+)
+def test_shared_count_mismatches_fail_during_preflight_before_traversal(
+    case: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class ForbiddenModel:
+        @property
+        def named_modules(self):
+            raise AssertionError("shared count validation must precede model traversal")
+
+    base = _inspection("qwen3_5_moe", "packed")
+    inspection = _tamper_qwen35_shared_report(base, case)
+    plan = build_routing_probe_plan(base)
+
+    def return_tampered(cls, payload: object) -> AdapterInspection:
+        del cls, payload
+        return inspection
+
+    monkeypatch.setattr(AdapterInspection, "model_validate", classmethod(return_tampered))
+    with pytest.raises(RoutingCaptureError) as exc_info:
+        RoutingCaptureSession(ForbiddenModel(), base, plan, lambda *args: (), max_events=1)
+    assert exc_info.value.stage == "preflight"
+
+
+def test_duplicate_shared_module_paths_fail_during_preflight_before_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ForbiddenModel:
+        @property
+        def named_modules(self):
+            raise AssertionError("duplicate shared paths must precede model traversal")
+
+    base = _inspection("qwen3_5_moe", "packed")
+    inspection = _tamper_qwen35_shared_report(base, "duplicate_path")
+    plan = build_routing_probe_plan(base)
+
+    def return_tampered(cls, payload: object) -> AdapterInspection:
+        del cls, payload
+        return inspection
+
+    monkeypatch.setattr(AdapterInspection, "model_validate", classmethod(return_tampered))
+    with pytest.raises(RoutingCaptureError) as exc_info:
+        RoutingCaptureSession(ForbiddenModel(), base, plan, lambda *args: (), max_events=1)
+    assert exc_info.value.stage == "preflight"
+
+
+def test_missing_shared_count_normalizes_to_zero_and_explicit_zero_is_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _inspection("mixtral", "legacy")
+    assert base.report.facts.shared_expert_count is None
+    zero_facts = base.report.facts.model_copy(
+        update={"shared_expert_count": 0, "shared_expert_count_source": "fixture.none"}
+    )
+    zero_inspection = base.model_copy(
+        update={"report": base.report.model_copy(update={"facts": zero_facts})}
+    )
+    plan = build_routing_probe_plan(base)
+    model = _HookModel("mixtral", "legacy")
+
+    def return_zero(cls, payload: object) -> AdapterInspection:
+        del cls, payload
+        return zero_inspection
+
+    monkeypatch.setattr(AdapterInspection, "model_validate", classmethod(return_zero))
+    session = RoutingCaptureSession(model, base, plan, lambda *args: (), max_events=1)
+    with session:
+        pass
+    assert session.events == ()
+
+
+def test_shared_component_cannot_be_a_routing_target() -> None:
+    inspection = _inspection("qwen3_5_moe", "packed")
+    plan = build_routing_probe_plan(inspection)
+    shared = next(
+        component
+        for component in inspection.report.components
+        if component.kind is ComponentKind.SHARED_EXPERT
+    )
+    target = plan.targets[0]
+    shared_target = target.model_copy(
+        update={"component_key": shared.component_key, "module_path": shared.module_path}
+    )
+    tampered_plan = plan.model_copy(update={"targets": (shared_target, *plan.targets[1:])})
+    with pytest.raises(ValueError, match="router"):
+        routing_module._build_contexts(inspection, tampered_plan)
+
+
+def test_shared_component_cannot_emit_a_routing_event() -> None:
+    session, model, inspection = _session("qwen3_5_moe", "packed", max_events=4)
+    first_path = next(iter(model.nodes))
+    router = next(
+        component
+        for component in inspection.report.components
+        if component.kind is ComponentKind.ROUTER and component.module_path == first_path
+    )
+    shared_key = next(
+        component.component_key
+        for component in inspection.report.components
+        if component.kind is ComponentKind.SHARED_EXPERT
+        and component.layer_index == router.layer_index
+    )
+
+    def shared_event_decoder(context, module, inputs, output):
+        del module, inputs, output
+        return (
+            RoutingEvent(
+                token_key="token:" + "f" * 64,
+                layer_key=context.layer_key,
+                rank=0,
+                expert_key=shared_key,
+                probability=0.5,
+                selected=True,
+            ),
+        )
+
+    session = RoutingCaptureSession(
+        model,
+        inspection,
+        build_routing_probe_plan(inspection),
+        shared_event_decoder,
+        max_events=4,
+    )
+    with pytest.raises(RoutingCaptureError) as exc_info:
+        with session:
+            model.nodes[first_path].fire((), object())
+    assert exc_info.value.stage == "events"
+    assert session._events == []
+    assert all(node.callbacks == [] for node in model.nodes.values())
+
+
+@pytest.mark.parametrize("architecture", ["qwen3_5_moe", "qwen3_5_moe_text"])
+def test_qwen35_both_roots_multi_layer_cleanup_pending_is_retryable(architecture: str) -> None:
+    session, model, _ = _session(architecture, "packed", max_events=8)
+    first_path = next(iter(model.nodes))
+    model.nodes[first_path].removal_failures = 1
+    with pytest.raises(RoutingCaptureError) as exc_info:
+        with session:
+            next(iter(model.nodes.values())).fire((), object())
+    assert exc_info.value.stage == "lifecycle"
+    assert all(node.callbacks == [] for path, node in model.nodes.items() if path != first_path)
+    assert model.nodes[first_path].callbacks
+    with pytest.raises(RoutingCaptureError):
+        _ = session.events
+    session.close()
+    assert all(node.callbacks == [] for node in model.nodes.values())
+    assert len(session.events) == 1
+    session.close()
 
 
 def test_future_descriptor_family_is_accepted_without_allowlist() -> None:

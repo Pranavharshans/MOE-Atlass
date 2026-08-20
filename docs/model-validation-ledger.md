@@ -229,3 +229,11 @@ VM/release work. The structural basis is the official
 The native gate tuple is `(router_logits, router_scores, router_indices)`;
 Feature 26 decoding and final release revision review remain deferred. No model
 files are downloaded.
+Feature 26 Qwen3.5 routing decoding: Status: model-free decoder complete; runtime
+certification deferred. Qwen-owned conditional/text hook fixtures cover the
+official packed `(router_logits, router_scores, router_indices)` tuple,
+deterministic stable-softmax top-k, tie rejection, score renormalization,
+shared-expert exclusion, fresh model-neutral events, single-use router
+bindings, and cleanup-safe capture integration. Official runtime/checkpoint
+equivalence, GPU validation, and immutable revision pinning remain final-VM and
+release-review work. No model files are downloaded.

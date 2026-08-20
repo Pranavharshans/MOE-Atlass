@@ -180,6 +180,76 @@ class Qwen3_5MoeForCausalLM(Qwen3_5MoeModel):
         super().__init__(**kwargs)
 
 
+class Qwen3_5MoeHookHandle:
+    """Torch-free removable handle for one Qwen3.5 gate hook."""
+
+    def __init__(self, owner: Qwen3_5MoeHookModule, callback: object) -> None:
+        self.owner = owner
+        self.callback = callback
+
+    def remove(self) -> None:
+        if self.callback in self.owner.callbacks:
+            self.owner.callbacks.remove(self.callback)
+
+
+class Qwen3_5MoeHookModule(_Module):
+    """A Qwen-owned gate surface with the standard forward-hook API."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__()
+        self.path = path
+        self.callbacks: list[object] = []
+
+    def register_forward_hook(self, callback: object) -> Qwen3_5MoeHookHandle:
+        self.callbacks.append(callback)
+        return Qwen3_5MoeHookHandle(self, callback)
+
+    def fire(self, output: object, *, inputs: tuple[object, ...] = ()) -> None:
+        for callback in tuple(self.callbacks):
+            callback(self, inputs, output)
+
+
+class Qwen3_5MoeHookableModel:
+    """Conditional/text Qwen3.5 fixture whose routed gates are hookable."""
+
+    def __init__(self, *, surface: str = "conditional", **kwargs: object) -> None:
+        if surface == "conditional":
+            source = Qwen3_5MoeForConditionalGeneration(**kwargs)
+        elif surface == "text":
+            source = Qwen3_5MoeForCausalLM(**kwargs)
+        else:
+            raise ValueError("surface must be conditional or text")
+        self.config = source.config
+        self.nodes: dict[str, Qwen3_5MoeHookModule] = {}
+        self._entries: list[tuple[str, object]] = []
+        for path, module in source.named_modules():
+            if path.endswith(".mlp.gate"):
+                node = Qwen3_5MoeHookModule(path)
+                self.nodes[path] = node
+                self._entries.append((path, node))
+            else:
+                self._entries.append((path, module))
+        self._parameters = tuple(source.named_parameters())
+
+    def named_modules(self):
+        return iter(self._entries)
+
+    def named_parameters(self):
+        return iter(self._parameters)
+
+
+class Qwen3_5MoeHookableForConditionalGeneration(Qwen3_5MoeHookableModel):
+    def __init__(self, **kwargs: object) -> None:
+        kwargs.setdefault("surface", "conditional")
+        super().__init__(**kwargs)
+
+
+class Qwen3_5MoeHookableForCausalLM(Qwen3_5MoeHookableModel):
+    def __init__(self, **kwargs: object) -> None:
+        kwargs.setdefault("surface", "text")
+        super().__init__(**kwargs)
+
+
 __all__ = [
     "FakeParameter",
     "Qwen3_5MoeConfig",
@@ -187,4 +257,9 @@ __all__ = [
     "Qwen3_5MoeModel",
     "Qwen3_5MoeForConditionalGeneration",
     "Qwen3_5MoeForCausalLM",
+    "Qwen3_5MoeHookHandle",
+    "Qwen3_5MoeHookModule",
+    "Qwen3_5MoeHookableModel",
+    "Qwen3_5MoeHookableForConditionalGeneration",
+    "Qwen3_5MoeHookableForCausalLM",
 ]

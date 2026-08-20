@@ -208,8 +208,12 @@ Qwen3.5-MoE support is isolated to an explicit packed-only static adapter
 for the `qwen3_5_moe`/`qwen3_5_moe_text` family; it does not alter the generic schema, registry, decoder, loading, or
 server surfaces. The conditional wrapper and text-only surface are handled by
 the same adapter, while family-specific tensor layouts stay inside that seam.
-Feature 25 records only the v5.14 structure contract and the native gate tuple
-`(router_logits, router_scores, router_indices)`; Feature 26 must add its
-family-specific decoder after the static evidence is reviewed. Checkpoint/GPU
-validation and the release-time review of the official revision remain
-deferred to the final VM.
+Feature 25 records the v5.14 structure contract and the native gate tuple
+`(router_logits, router_scores, router_indices)`. Feature 26 adds the separate
+passive Qwen3.5 decoder seam: it validates the packed tuple, excludes shared
+experts, and emits fresh model-neutral routing events without modifying the
+Mixtral decoder, generic event schema, adapter registry, or model server path.
+The shared routing-capture context validates shared-expert metadata and keeps
+it out of routed `expert_keys` for every family; this remains model-neutral.
+Checkpoint/GPU validation and the release-time review of the official revision
+remain deferred to the final VM.

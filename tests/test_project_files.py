@@ -40,6 +40,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "adapters" / "qwen3_5_moe.py",
             ROOT / "tests" / "fixtures" / "qwen3_5_moe.py",
             ROOT / "tests" / "test_qwen3_5_moe_adapter.py",
+            ROOT / "src" / "moeatlas" / "runtime" / "qwen3_5_routing.py",
+            ROOT / "tests" / "test_qwen3_5_routing_decoder.py",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -69,6 +71,16 @@ class ProjectFilesTests(unittest.TestCase):
         )
         self.assertIn("Qwen3.5-35B-A3B", ledger)
         self.assertIn("Mixtral is the reference", architecture)
+
+    def test_shared_expert_capture_rule_is_model_neutral(self) -> None:
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        runtime = (ROOT / "docs" / "runtime.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document in (architecture, runtime, readme):
+            self.assertIn("shared", document.lower())
+        self.assertIn("model-neutral", architecture)
+        self.assertIn("expert_keys", runtime)
+        self.assertIn("non-routed metadata", readme)
 
     def test_prompt_prefill_docs_and_surface_are_present(self) -> None:
         runtime = (ROOT / "docs" / "runtime.md").read_text()
