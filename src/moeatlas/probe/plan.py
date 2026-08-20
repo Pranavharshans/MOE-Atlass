@@ -152,6 +152,24 @@ _ALLOWED_HOOKS: dict[ProbeLevel, frozenset[HookPoint]] = {
 }
 
 
+def _natural_path_key(path: str) -> tuple[tuple[int, int | str], ...]:
+    """Sort dotted paths by numeric segments, then ordinary path text.
+
+    Module paths are semantic identifiers rather than filesystem strings. A
+    lexical sort places ``layers.10`` before ``layers.2``; treating canonical
+    decimal segments numerically preserves deterministic model order without
+    padding or architecture-specific rules.
+    """
+
+    key: list[tuple[int, int | str]] = []
+    for segment in path.split("."):
+        if segment.isdecimal() and (segment == "0" or not segment.startswith("0")):
+            key.append((0, int(segment)))
+        else:
+            key.append((1, segment))
+    return tuple(key)
+
+
 def make_probe_plan_id(payload: Mapping[str, Any]) -> str:
     """Return a stable plan identifier from JSON-compatible plan data."""
 
@@ -198,7 +216,10 @@ class ProbePlan(VersionedManifest):
             tuple(
                 sorted(
                     self.targets,
-                    key=lambda target: (target.module_path, target.component_key or ""),
+                    key=lambda target: (
+                        _natural_path_key(target.module_path),
+                        target.component_key or "",
+                    ),
                 )
             ),
         )

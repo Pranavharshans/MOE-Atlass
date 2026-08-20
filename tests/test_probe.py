@@ -74,6 +74,31 @@ def test_probe_levels_and_plan_json_round_trip_are_stable() -> None:
     assert decoded.to_dict() == first.to_dict()
 
 
+def test_probe_targets_use_natural_numeric_path_order() -> None:
+    plan = routing_plan(
+        "model.layers.10.mlp.gate",
+        "model.layers.2.mlp.gate",
+        "model.layers.1.mlp.gate",
+    )
+    assert [target.module_path for target in plan.targets] == [
+        "model.layers.1.mlp.gate",
+        "model.layers.2.mlp.gate",
+        "model.layers.10.mlp.gate",
+    ]
+    decoded = ProbePlan.from_json(plan.to_json())
+    assert decoded == plan
+    assert decoded.plan_id == plan.plan_id
+
+
+def test_probe_natural_order_is_model_neutral_and_does_not_pad_paths() -> None:
+    plan = routing_plan("block.10.router", "block.2.router")
+    assert [target.module_path for target in plan.targets] == [
+        "block.2.router",
+        "block.10.router",
+    ]
+    assert all(".02." not in target.module_path for target in plan.targets)
+
+
 def test_probe_target_component_identity_is_canonical_and_paired() -> None:
     component_key = make_component_key(
         "model:org/model@main",

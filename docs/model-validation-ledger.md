@@ -213,3 +213,19 @@ raw tensors, and model/tokenizer objects are not persisted by the seam. Real
 tokenizer behavior, checkpoint compatibility, GPU routing fidelity, and
 performance still require the final provisioned VM; no model files are
 downloaded here.
+Feature 25 Qwen3.5-MoE structure inspection: Status: model-free structure
+complete, runtime certification deferred. Fixtures cover the conditional
+`model.language_model.layers` and text-only `model.layers`/bare-base surfaces,
+strict current-family identity, exact nested `model.language_model.config`,
+official v5.14 descendant allowlists (`experts.act_fn` and shared-expert
+gate/up/down/act_fn), packed shapes, shared-expert metadata, and rejection of
+indexed, foreign, or mixed layouts. Official checkpoint loading, routing
+capture/decoding, GPU equivalence, and immutable revision pinning remain final
+VM/release work. The structural basis is the official
+[Transformers v5.14.0 modeling source](https://github.com/huggingface/transformers/blob/v5.14.0/src/transformers/models/qwen3_5_moe/modeling_qwen3_5_moe.py),
+[modular source](https://github.com/huggingface/transformers/blob/v5.14.0/src/transformers/models/qwen3_5_moe/modular_qwen3_5_moe.py),
+[Qwen3.5-35B-A3B card](https://huggingface.co/Qwen/Qwen3.5-35B-A3B), and
+[current config](https://huggingface.co/Qwen/Qwen3.5-35B-A3B/raw/main/config.json).
+The native gate tuple is `(router_logits, router_scores, router_indices)`;
+Feature 26 decoding and final release revision review remain deferred. No model
+files are downloaded.

@@ -37,6 +37,9 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_cli_routing_runs.py",
             ROOT / "src" / "moeatlas" / "runtime" / "prompt_prefill.py",
             ROOT / "tests" / "test_runtime_prompt_prefill.py",
+            ROOT / "src" / "moeatlas" / "adapters" / "qwen3_5_moe.py",
+            ROOT / "tests" / "fixtures" / "qwen3_5_moe.py",
+            ROOT / "tests" / "test_qwen3_5_moe_adapter.py",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -47,6 +50,25 @@ class ProjectFilesTests(unittest.TestCase):
         self.assertIn("Status: deferred", ledger)
         self.assertIn("No model files are downloaded", ledger)
         self.assertIn("final VM", ledger)
+
+    def test_qwen35_acceptance_anchors_are_present(self) -> None:
+        adapter_docs = (ROOT / "docs" / "adapters.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document in (adapter_docs, architecture, ledger, readme):
+            self.assertIn("qwen3_5_moe", document)
+            self.assertIn("router_logits", document)
+            self.assertIn("router_scores", document)
+            self.assertIn("router_indices", document)
+            self.assertIn("Feature 26", document)
+            self.assertIn("final VM", document)
+        self.assertIn(
+            "https://github.com/huggingface/transformers/blob/v5.14.0/src/transformers/models/qwen3_5_moe/modeling_qwen3_5_moe.py",
+            adapter_docs,
+        )
+        self.assertIn("Qwen3.5-35B-A3B", ledger)
+        self.assertIn("Mixtral is the reference", architecture)
 
     def test_prompt_prefill_docs_and_surface_are_present(self) -> None:
         runtime = (ROOT / "docs" / "runtime.md").read_text()

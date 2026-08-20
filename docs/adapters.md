@@ -119,9 +119,8 @@ routers, expert containers, and routed experts with exactly `[STRUCTURE]`,
 `verified=False`. Packed expert entries are logical slices and carry the
 fixed warning that they are not independently hookable. No routing scores,
 expert activity, specialization, or routing certification is claimed.
-Qwen2-MoE and Qwen3.5 hybrid/composite layouts are separate future adapters.
-Real checkpoints, runtime versions, GPU behavior, and VM evidence remain
-deferred.
+Qwen2-MoE remains a separate future adapter. Real checkpoints, runtime
+versions, GPU behavior, and VM evidence remain deferred.
 
 ## Routing probe-plan compilation
 
@@ -183,3 +182,41 @@ boundary only; it does not elevate static components to `FULL` or claim
 routing certification. Native equivalence, passive output fidelity, routing
 overhead, GPU behavior, fused/quantized paths, and packaging revalidation stay
 deferred to MV-03 through MV-08.
+
+## Qwen3.5-MoE static adapter (experimental)
+
+`Qwen3_5MoeStaticAdapter` is an explicit, caller-supplied structure-only
+adapter for the current Qwen3.5-MoE identity (`qwen3_5_moe` and
+`qwen3_5_moe_text`), based on the official Transformers v5.14 surface. It
+accepts only the packed expert layout:
+
+- `mlp.gate.weight`: `[experts, hidden]`;
+- `mlp.experts.gate_up_proj`: `[experts, 2 * moe_intermediate, hidden]`;
+- `mlp.experts.down_proj`: `[experts, hidden, moe_intermediate]`;
+- `mlp.shared_expert.{gate_proj,up_proj}.weight` and
+  `mlp.shared_expert.down_proj.weight` for the non-routed shared expert; and
+- `mlp.shared_expert_gate.weight`: `[1, hidden]` metadata only.
+
+The layout is anchored to the official
+[Transformers v5.14.0 Qwen3.5-MoE implementation](https://github.com/huggingface/transformers/blob/v5.14.0/src/transformers/models/qwen3_5_moe/modeling_qwen3_5_moe.py),
+its [modular source](https://github.com/huggingface/transformers/blob/v5.14.0/src/transformers/models/qwen3_5_moe/modular_qwen3_5_moe.py),
+and the current [Qwen3.5-35B-A3B model card](https://huggingface.co/Qwen/Qwen3.5-35B-A3B)
+and [configuration](https://huggingface.co/Qwen/Qwen3.5-35B-A3B/raw/main/config.json).
+The gate's native runtime tuple is `(router_logits, router_scores,
+router_indices)`; decoding that tuple is Feature 26 and is intentionally not
+implemented by this static seam.
+
+Conditional models must expose `model.language_model.config` as the exact
+nested `text_config` object and must expose `model.language_model.layers`;
+text-only models must expose `model.layers` (with the exact bare `layers` base
+surface accepted only for the official text identity). Every configured layer
+must be MoE; `layer_types` is validated as the per-layer attention-kind list,
+not interpreted as a sparse/dense schedule. Indexed experts, mixed roots,
+fuzzy architectures, foreign descendants, and missing shared-expert modules
+are rejected. Packed experts are published as logical slices and are not
+independently hookable. The seam performs no model loading, tensor reads,
+registry selection, or routing/model certification; it emits only `STRUCTURE`
+evidence with `verified=False`.
+Feature 26 routing capture/decoding, current-checkpoint loading, GPU
+equivalence, and release-time immutable revision review remain deferred to the
+final VM.

@@ -242,3 +242,9 @@ append its returned `MixtralRoutingForwardResult` with
 `render_mixtral_routing_load_heatmap(...)`. Prefill does not append, inventory,
 aggregate, render, or expose a server/wire/progress surface on the caller's
 behalf; each later action remains independently bounded and auditable.
+An EXPERIMENTAL explicit Qwen3.5-MoE static adapter covers the current
+`qwen3_5_moe`/`qwen3_5_moe_text` conditional and text-only packed structure
+surfaces. Shared experts remain non-routed metadata; the native gate tuple is
+`(router_logits, router_scores, router_indices)`, and Feature 26 routing
+decoding plus current-checkpoint/GPU certification remain deferred to the
+final VM and release-time official-revision review.
