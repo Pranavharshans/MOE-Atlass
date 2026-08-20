@@ -42,6 +42,9 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_qwen3_5_moe_adapter.py",
             ROOT / "src" / "moeatlas" / "runtime" / "qwen3_5_routing.py",
             ROOT / "tests" / "test_qwen3_5_routing_decoder.py",
+            ROOT / "src" / "moeatlas" / "runtime" / "routing_forward.py",
+            ROOT / "tests" / "test_runtime_routing_forward.py",
+            ROOT / "tests" / "test_qwen3_5_routing_forward.py",
         )
         for path in required_files:
             with self.subTest(path=path):
@@ -648,7 +651,12 @@ class ProjectFilesTests(unittest.TestCase):
                     self.assertIn(term, document)
         source = (ROOT / "src" / "moeatlas" / "runtime" / "routing_forward.py").read_text()
         exports = (ROOT / "src" / "moeatlas" / "runtime" / "__init__.py").read_text()
-        for term in ("MixtralRoutingForwardResult", "run_mixtral_routing_forward"):
+        for term in (
+            "RoutingForwardResult",
+            "MixtralRoutingForwardResult",
+            "run_mixtral_routing_forward",
+            "run_qwen3_5_routing_forward",
+        ):
             self.assertIn(term, source)
             self.assertIn(term, exports)
         self.assertTrue((ROOT / "tests" / "test_runtime_routing_forward.py").is_file())

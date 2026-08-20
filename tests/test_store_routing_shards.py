@@ -16,19 +16,37 @@ from pathlib import Path
 
 import pytest
 
+from moeatlas.adapters import build_routing_probe_plan
+
 try:
     import duckdb
 except ImportError:  # pragma: no cover - exercised only without the store extra
     duckdb = None
 
 import moeatlas.store.routing_shards as storage
-from moeatlas.runtime import MixtralRoutingForwardResult
+from moeatlas.runtime import (
+    MixtralRoutingForwardResult,
+    RoutingForwardResult,
+    run_qwen3_5_routing_forward,
+)
 from moeatlas.store import (
     STORE_SCHEMA_VERSION,
     RoutingShardError,
     RoutingShardReceipt,
     append_mixtral_routing_shard,
+    list_mixtral_routing_runs,
     list_mixtral_routing_shards,
+)
+
+from .fixtures.qwen3_5_moe import Qwen3_5MoeHookableForConditionalGeneration
+from .test_qwen3_5_routing_decoder import (
+    _inspection as _qwen35_inspection,
+)
+from .test_qwen3_5_routing_decoder import (
+    _packed_payload as _qwen35_packed_payload,
+)
+from .test_qwen3_5_routing_decoder import (
+    _tokens as _qwen35_tokens,
 )
 
 
@@ -39,10 +57,65 @@ def _run_result(layout: str = "legacy", *, token_count: int = 2):
     return result, model, inspection
 
 
+class _QwenStoreModel(Qwen3_5MoeHookableForConditionalGeneration):
+    def __init__(self) -> None:
+        super().__init__(num_layers=2)
+        self.output = object()
+
+    def __call__(self, **kwargs: object) -> object:
+        del kwargs
+        payload = _qwen35_packed_payload([[1.0, 2.0, 0.0, 3.0]])
+        for node in self.nodes.values():
+            node.fire(payload)
+        return self.output
+
+
+def _qwen_result() -> RoutingForwardResult:
+    inspection = _qwen35_inspection()
+    return run_qwen3_5_routing_forward(
+        _QwenStoreModel(),
+        inspection,
+        build_routing_probe_plan(inspection),
+        _qwen35_tokens(1),
+        {},
+        max_events=8,
+    )
+
+
 def _workspace(tmp_path: Path) -> Path:
     path = tmp_path / "workspace with spaces—演示"
     path.mkdir()
     return path
+
+
+def test_qwen35_result_round_trips_through_historical_store_surface(tmp_path: Path) -> None:
+    if duckdb is None:
+        pytest.skip("duckdb store extra is unavailable")
+    workspace = _workspace(tmp_path)
+    result = _qwen_result()
+    assert type(result) is RoutingForwardResult
+    receipt = append_mixtral_routing_shard(workspace, result)
+    reopened = list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+    assert len(reopened) == 1
+    assert reopened[0].shard_key == receipt.shard_key
+    assert reopened[0].created is False
+    manifest = _manifest(receipt, workspace)
+    assert manifest["manifest_type"] == "routing_shard"
+    assert manifest["store_schema_version"] == STORE_SCHEMA_VERSION
+    assert manifest["event_schema_version"] == result.token_events[0].schema_version
+    assert set(manifest["files"]) == {"tokens.parquet", "routing.parquet"}
+    again = append_mixtral_routing_shard(workspace, result)
+    assert again.created is False
+    assert again.shard_key == receipt.shard_key
+    inventory = list_mixtral_routing_runs(
+        workspace,
+        max_runs=2,
+        max_shards=2,
+        max_event_rows=32,
+        max_source_bytes=1_000_000,
+    )
+    assert inventory.run_count == 1
+    assert inventory.routing_count == len(result.routing_events)
 
 
 def _tree_snapshot(path: Path) -> tuple[str, ...]:

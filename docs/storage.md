@@ -2,10 +2,16 @@
 
 Feature 19 adds one bounded, caller-invoked persistence seam:
 `append_mixtral_routing_shard(workspace, result, *, store_token_text=False)`.
-It accepts only a complete `MixtralRoutingForwardResult` from the Feature 18
-one-forward boundary. The result is freshly revalidated before any managed
+It accepts only a complete model-neutral `RoutingForwardResult` from the
+Feature 18 one-forward boundary. The historical Mixtral function name remains
+backward-compatible and accepts Qwen3.5 or future-family results without
+changing the persisted schema. The result is freshly revalidated before any managed
 directory is created; the opaque model output is never serialized, inspected,
 or retained by storage.
+Feature 27 validates Qwen3.5 through append, reopen, and the read-only run
+inventory only. Aggregate and visualization remain Mixtral-specific until the
+Feature 28 model-neutral analysis work; storage compatibility is not an
+analysis or visualization certification claim.
 
 The workspace must already be a real, non-symlink directory. One immutable
 content-addressed shard is written under:

@@ -48,19 +48,29 @@ class ResolvedProbePlan:
             raise ProbeResolutionError(
                 "a resolved probe plan must not contain duplicate module paths or bindings"
             )
-        ordered = tuple(sorted(targets, key=lambda target: target.target.module_path))
         expected = tuple(
             target
             for target in self.plan.targets
             if (not self.plan.include or target.module_path in self.plan.include)
             and target.module_path not in self.plan.exclude
         )
-        actual = tuple(target.target for target in ordered)
-        if actual != expected:
+        expected_by_path = {target.module_path: target for target in expected}
+        supplied_by_path: dict[str, ResolvedTarget] = {}
+        for target in targets:
+            path = target.target.module_path
+            if path in supplied_by_path:
+                raise ProbeResolutionError(
+                    "a resolved probe plan must not contain duplicate module paths or bindings"
+                )
+            supplied_by_path[path] = target
+        if set(supplied_by_path) != set(expected_by_path) or any(
+            supplied_by_path[path].target != expected_by_path[path] for path in expected_by_path
+        ):
             raise ProbeResolutionError(
                 "resolved targets must exactly match the source-plan selection "
                 "after include/exclude filters"
             )
+        ordered = tuple(supplied_by_path[path] for path in expected_by_path)
         object.__setattr__(self, "targets", ordered)
 
     @property

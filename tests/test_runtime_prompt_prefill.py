@@ -1308,7 +1308,7 @@ def test_public_signature_kinds_annotations_and_private_preflight_return_shape()
     assert hints["loaded"] is LoadedModel
     assert hints["inspection"].__name__ == "AdapterInspection"
     assert hints["plan"].__name__ == "ProbePlan"
-    assert hints["return"].__name__ == "MixtralRoutingForwardResult"
+    assert hints["return"].__name__ == "RoutingForwardResult"
     preflight_hints = get_type_hints(prefill._preflight)
     assert str(preflight_hints["return"]).count("int") >= 3
 

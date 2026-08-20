@@ -76,7 +76,8 @@ through MV-08 remain `deferred`, and this feature does not change MV-01/MV-02
 status.
 
 Feature 18 adds the experimental `run_mixtral_routing_forward()` one-forward
-wrapper and frozen `MixtralRoutingForwardResult`. Model-free tests verify
+wrapper and frozen model-neutral `RoutingForwardResult` (historical Mixtral
+identity alias). Model-free tests verify
 canonical preflight, caller-tokenized row binding, shallow keyword copying,
 pre-hook complete-event budgeting, exactly one model call, legacy/packed
 capture, fresh result events, output identity/ownership, no partial
@@ -237,3 +238,11 @@ shared-expert exclusion, fresh model-neutral events, single-use router
 bindings, and cleanup-safe capture integration. Official runtime/checkpoint
 equivalence, GPU validation, and immutable revision pinning remain final-VM and
 release-review work. No model files are downloaded.
+Feature 27 Qwen3.5 forward: Status: implemented at the model-free boundary;
+the decoder/session composition, neutral result, cleanup evidence, and
+append/reopen/inventory storage compatibility are covered. Feature 27 ends
+before aggregate or visualization: those existing downstream functions remain
+Mixtral-specific pending Feature 28 model-neutral analysis neutralization.
+Official checkpoint/runtime equivalence and GPU certification status remain
+deferred to the final VM and release-time revision review. No model files are
+downloaded.

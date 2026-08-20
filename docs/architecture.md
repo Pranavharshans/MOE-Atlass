@@ -122,7 +122,8 @@ Feature 18 keeps one-forward execution as a caller-owned runtime boundary.
 caller model kwargs, shallow-copies only the kwargs mapping, and invokes the
 callable model exactly once under the canonical passive `RoutingCaptureSession`.
 It computes the complete-event budget before hooks/model traversal and
-publishes only a frozen `MixtralRoutingForwardResult` after cleanup and event
+publishes only a frozen model-neutral `RoutingForwardResult` (the historical
+`MixtralRoutingForwardResult` name remains an identity alias) after cleanup and event
 postconditions succeed. The result owns no model or decoder and retains the
 exact caller output identity plus fresh event copies. Tokenization, prompts,
 padding, generation, datasets, storage, CLI, server, and UI remain outside
@@ -217,3 +218,8 @@ The shared routing-capture context validates shared-expert metadata and keeps
 it out of routed `expert_keys` for every family; this remains model-neutral.
 Checkpoint/GPU validation and the release-time review of the official revision
 remain deferred to the final VM.
+Feature 27 composes Qwen3.5 capture with the existing session lifecycle while
+keeping model-family decoding isolated. It adds no server, UI, CLI, loader, or
+schema surface. Its downstream evidence boundary ends at append, reopen, and
+run inventory; aggregate and visualization remain Mixtral-specific pending
+Feature 28 model-neutral analysis neutralization.

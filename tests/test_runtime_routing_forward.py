@@ -16,6 +16,7 @@ from moeatlas.probe import ProbeResolutionError
 from moeatlas.runtime import (
     MixtralRoutingForwardResult,
     RoutingCaptureError,
+    RoutingForwardResult,
     run_mixtral_routing_forward,
 )
 
@@ -156,6 +157,8 @@ def _run(
 
 
 def test_public_api_and_result_dataclass_contract() -> None:
+    assert RoutingForwardResult is MixtralRoutingForwardResult
+    assert RoutingForwardResult.__name__ == "RoutingForwardResult"
     assert MixtralRoutingForwardResult.__slots__ == (
         "output",
         "token_events",

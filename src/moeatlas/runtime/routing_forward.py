@@ -15,6 +15,7 @@ from .contracts import (
     _attach_pending_cleanup,
 )
 from .mixtral_routing import MixtralRoutingDecoder
+from .qwen3_5_routing import Qwen3_5RoutingDecoder
 from .routing import RoutingCaptureError, RoutingCaptureSession
 
 
@@ -36,7 +37,11 @@ def _fresh_plan(value: object) -> ProbePlan:
     return fresh
 
 
-def _fresh_token_events(value: object) -> tuple[TokenEvent, ...]:
+def _fresh_token_events(
+    value: object,
+    *,
+    strict_sequence: bool = False,
+) -> tuple[TokenEvent, ...]:
     if type(value) is not tuple:
         raise TypeError("token_events must be an exact tuple")
     if not value:
@@ -45,6 +50,7 @@ def _fresh_token_events(value: object) -> tuple[TokenEvent, ...]:
     seen: set[str] = set()
     run_key: str | None = None
     phase: object | None = None
+    sequence_id: str | None = None
     for event in value:
         if type(event) is not TokenEvent:
             raise TypeError("token_events must contain exact TokenEvent objects")
@@ -57,8 +63,13 @@ def _fresh_token_events(value: object) -> tuple[TokenEvent, ...]:
         if run_key is None:
             run_key = fresh.run_key
             phase = fresh.phase
+            sequence_id = fresh.sequence_id
         elif fresh.run_key != run_key or fresh.phase != phase:
             raise ValueError("token_events must share one run_key and phase")
+        elif strict_sequence and fresh.sequence_id != sequence_id:
+            raise ValueError("token_events must share one run_key, sequence_id, and phase")
+        if strict_sequence and fresh.token_pos != len(fresh_events):
+            raise ValueError("token_events must contain one contiguous canonical sequence 0..N-1")
         fresh_events.append(fresh)
     return tuple(fresh_events)
 
@@ -124,7 +135,7 @@ def _validate_routing_links(
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class MixtralRoutingForwardResult:
+class RoutingForwardResult:
     """Caller-owned output and complete fresh routing evidence for one forward."""
 
     output: object = field(repr=False)
@@ -211,6 +222,9 @@ def _cleanup_after_failure(
         _add_cleanup_note(primary, cleanup_error)
 
 
+MixtralRoutingForwardResult = RoutingForwardResult
+
+
 def run_mixtral_routing_forward(
     model: object,
     inspection: AdapterInspection,
@@ -219,7 +233,7 @@ def run_mixtral_routing_forward(
     model_kwargs: dict[str, object],
     *,
     max_events: int,
-) -> MixtralRoutingForwardResult:
+) -> RoutingForwardResult:
     """Run exactly one caller-supplied Mixtral forward with complete routing capture."""
 
     if not callable(model):
@@ -274,7 +288,83 @@ def run_mixtral_routing_forward(
             captured_layer_keys.append(event.layer_key)
     if tuple(captured_layer_keys) != expected_layer_keys:
         raise ValueError("routing events do not use the canonical layer block order")
-    return MixtralRoutingForwardResult(output, fresh_tokens, captured)
+    return RoutingForwardResult(output, fresh_tokens, captured)
 
 
-__all__ = ["MixtralRoutingForwardResult", "run_mixtral_routing_forward"]
+def run_qwen3_5_routing_forward(
+    model: object,
+    inspection: AdapterInspection,
+    plan: ProbePlan,
+    token_events: tuple[TokenEvent, ...],
+    model_kwargs: dict[str, object],
+    *,
+    max_events: int,
+) -> RoutingForwardResult:
+    """Run exactly one caller-supplied Qwen3.5 forward with routing capture.
+
+    The wrapper deliberately shares the model-neutral session and result seam
+    with Mixtral.  Only the decoder is family-specific: Qwen3.5's packed gate
+    tuple is interpreted by :class:`Qwen3_5RoutingDecoder`.
+    """
+
+    if not callable(model):
+        raise TypeError("model must be callable")
+    fresh_inspection = _fresh_inspection(inspection)
+    fresh_plan = _fresh_plan(plan)
+    fresh_tokens = _fresh_token_events(token_events, strict_sequence=True)
+    copied_model_kwargs = _validate_kwargs(model_kwargs)
+    if type(max_events) is not int or isinstance(max_events, bool):
+        raise TypeError("max_events must be a strict integer")
+    if max_events <= 0:
+        raise ValueError("max_events must be positive")
+
+    canonical_plan = build_routing_probe_plan(fresh_inspection)
+    if type(canonical_plan) is not ProbePlan:
+        raise TypeError("routing plan compiler returned an unexpected type")
+    if (
+        fresh_plan != canonical_plan
+        or fresh_plan.to_json() != canonical_plan.to_json()
+        or fresh_plan.plan_id != canonical_plan.plan_id
+    ):
+        raise ValueError("supplied plan is not the canonical routing plan")
+    routed_top_k = fresh_inspection.report.facts.routed_top_k
+    if type(routed_top_k) is not int or isinstance(routed_top_k, bool) or routed_top_k <= 0:
+        raise ValueError("inspection must provide a strict positive routed_top_k")
+    expected_events = len(fresh_tokens) * len(canonical_plan.targets) * routed_top_k
+    if max_events < expected_events:
+        raise ValueError("max_events is insufficient for complete routing capture")
+    expected_layer_keys = _canonical_layer_keys(fresh_inspection, canonical_plan)
+
+    decoder = Qwen3_5RoutingDecoder(fresh_inspection, fresh_tokens)
+    session = RoutingCaptureSession(
+        model,
+        fresh_inspection,
+        fresh_plan,
+        decoder,
+        max_events=max_events,
+    )
+    try:
+        with session:
+            output = model(**copied_model_kwargs)
+    except BaseException as primary:
+        _cleanup_after_failure(session, primary)
+        raise
+
+    captured = session.events
+    if len(captured) != expected_events or session.truncated or session.dropped_invocations != 0:
+        raise ValueError("routing capture did not publish complete events")
+    captured_layer_keys: list[str] = []
+    for event in captured:
+        if not captured_layer_keys or captured_layer_keys[-1] != event.layer_key:
+            captured_layer_keys.append(event.layer_key)
+    if tuple(captured_layer_keys) != expected_layer_keys:
+        raise ValueError("routing events do not use the canonical layer block order")
+    return RoutingForwardResult(output, fresh_tokens, captured)
+
+
+__all__ = [
+    "RoutingForwardResult",
+    "MixtralRoutingForwardResult",
+    "run_mixtral_routing_forward",
+    "run_qwen3_5_routing_forward",
+]

@@ -15,7 +15,7 @@ from typing import Any, Literal
 from ..core import stable_digest, validate_stable_identifier
 from ..events import EVENT_SCHEMA_VERSION, RoutingEvent, TokenEvent
 from ..runtime.routing_forward import (
-    MixtralRoutingForwardResult,
+    RoutingForwardResult,
     _fresh_routing_events,
     _fresh_token_events,
     _validate_routing_links,
@@ -337,8 +337,8 @@ def _fresh_events(
 ) -> tuple[tuple[TokenEvent, ...], tuple[RoutingEvent, ...]]:
     """Freshly validate only event payloads; never touch the opaque output."""
 
-    if type(value) is not MixtralRoutingForwardResult:
-        raise TypeError("result must be an exact MixtralRoutingForwardResult")
+    if type(value) is not RoutingForwardResult:
+        raise TypeError("result must be an exact RoutingForwardResult")
     token_events = _fresh_token_events(value.token_events)
     routing_events = _fresh_routing_events(value.routing_events)
     _validate_routing_links(token_events, routing_events)
@@ -1249,7 +1249,7 @@ def _append_internal(
 
 def append_mixtral_routing_shard(
     workspace: str | Path,
-    result: MixtralRoutingForwardResult,
+    result: RoutingForwardResult,
     *,
     store_token_text: bool = False,
 ) -> RoutingShardReceipt:

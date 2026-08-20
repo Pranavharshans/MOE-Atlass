@@ -234,8 +234,8 @@ wrapper. It borrows a validated `LoadedModel`, enforces caller budgets, and
 delegates exactly one passive routing forward; tokenizer and checkpoint fidelity
 remain deferred to the final VM.
 
-The intended model-free composition is explicit and manual: call prefill once,
-append its returned `MixtralRoutingForwardResult` with
+The reference Mixtral model-free composition is explicit and manual: call
+prefill once, append its returned model-neutral `RoutingForwardResult` with
 `append_mixtral_routing_shard(...)`, rebuild the read-only run inventory with
 `list_mixtral_routing_runs(...)`, aggregate a selected run with
 `aggregate_mixtral_routing_load(...)`, and finally pass that matrix to
@@ -252,3 +252,8 @@ The model-free Qwen3.5 routing decoder validates packed router logits, scores,
 and indices, excludes shared experts, and emits normalized routing events. It
 does not certify checkpoint or GPU runtime behavior; that remains a final-VM
 and release-time revision-review task.
+An EXPERIMENTAL Qwen3.5 one-forward boundary captures complete routing evidence
+through the neutral runtime result and existing storage-compatible event schema.
+Feature 27 downstream stops at append, reopen, and run inventory; aggregate and
+visualization remain Mixtral-specific pending Feature 28 model-neutral analysis
+neutralization.

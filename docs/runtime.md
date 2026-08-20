@@ -215,7 +215,8 @@ If the retry also fails, no result is published; the existing
 `pending_runtime_cleanup` so the caller can retry cleanup.
 
 Only a complete, non-truncated, zero-dropped capture publishes a
-`MixtralRoutingForwardResult`. The frozen, slots, identity-equality result
+`RoutingForwardResult` (with the historical `MixtralRoutingForwardResult`
+identity alias). The frozen, slots, identity-equality result
 retains only the exact caller-owned output object and fresh token/routing
 events; its output identity is preserved and hidden from `repr`. Every supplied token must be
 represented, every route must reference a supplied token, links must be unique
@@ -317,3 +318,35 @@ release-time revision review remain deferred to the final VM.
 `RoutingCaptureSession` validates any shared-expert metadata present in a
 static report but excludes those components from `RoutingCaptureTarget`
 `expert_keys`; this is a shared model-neutral rule, not a Qwen-specific branch.
+## Qwen3.5 routing forward (experimental)
+
+`run_qwen3_5_routing_forward` is the one-forward Qwen3.5 composition boundary.
+Call it with caller-owned model, inspection, canonical plan, token rows, and
+an exact kwargs dictionary, for example:
+
+```python
+result = run_qwen3_5_routing_forward(
+    model, inspection, plan, token_events, {"input_ids": input_ids}, max_events=budget
+)
+```
+
+The wrapper fresh-validates the Qwen token sequence, plan JSON and `plan_id`,
+strict top-k, kwargs, and the complete event budget before hook registration or
+model traversal. The budget is `len(token_events) * len(plan.targets) *
+routed_top_k`; the caller model is invoked exactly once. It registers
+`Qwen3_5RoutingDecoder` through `RoutingCaptureSession` and publishes only
+complete canonical layer blocks. The result retains only fresh token/routing
+events and the exact caller output identity; it does not own or retain the
+model, decoder, kwargs, or router payloads.
+
+Cleanup and pending-retry semantics match Feature 18: after a started session,
+one internal `session.close()` retry preserves the exact primary body,
+decoder, registration, keyboard-interrupt, or system-exit exception. A
+persistent callback failure is exposed as the caller-owned
+`pending_runtime_cleanup`/`pending_cleanup` handle. The neutral
+`RoutingForwardResult` is identity-compatible with the historical Mixtral
+result alias; storage consumes the same event schema without migration. Feature
+27 downstream ends at append, reopen, and the read-only run inventory. The
+existing aggregate and visualization functions remain Mixtral-specific until
+Feature 28 neutralizes that analysis surface; this boundary does not claim
+Qwen analysis or visualization certification.

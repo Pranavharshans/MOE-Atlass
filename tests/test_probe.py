@@ -99,6 +99,56 @@ def test_probe_natural_order_is_model_neutral_and_does_not_pad_paths() -> None:
     assert all(".02." not in target.module_path for target in plan.targets)
 
 
+def test_resolved_plan_preserves_source_numeric_order_and_filters() -> None:
+    registration_log: list[tuple[str, str]] = []
+    removal_log: list[tuple[str, str]] = []
+    paths = tuple(f"layers.{index}.router" for index in range(11))
+    modules = {
+        path: SyntheticHookModule(
+            path,
+            registration_log=registration_log,
+            removal_log=removal_log,
+        )
+        for path in reversed(paths)
+    }
+
+    class PermutedModel:
+        def named_modules(self):
+            yield "", self
+            yield from modules.items()
+
+    model = PermutedModel()
+    plan = routing_plan(*reversed(paths))
+    assert tuple(target.module_path for target in plan.targets) == paths
+    resolved = resolve_probe_plan(plan, model)
+    assert tuple(target.target.module_path for target in resolved.targets) == paths
+    assert tuple(path for path, _, _ in resolved.bindings) == paths
+
+    supplied_in_reverse = tuple(
+        ResolvedTarget(target=target, module=modules[target.module_path])
+        for target in reversed(plan.targets)
+    )
+    reordered = ResolvedProbePlan(plan=plan, targets=supplied_in_reverse)
+    assert tuple(target.target.module_path for target in reordered.targets) == paths
+
+    filtered_plan = routing_plan(
+        *reversed(paths),
+        include=("layers.10.router", "layers.2.router", "layers.0.router"),
+        exclude=("layers.9.router",),
+    )
+    filtered = resolve_probe_plan(filtered_plan, model)
+    assert tuple(target.target.module_path for target in filtered.targets) == (
+        "layers.0.router",
+        "layers.2.router",
+        "layers.10.router",
+    )
+    assert tuple(path for path, _, _ in filtered.bindings) == (
+        "layers.0.router",
+        "layers.2.router",
+        "layers.10.router",
+    )
+
+
 def test_probe_target_component_identity_is_canonical_and_paired() -> None:
     component_key = make_component_key(
         "model:org/model@main",
