@@ -290,6 +290,13 @@ deliberately deferred.
   `moeatlas ui WORKSPACE` launches it loopback-by-default with an explicit
   `--allow-remote` opt-in. The React/TypeScript SPA is deferred release
   work recorded honestly in the validation ledger. See [server](docs/server.md).
+- `EXPERIMENTAL` causal intervention mechanics: `moeatlas.interventions`
+  provides immutable, content-addressed recipes over the fixed
+  `ablate`/`scale`/`reroute`/`alter_router` vocabulary, immutable budgets,
+  and the failure-safe `run_intervention()` engine that guarantees module
+  restoration on every path behind adapter-supplied capabilities.
+  Synthetic modules prove the mechanics; real-model causal claims are
+  deferred to the validation ledger. See [interventions](docs/interventions.md).
   See [runtime](docs/runtime.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred

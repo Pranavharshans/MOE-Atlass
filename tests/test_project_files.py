@@ -75,6 +75,12 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "server" / "dto.py",
             ROOT / "src" / "moeatlas" / "server" / "app.py",
             ROOT / "docs" / "server.md",
+            ROOT / "src" / "moeatlas" / "interventions" / "__init__.py",
+            ROOT / "src" / "moeatlas" / "interventions" / "recipes.py",
+            ROOT / "src" / "moeatlas" / "interventions" / "engine.py",
+            ROOT / "docs" / "interventions.md",
+            ROOT / "tests" / "test_interventions_recipes.py",
+            ROOT / "tests" / "test_interventions_engine.py",
             ROOT / "tests" / "test_cli_run.py",
             ROOT / "tests" / "test_cli_export.py",
             ROOT / "tests" / "test_server_app.py",
@@ -1843,6 +1849,67 @@ class ProjectFilesTests(unittest.TestCase):
                 self.assertIn(term, cli_source)
         self.assertTrue((ROOT / "tests" / "test_server_app.py").is_file())
         self.assertTrue((ROOT / "tests" / "test_cli_ui.py").is_file())
+
+    def test_intervention_docs_and_surface_are_present(self) -> None:
+        interventions_doc = (ROOT / "docs" / "interventions.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                interventions_doc,
+                (
+                    "run_intervention()",
+                    "InterventionRecipe",
+                    "InterventionBudget",
+                    "InterventionCapability",
+                    "moeatlas.intervention_recipe",
+                    "moeatlas.intervention_budget",
+                    "moeatlas.intervention_outcome",
+                    "sha256:<64 hex>",
+                    "restore",
+                ),
+            ),
+            (roadmap, ("run_intervention()", "InterventionRecipe")),
+            (architecture, ("moeatlas.interventions",)),
+            (ledger, ("Intervention mechanics",)),
+            (readme, ("moeatlas.interventions",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        recipes_source = (
+            ROOT / "src" / "moeatlas" / "interventions" / "recipes.py"
+        ).read_text()
+        engine_source = (
+            ROOT / "src" / "moeatlas" / "interventions" / "engine.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "interventions" / "__init__.py").read_text()
+        for term in (
+            "InterventionOperation",
+            "InterventionRecipe",
+            "InterventionBudget",
+            "INTERVENTION_SCHEMA_VERSION",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, recipes_source)
+                self.assertIn(term, exports)
+        for term in (
+            "run_intervention",
+            "InterventionOutcome",
+            "InterventionEngineError",
+            "InterventionCapability",
+            "INTERVENTION_ENGINE_SCHEMA_VERSION",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, engine_source)
+                self.assertIn(term, exports)
+        # The interventions package stays family-blind and model-free.
+        for forbidden in ("torch", "transformers", "duckdb", "urllib"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, recipes_source)
+                self.assertNotIn(forbidden, engine_source)
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

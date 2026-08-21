@@ -389,3 +389,19 @@ normalized shares, while expert similarity
 (`moeatlas.analysis.expert_similarity`) derives per-layer cosine-similarity
 matrices over caller-supplied expert vectors with explicit `null` cells for
 zero-norm experts.
+
+The intervention layer (`moeatlas.interventions`) is the only component
+allowed to mutate a loaded module for causal observation, and it stays
+family-blind: recipes, budgets, outcomes, and the failure-safe engine carry
+family-neutral target labels while native snapshot/apply/restore semantics
+live behind adapter-supplied `InterventionCapability` implementations.
+`run_intervention()` sequences capture → apply → observe → restore and
+guarantees restoration on every path — apply failure, observed-execution
+failure, cancellation, or restore failure on the success path — so no
+`moeatlas.intervention_outcome` artifact is produced unless the module was
+returned to its pre-intervention state. Recipes are immutable,
+content-addressed (`sha256:<64 hex>` fingerprints recorded by
+`InterventionLineage`) descriptions of exactly one bounded `ablate`,
+`scale`, `reroute`, or `alter_router` manipulation; synthetic modules prove
+the mechanics locally, and real-model causal claims remain deferred to the
+validation ledger.

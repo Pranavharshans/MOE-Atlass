@@ -475,3 +475,16 @@ tokenizer, download, or GPU participates. The React/TypeScript single-page
 UI, packaged frontend assets, and synthetic browser end-to-end tests are
 deferred release-engineering evidence, not passed work; MV-01 through MV-08
 and ST-01 through ST-04 keep their deferred status.
+
+Intervention mechanics: Status: implemented at the model-free boundary.
+Recipe contracts (fixed operation vocabulary, per-operation parameter
+exclusivity, sorted unique targets, canonical serialization, content
+fingerprints binding `InterventionLineage`), budget bounds and failures,
+and the failure-safe engine (`run_intervention()` capture → apply →
+observe → restore with restoration guaranteed on apply failure, execution
+failure, cancellation, and restore-stage reporting) are covered by
+synthetic-module contract tests. No model, tokenizer, download, or GPU
+participates. Real-model causal effect, regret, stability, and replication
+evidence — including explicit unsupported/fused/quantized limitations —
+remains deferred VM/GPU evidence under MV-01 through MV-08; ST-01 through
+ST-04 keep their deferred status.
