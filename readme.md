@@ -117,6 +117,11 @@ deliberately deferred.
   deterministic cold/zero/heat bins, both runs' shard provenance, complete
   accessible tables, and no JavaScript, external resource, storage, or model
   boundary. See [visualization](docs/visualization.md).
+- `EXPERIMENTAL` Feature 31 bounded `moeatlas compare WORKSPACE` CLI
+  composition over a caller-supplied inspection document and two stored runs.
+  It rejects equal run keys first, enforces canonical decimal byte/row/source/
+  cell budgets, delegates aggregate/compare/render exactly once per seam, and
+  reuses the existing atomic writer. See [CLI](docs/cli.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

@@ -31,6 +31,7 @@ _HEATMAP_SHARD_STAGES = frozenset(
     {"dependency", "workspace", "write", "publish", "reopen", "conflict"}
 )
 _INVENTORY_STAGES = frozenset({"budget", "index"})
+_COMPARE_METRICS = ("count_deltas", "share_deltas", "ratio_deltas")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -168,6 +169,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="replace an existing --output file",
     )
     routing_runs.set_defaults(handler=_handle_routing_runs, _routing_runs_parser=routing_runs)
+
+    compare = subparsers.add_parser(
+        "compare",
+        help="compare two stored routing runs and write a static HTML delta report",
+        description=(
+            "Aggregate two complete, inspection-bound routing runs over one "
+            "identical universe and write a deterministic static HTML comparison. "
+            "All budgets are required canonical positive decimal integers."
+        ),
+        epilog=(
+            "The inspection is a caller-created AdapterInspection.to_json() document; "
+            "all four budgets are required canonical positive decimals; the two run "
+            "keys must differ; --output must use the exact lowercase .html suffix. "
+            "Existing output requires --force and publication reuses "
+            "write_report_atomic(). The optional DuckDB store extra is required for "
+            "committed routing shards; no model, browser, network, cache, or "
+            "generation path is used."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    compare.add_argument("workspace", metavar="WORKSPACE")
+    compare.add_argument("--inspection", required=True, metavar="INSPECTION.json")
+    compare.add_argument("--baseline-run-key", required=True, metavar="RUN_KEY")
+    compare.add_argument("--comparison-run-key", required=True, metavar="RUN_KEY")
+    compare.add_argument("--metric", required=True, choices=_COMPARE_METRICS)
+    compare.add_argument("--max-inspection-bytes", required=True, metavar="N")
+    compare.add_argument("--max-routing-rows", required=True, metavar="N")
+    compare.add_argument("--max-source-bytes", required=True, metavar="N")
+    compare.add_argument("--max-matrix-cells", required=True, metavar="N")
+    compare.add_argument("--output", required=True, metavar="OUTPUT.html")
+    compare.add_argument(
+        "--force",
+        action="store_true",
+        help="replace an existing --output file",
+    )
+    compare.set_defaults(handler=_handle_compare, _compare_parser=compare)
     return parser
 
 
@@ -436,6 +473,109 @@ def _handle_heatmap(args: argparse.Namespace) -> int:
         return 2
 
     print(f"saved routing heatmap to {output}", file=sys.stderr)
+    return 0
+
+
+def _run_compare_analysis(
+    workspace: str | Path,
+    inspection: object,
+    *,
+    baseline_run_key: str,
+    comparison_run_key: str,
+    metric: str,
+    max_routing_rows: int,
+    max_source_bytes: int,
+    max_matrix_cells: int,
+) -> str:
+    """Lazy, exactly-once aggregation, comparison, and rendering."""
+
+    from .analysis import (
+        aggregate_routing_load,
+        compare_routing_load,
+        render_routing_load_comparison,
+    )
+
+    aggregate = aggregate_routing_load
+    baseline = aggregate(
+        workspace,
+        inspection,
+        run_key=baseline_run_key,
+        max_routing_rows=max_routing_rows,
+        max_source_bytes=max_source_bytes,
+        max_matrix_cells=max_matrix_cells,
+    )
+    comparison = aggregate(
+        workspace,
+        inspection,
+        run_key=comparison_run_key,
+        max_routing_rows=max_routing_rows,
+        max_source_bytes=max_source_bytes,
+        max_matrix_cells=max_matrix_cells,
+    )
+    value = compare_routing_load(baseline, comparison, max_cells=max_matrix_cells)
+    return render_routing_load_comparison(
+        value,
+        metric=metric,
+        max_cells=max_matrix_cells,
+    )
+
+
+def _safe_compare_failure(exc: Exception) -> str:
+    """Return only exact fixed-stage messages from accepted analysis/store errors."""
+
+    from .analysis import RoutingLoadError
+    from .store import RoutingShardError
+
+    if type(exc) is RoutingLoadError and exc.stage in _HEATMAP_LOAD_STAGES:
+        message = f"routing load aggregation failed at {exc.stage}"
+        if str(exc) == message:
+            return message
+    if type(exc) is RoutingShardError and exc.stage in _HEATMAP_SHARD_STAGES:
+        message = f"routing shard failed at {exc.stage}"
+        if str(exc) == message:
+            return message
+    return "routing comparison failed"
+
+
+def _handle_compare(args: argparse.Namespace) -> int:
+    try:
+        if args.baseline_run_key == args.comparison_run_key:
+            raise _HeatmapInputError("baseline and comparison run keys must differ")
+        budgets = {
+            name: _parse_heatmap_budget(getattr(args, name), name)
+            for name in (
+                "max_inspection_bytes",
+                "max_routing_rows",
+                "max_source_bytes",
+                "max_matrix_cells",
+            )
+        }
+        output_path = _preflight_heatmap_output(args.output, force=args.force)
+        inspection = _read_heatmap_inspection(args.inspection, budgets["max_inspection_bytes"])
+        payload = _run_compare_analysis(
+            args.workspace,
+            inspection,
+            baseline_run_key=args.baseline_run_key,
+            comparison_run_key=args.comparison_run_key,
+            metric=args.metric,
+            max_routing_rows=budgets["max_routing_rows"],
+            max_source_bytes=budgets["max_source_bytes"],
+            max_matrix_cells=budgets["max_matrix_cells"],
+        )
+        output = write_report_atomic(payload, output_path, force=args.force)
+    except _HeatmapInputError as exc:
+        print(f"moeatlas compare: {exc}", file=sys.stderr)
+        return 2
+    except ScanOutputError as exc:
+        print(f"moeatlas compare: {exc}", file=sys.stderr)
+        return 2
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        print(f"moeatlas compare: {_safe_compare_failure(exc)}", file=sys.stderr)
+        return 2
+
+    print(f"saved routing comparison to {output}", file=sys.stderr)
     return 0
 
 

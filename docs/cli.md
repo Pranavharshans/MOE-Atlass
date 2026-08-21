@@ -127,3 +127,41 @@ budget failures use `routing run inventory failed at index|budget`; unexpected
 failures use the fixed `moeatlas routing-runs: routing run inventory failed`.
 KeyboardInterrupt and SystemExit remain control-flow exceptions. The command
 is EXPERIMENTAL and does not alter MV-01 through MV-08.
+
+## Bounded routing-run comparison
+
+Feature 31 adds one explicit comparison publication command over an existing
+Feature 19 workspace and a caller-supplied inspection document:
+
+```bash
+moeatlas compare WORKSPACE \
+  --inspection inspection.json \
+  --baseline-run-key run-1 \
+  --comparison-run-key run-2 \
+  --metric ratio_deltas \
+  --max-inspection-bytes 1000000 \
+  --max-routing-rows 1000000 \
+  --max-source-bytes 100000000 \
+  --max-matrix-cells 100000 \
+  --output routing-comparison.html
+```
+
+The command composes the existing bounded seams exactly once each: two
+Feature 28 aggregations (one per run key), one Feature 29 comparison, and one
+Feature 30 rendering, then reuses the atomic report writer. The two run keys
+must differ and are checked before budget parsing or output preflight. All
+four budgets are required canonical positive decimal integers; the output must
+use the exact lowercase `.html` suffix with `--force` semantics identical to
+the heatmap command. The inspection read is the same bounded non-symlink
+strict `AdapterInspection` path. Success emits only
+`saved routing comparison to <path>` on stderr.
+
+Failures reuse the fixed stage messages: missing or uncommitted runs report
+`routing load aggregation failed at source`; incomparable universes (for
+example different token counts) and all other unexpected failures use the
+fixed generic `moeatlas compare: routing comparison failed` without echoing
+input details. Missing DuckDB is reported as the fixed dependency-stage error.
+KeyboardInterrupt and SystemExit remain control-flow exceptions. The command
+is EXPERIMENTAL: it creates no model, tokenizer, browser, network, cache,
+catalog, ranking, or specialization surface, and does not alter MV-01 through
+MV-08.

@@ -164,6 +164,18 @@ of the full signed scale, AST forbidden-import guards, and package export
 reachability. The renderer performs no I/O and does not change MV-01 through
 MV-08 or ST-01 through ST-04.
 
+Feature 31 adds the model-free bounded `moeatlas compare WORKSPACE` command.
+Tests cover real two-run workspaces for all three metrics with byte-identical
+deterministic publication, equal-run-key rejection before budgets/preflight,
+canonical decimal budget enforcement, exact `.html`/`--force` output
+semantics, bounded non-symlink inspection reads with fixed failure messages,
+missing/uncommitted run-key source failures, incomparable-universe generic
+failures without detail leakage, exactly-once delegation with identity and
+argument checks, writer reuse, control-flow exception propagation at every
+phase, missing-DuckDB dependency-stage behavior, absence of network/cache/
+browser paths, laziness of unrelated commands, and AST boundary guards on the
+CLI source. It does not change MV-01 through MV-08 or ST-01 through ST-04.
+
 ## Deferred checks
 
 ### Required v1 family compatibility matrix

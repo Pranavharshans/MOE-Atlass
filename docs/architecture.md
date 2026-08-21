@@ -192,6 +192,15 @@ keeps the strict CSP/no-JavaScript/no-external-resource posture. It creates no
 UI, server, storage, model, ranking, or specialization claim; Mixtral heatmap
 bytes remain unchanged.
 
+Feature 31 adds only the bounded `moeatlas compare WORKSPACE` CLI composition:
+it rejects equal run keys before any other work, preflights output, reads one
+bounded non-symlink inspection document, delegates two aggregations, one
+comparison, and one rendering exactly once each, and reuses the existing
+atomic writer with exact `.html`/`--force` publication behavior. It creates no
+model, tokenizer, browser, network, cache, ranking, or alternate storage path;
+incomparable universes fail with a fixed generic message. The command is
+EXPERIMENTAL and MV-01 through MV-08 remain deferred.
+
 The EXPERIMENTAL prompt-prefill seam accepts plain text, borrows the caller's
 validated model/tokenizer, and composes exactly one bounded Feature 18 forward;
 it is not a generation, storage, or CLI subsystem. Feature 24 intentionally

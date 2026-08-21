@@ -828,8 +828,8 @@ def test_cli_source_keeps_heatmap_boundary_model_free_and_non_networked() -> Non
             isinstance(node.func, ast.Name) and node.func.id == "write_report_atomic"
             for node in calls
         )
-        == 2
-    )  # existing scan plus the single heatmap delegation
+        == 3
+    )  # existing scan plus the heatmap and compare delegations
     forbidden_attrs = {
         "mkdir",
         "glob",
