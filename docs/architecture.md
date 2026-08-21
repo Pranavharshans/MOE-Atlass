@@ -284,3 +284,14 @@ structural routing universe. Historical Mixtral names remain identity aliases;
 there is no family allowlist or family-specific adapter import in analysis. Shared experts are
 validated and excluded from routed axes and denominators. Mixtral output bytes
 remain unchanged.
+
+The persistence layer also gains one bounded open-format interchange surface:
+the run-evidence export bundle. `export_run_bundle` serializes every committed
+shard of one chosen run into canonical JSONL evidence under a digest-bearing
+canonical manifest; `verify_run_bundle` revalidates digests, canonicality,
+event contracts, links, redaction consistency, and content-addressed shard
+identities without importing DuckDB; `import_run_bundle` republishes verified
+shards through the standard appender, making source-workspace re-import
+idempotent and cross-workspace import identity-preserving. The bundle is
+byte-deterministic, budget-bounded, atomic on publication, symlink-safe, and
+family-blind; it adds no analysis, migration, or model-dependent claim.

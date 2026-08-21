@@ -311,3 +311,10 @@ denominators.
 Official checkpoint/runtime equivalence and GPU certification status remain
 deferred to the final VM and release-time revision review. No model files are
 downloaded.
+Run-evidence export bundles: Status: implemented at the model-free boundary.
+Round-trip, byte-determinism, tamper/forged-digest rejection, canonicality
+enforcement, redaction fidelity (null text exactly when not stored), row/byte
+budgets, crash-safe publication cleanup, symlink refusal, idempotent
+re-import, and duckdb-free verification are covered by synthetic local tests.
+Bundles carry no model-dependent claims; this feature does not change MV-01/MV-08
+or ST-01 through ST-04 status.

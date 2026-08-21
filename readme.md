@@ -95,6 +95,13 @@ deliberately deferred.
   exact identity aliases. This is a shard prerequisite, not a full
   workspace/catalog, query, CLI, server, UI, heatmap, prompt, or
   expert-metric subsystem; see [storage](docs/storage.md).
+- `EXPERIMENTAL` bounded run-evidence export bundles: `export_run_bundle()`,
+  `verify_run_bundle()`, and `import_run_bundle()` move one run's complete
+  committed evidence as byte-deterministic canonical JSONL under a
+  digest-bearing manifest — tamper-evident (forged digests still fail
+  content-addressed identity recomputation), redaction-faithful, atomic,
+  symlink-safe, and relocatable across workspaces with idempotent re-import;
+  see [storage](docs/storage.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict
