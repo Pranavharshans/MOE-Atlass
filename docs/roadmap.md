@@ -49,7 +49,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | 8 | Plugins and complete headless CLI/API | `in progress` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
 | 9 | FastAPI server and React UI | `in progress` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14; React SPA and browser E2E stay deferred release work |
 | 10 | Intervention and causal evidence | `model-free complete` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
-| 11 | Privacy, reliability, benchmarks, and release | `in progress` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19 |
+| 11 | Privacy, reliability, benchmarks, and release | `model-free complete` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19; clean-install/Docker/screenshots stay deferred release work |
 | 12 | Final VM/GPU certification and PRD audit | `VM/GPU deferred` | MV-01–MV-08 and ST-01–ST-04 have recorded evidence; every v1 acceptance row traces to passing implementation and validation | PRD §20 and validation ledger |
 
 ## Current slice exit criteria
@@ -324,7 +324,7 @@ Sequence 10 (intervention and causal evidence) is complete only when:
    deferred ledger rows, not silently assumed capabilities.
 6. The full local gate is green and the feature commit is pushed.
 
-Sequence 11 is `in progress`. Its first landed slice is retention
+Sequence 11 is `model-free complete`. Its first landed slice is retention
 evaluation (see [workspace](workspace.md)): `RetentionPolicy` and
 `evaluate_retention()` in `moeatlas.services.retention` classify registered
 runs into disjoint retained/expired sets under deterministic ordering —
@@ -332,7 +332,22 @@ registration timestamp, then run key, untimestamped entries oldest for
 count bounds and exempt from age bounds — publishing
 `moeatlas.retention_report` artifacts without mutating any catalog or
 shard; enforcement stays an explicit caller decision, matching the
-append-only storage constitution.
+append-only storage constitution. Its second landed slice is release
+engineering (see [development](development.md)): governance files
+(`SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, issue and pull-request
+templates), a three-Python-version CI workflow running the identical local
+gate model-free, and the synthetic example workspace exercised end-to-end in
+clean subprocesses. Its third landed slice is benchmark artifacts:
+`moeatlas.benchmarks` separates reproducible plans (`moeatlas.benchmark_plan`
+artifacts with canonical-JSON workloads and content-addressed fingerprints)
+from caller-measured results (`moeatlas.benchmark_results` bundles that
+require explicit environment/timestamp provenance and pin
+`release_evidence: false` — promotion to release evidence is a review
+decision, never an API flag). What remains deferred is infrastructure and
+release-time evidence, not contracts: clean-install checks in pristine
+environments, NOTICE/screenshot/demo assets, optional Docker paths, the
+evidence-generated compatibility matrix (Sequence 12), and concurrent
+reader/writer durability (ST-01 through ST-04).
 
 Sequence 8 (plugins and complete headless CLI/API) is complete only when:
 

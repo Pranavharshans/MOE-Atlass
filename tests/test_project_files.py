@@ -1991,6 +1991,59 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, retention_source)
 
+    def test_release_engineering_files_are_present(self) -> None:
+        required = (
+            ROOT / "SECURITY.md",
+            ROOT / "CODE_OF_CONDUCT.md",
+            ROOT / "CHANGELOG.md",
+            ROOT / ".github" / "workflows" / "ci.yml",
+            ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md",
+            ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.md",
+            ROOT / ".github" / "ISSUE_TEMPLATE" / "feature_request.md",
+            ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml",
+            ROOT / "examples" / "synthetic_workspace.py",
+            ROOT / "src" / "moeatlas" / "benchmarks.py",
+            ROOT / "tests" / "test_benchmarks.py",
+            ROOT / "tests" / "test_examples.py",
+        )
+        for path in required:
+            with self.subTest(path=path):
+                self.assertTrue(path.is_file(), path)
+        security = (ROOT / "SECURITY.md").read_text()
+        for term in ("Report a vulnerability", "There is none"):
+            with self.subTest(term=term):
+                self.assertIn(term, security)
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        for term in ("Keep a Changelog", "Semantic Versioning", "[Unreleased]"):
+            with self.subTest(term=term):
+                self.assertIn(term, changelog)
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        for term in (
+            '"3.11"',
+            '"3.12"',
+            '"3.13"',
+            "uv sync --locked --extra dev",
+            "pytest -q",
+            "ruff check src tests",
+            "unittest discover -s tests -t .",
+            "uv build --no-sources",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, ci)
+        pull_request = (ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text()
+        for term in ("uv run --locked pytest -q", "deferred rows stay deferred"):
+            with self.subTest(term=term):
+                self.assertIn(term, pull_request)
+        example_source = (ROOT / "examples" / "synthetic_workspace.py").read_text()
+        for term in (
+            "initialize_workspace",
+            "register_run",
+            "evaluate_retention",
+            "downloads a model, touches the network, or requires a GPU",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, example_source)
+
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()
         storage = (ROOT / "docs" / "storage.md").read_text()

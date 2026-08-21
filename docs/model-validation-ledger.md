@@ -507,3 +507,23 @@ round-trips are covered by synthetic contract tests over temporary
 registries. No model, tokenizer, download, or GPU participates. Real
 workspace-scale retention enforcement and filesystem durability remain
 deferred evidence under ST-01 through ST-04.
+
+Release-engineering surfaces: Status: implemented at the model-free
+boundary. Governance files (security policy with a private reporting path,
+code of conduct, Keep-a-Changelog process), issue/pull-request templates,
+the three-Python-version CI workflow mirroring the local serialized gate,
+and the synthetic example workspace (registered runs, registry query,
+retention evaluation) are verified by repository-anchor tests and a clean
+subprocess example test. No model, tokenizer, download, or GPU
+participates. Clean wheel/sdist installation into pristine environments,
+NOTICE/screenshot/demo assets, optional Docker packaging, and release
+publishing remain deferred release-engineering evidence.
+
+Benchmark artifacts: Status: implemented at the model-free boundary.
+Plan/result contracts (canonical-JSON workloads, content-addressed plan
+fingerprints, caller-supplied environment/timestamp provenance,
+one-result-per-case collection, pinned `release_evidence: false`) are
+covered by synthetic contract tests. No model, tokenizer, download, or GPU
+participates. Real performance measurements on provisioned infrastructure
+remain deferred VM/GPU evidence; developer-machine timing is never
+promoted to release evidence by this API.
