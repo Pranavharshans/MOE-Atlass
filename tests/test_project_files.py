@@ -71,8 +71,14 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_analysis_expert_similarity.py",
             ROOT / "tests" / "test_adapters_registry.py",
             ROOT / "tests" / "test_cli_adapters.py",
+            ROOT / "src" / "moeatlas" / "server" / "__init__.py",
+            ROOT / "src" / "moeatlas" / "server" / "dto.py",
+            ROOT / "src" / "moeatlas" / "server" / "app.py",
+            ROOT / "docs" / "server.md",
             ROOT / "tests" / "test_cli_run.py",
             ROOT / "tests" / "test_cli_export.py",
+            ROOT / "tests" / "test_server_app.py",
+            ROOT / "tests" / "test_cli_ui.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1769,6 +1775,74 @@ class ProjectFilesTests(unittest.TestCase):
         self.assertTrue((ROOT / "tests" / "test_cli_adapters.py").is_file())
         self.assertTrue((ROOT / "tests" / "test_cli_run.py").is_file())
         self.assertTrue((ROOT / "tests" / "test_cli_export.py").is_file())
+
+    def test_server_docs_and_surface_are_present(self) -> None:
+        server_doc = (ROOT / "docs" / "server.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                server_doc,
+                (
+                    "create_app()",
+                    "/healthz",
+                    "/api/workspace",
+                    "/api/runs",
+                    "/api/adapters",
+                    "moeatlas ui WORKSPACE",
+                    "--allow-remote",
+                    "workspace is not initialized",
+                    "deferred release-engineering evidence",
+                ),
+            ),
+            (roadmap, ("create_app()", "moeatlas ui WORKSPACE")),
+            (ledger, ("Local server and UI launch",)),
+            (readme, ("moeatlas.server.create_app()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        app_source = (ROOT / "src" / "moeatlas" / "server" / "app.py").read_text()
+        dto_source = (ROOT / "src" / "moeatlas" / "server" / "dto.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "server" / "__init__.py").read_text()
+        for term in (
+            "SERVER_SCHEMA_VERSION",
+            "ServerDependencyError",
+            "create_app",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, app_source)
+                self.assertIn(term, exports)
+        for term in (
+            "HealthResponse",
+            "WorkspaceResponse",
+            "RunEntryResponse",
+            "RunsResponse",
+            "AdapterEntryResponse",
+            "AdaptersResponse",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, dto_source)
+                self.assertIn(term, exports)
+        # The server stays read-only and model-free: no storage writes,
+        # clocks, randomness, or model imports.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, app_source)
+                self.assertNotIn(forbidden, dto_source)
+        cli_source = (ROOT / "src" / "moeatlas" / "cli.py").read_text()
+        for term in ("_handle_ui", "_run_ui_server", "--allow-remote"):
+            with self.subTest(term=term):
+                self.assertIn(term, cli_source)
+        self.assertTrue((ROOT / "tests" / "test_server_app.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_cli_ui.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

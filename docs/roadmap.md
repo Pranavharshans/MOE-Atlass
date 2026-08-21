@@ -47,7 +47,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | 6 | Prompt and dataset run engine | `model-free complete` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
 | 7 | Task association and Evidence Cards | `model-free complete` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests; real-evidence capture stays in Sequence 12 |
 | 8 | Plugins and complete headless CLI/API | `in progress` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
-| 9 | FastAPI server and React UI | `planned` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14 |
+| 9 | FastAPI server and React UI | `in progress` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14; React SPA and browser E2E stay deferred release work |
 | 10 | Intervention and causal evidence | `planned` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
 | 11 | Privacy, reliability, benchmarks, and release | `planned` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19 |
 | 12 | Final VM/GPU certification and PRD audit | `VM/GPU deferred` | MV-01–MV-08 and ST-01–ST-04 have recorded evidence; every v1 acceptance row traces to passing implementation and validation | PRD §20 and validation ledger |
@@ -265,6 +265,20 @@ and catalog publication; `moeatlas export WORKSPACE RUN_KEY` publishes the
 storage layer's canonical tamper-evident evidence bundle with fixed safe
 errors. The scan, compare, doctor, and adapters-list commands complete the
 PRD command set over shared services.
+
+Sequence 9 is `in progress`. Its first landed slice is the local read-only
+server (see [server](server.md)): `create_app()` in
+`moeatlas.server.app` binds one workspace behind strict construction
+budgets and exposes `/healthz`, `/api/workspace`, bounded `/api/runs` with
+a validated state filter, and `/api/adapters` — every endpoint delegating
+to shared services with fixed safe error details. FastAPI is an optional
+extra; the wire DTOs stay importable without it. Its second landed slice
+is the `moeatlas ui WORKSPACE` command: loopback-by-default launch with an
+explicit `--allow-remote` opt-in, canonical port validation, and the fixed
+dependency hint when the server extra is missing. The React/TypeScript
+single-page UI, packaged frontend assets, and synthetic browser E2E remain
+deferred release-engineering evidence recorded in the validation ledger;
+the read-only wire contract above is what they will consume.
 
 Sequence 8 (plugins and complete headless CLI/API) is complete only when:
 

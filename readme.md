@@ -282,6 +282,14 @@ deliberately deferred.
   with checkpoints, resume, caller-supplied timestamps, and workspace-catalog
   publication; `moeatlas export WORKSPACE RUN_KEY` publishes the canonical
   tamper-evident run evidence bundle. See [cli](docs/cli.md).
+- `EXPERIMENTAL` local read-only server: `moeatlas.server.create_app()`
+  binds one workspace behind strict budgets and serves `/healthz`,
+  `/api/workspace`, bounded `/api/runs`, and `/api/adapters` — a thin wire
+  layer over the same shared services, with fixed safe errors; FastAPI is
+  an optional extra (`pip install moeatlas[server]`), and
+  `moeatlas ui WORKSPACE` launches it loopback-by-default with an explicit
+  `--allow-remote` opt-in. The React/TypeScript SPA is deferred release
+  work recorded honestly in the validation ledger. See [server](docs/server.md).
   See [runtime](docs/runtime.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred

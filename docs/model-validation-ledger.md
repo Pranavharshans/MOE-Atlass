@@ -464,3 +464,14 @@ local fixtures. No model, tokenizer, network, or GPU participates; real
 model execution through a registered adapter plugin remains deferred VM/GPU
 evidence (MV-01 through MV-08), and ST-01 through ST-04 keep their deferred
 status.
+
+Local server and UI launch: Status: implemented at the model-free boundary.
+Wire DTO strictness, construction budgets, health identity, workspace/run
+endpoints over initialized and uninitialized catalogs, bounded state
+filtering, adapter-registry exposure, fixed dependency errors, and the
+loopback-by-default `moeatlas ui` policy are covered by synthetic contract
+tests using FastAPI's TestClient over temporary workspaces. No model,
+tokenizer, download, or GPU participates. The React/TypeScript single-page
+UI, packaged frontend assets, and synthetic browser end-to-end tests are
+deferred release-engineering evidence, not passed work; MV-01 through MV-08
+and ST-01 through ST-04 keep their deferred status.

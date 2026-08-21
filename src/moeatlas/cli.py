@@ -320,6 +320,29 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--max-event-rows", metavar="N")
     export.add_argument("--max-file-bytes", metavar="N")
     export.set_defaults(handler=_handle_export)
+
+    ui = subparsers.add_parser(
+        "ui",
+        help="launch the local read-only server for one workspace",
+        description=(
+            "Serve the local read-only API (health, workspace snapshot, "
+            "bounded run listings, adapter registry) for one workspace."
+        ),
+        epilog=(
+            "The server binds to the loopback interface by default and never "
+            "loads a model, downloads anything, or writes to storage. Remote "
+            "binding requires an explicit opt-in."
+        ),
+    )
+    ui.add_argument("workspace", metavar="WORKSPACE")
+    ui.add_argument("--host", default="127.0.0.1", metavar="HOST")
+    ui.add_argument("--port", default="8000", metavar="N")
+    ui.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="explicitly allow binding to a non-loopback interface",
+    )
+    ui.set_defaults(handler=_handle_ui)
     return parser
 
 
@@ -1099,6 +1122,54 @@ def _handle_export(args: argparse.Namespace) -> int:
         f"{receipt.routing_count} routing events)"
     )
     print(f"manifest sha256: {receipt.manifest_sha256}")
+    return 0
+
+
+def _run_ui_server(app: object, *, host: str, port: int) -> None:
+    """Serve the app until interrupted; isolated for testing."""
+
+    import uvicorn
+
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _handle_ui(args: argparse.Namespace) -> int:
+    host = args.host
+    if not (
+        host == "localhost"
+        or host.startswith("127.")
+        or host == "::1"
+        or host == "[::1]"
+    ):
+        if not args.allow_remote:
+            print(
+                "moeatlas ui: non-loopback hosts require --allow-remote",
+                file=sys.stderr,
+            )
+            return 2
+    if type(args.port) is not str or _CANONICAL_DECIMAL.fullmatch(args.port) is None:
+        print("moeatlas ui: --port must be a canonical positive decimal integer", file=sys.stderr)
+        return 2
+    port = int(args.port, 10)
+    if port > 65535:
+        print("moeatlas ui: --port must be at most 65535", file=sys.stderr)
+        return 2
+    try:
+        from .server import ServerDependencyError, create_app
+
+        app = create_app(args.workspace)
+    except ServerDependencyError:
+        print(
+            "moeatlas ui: server dependency 'fastapi' is not installed; "
+            "install moeatlas with the 'server' extra",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        _run_ui_server(app, host=host, port=port)
+    except KeyboardInterrupt:
+        pass
+    print(f"served workspace {args.workspace} at http://{host}:{port}", file=sys.stderr)
     return 0
 
 
