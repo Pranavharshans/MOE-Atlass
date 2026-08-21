@@ -16,6 +16,7 @@ from ..adapters import AdapterInspection
 from ..core import CaptureSource, ComponentKind
 from ..events import RoutingEvent, TokenEvent
 from ..probe import ProbeTarget
+from .capabilities import RouterPayloadShape, ScoreSemantics
 from .routing import RoutingCaptureTarget
 
 _ADAPTER_NAME: Final = "huggingface-mixtral-static"
@@ -246,6 +247,20 @@ class MixtralRoutingDecoder:
     """Decode one exact, single-use Mixtral router capture per router path."""
 
     __slots__ = ("_bindings", "_inspection_layout", "_token_events", "_used_paths")
+
+    @property
+    def payload_shape(self) -> RouterPayloadShape:
+        """The declared raw payload vocabulary of this decoder's layout."""
+
+        if self._inspection_layout == _LAYOUT_LEGACY:
+            return RouterPayloadShape.LOGITS_TUPLE
+        return RouterPayloadShape.SCORES_INDICES_TUPLE
+
+    @property
+    def score_semantics(self) -> ScoreSemantics:
+        """Emitted rows always carry observed router logits."""
+
+        return ScoreSemantics.LOGITS
 
     def __init__(
         self,
