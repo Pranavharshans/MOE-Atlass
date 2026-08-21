@@ -383,3 +383,41 @@ through the universe's parallel `expert_indices`. Failures use fixed-stage
 `RoutingDecodeError` values (`dependency`, `decode`, `postcondition`). The
 module imports no model stack and downloads nothing; real-payload
 equivalence for unknown families remains deferred to the final VM phase.
+
+## Universal forward execution (model-neutral)
+
+`run_routing_forward()` is the one model-neutral execution boundary shared by
+every MoE family. It composes the canonical routing plan compiler, the
+inspection's adapter-published `RoutingUniverse`, a caller-supplied decoder
+factory, and the passive capture session without ever inspecting an adapter
+name, module-path convention, or payload type identity. The decoder factory
+receives the freshly revalidated inspection and token rows and must return a
+conforming `RoutingHookDecoder`: an object declaring its `payload_shape` and
+`score_semantics` capabilities and decoding one router hook invocation into
+canonical `RoutingEvent` rows. Family knowledge lives entirely inside that
+decoder; the seam itself stays family-neutral with no central branching, so
+any MoE model — not only the historical families — executes through it.
+
+The runner applies three family-blind gates around the decoder: the
+published universe must pass the explicit rectangular projection (hook
+capture binds one uniform capture context per router today; non-rectangular
+families fail here with the named gate instead of being silently reshaped),
+every captured row is verified against the decoder-declared score semantics,
+and `validate_observed_routing()` proves the complete-capture postconditions
+— every captured token carries every universe layer's full rank schedule
+with unique universe-bound experts. `TokenSequencePolicy` selects how
+strictly token identities are validated before execution: `shared_run`
+(unique keys sharing one run and phase) or `canonical_sequence` (one shared
+sequence in contiguous canonical position order, the shape batched
+whole-sequence payloads depend on).
+
+`run_mixtral_routing_forward()` and `run_qwen3_5_routing_forward()` are now
+thin compatibility wrappers over this seam composing their historical
+decoders (`tuple_logits`/`tuple_scores_indices`, logits semantics); their
+signatures, error behavior, and results are unchanged. Any other family runs
+through the same seam by supplying its own declared decoder — the unknown
+`blocksparse_moe` fixture covers dict-array payloads with unordered native
+identifiers end-to-end. Input preparation remains caller-owned at this
+boundary; a provider/task input-preparation capability protocol arrives with
+the run engine. Real checkpoint execution for any family stays deferred to
+the final VM phase.

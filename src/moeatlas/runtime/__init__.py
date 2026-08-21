@@ -13,9 +13,12 @@ from .capabilities import (
     RouterPayloadShape,
     RoutingDecodeCapability,
     RoutingDecodeError,
+    RoutingHookDecoder,
     ScoreSemantics,
+    TokenSequencePolicy,
     native_id_map,
     validate_decoded_routing,
+    validate_observed_routing,
 )
 from .contracts import (
     CleanupCallback,
@@ -44,6 +47,7 @@ from .routing_forward import (
     RoutingForwardResult,
     run_mixtral_routing_forward,
     run_qwen3_5_routing_forward,
+    run_routing_forward,
 )
 from .scan import load_and_scan
 
@@ -54,9 +58,12 @@ __all__ = [
     "RouterPayloadShape",
     "RoutingDecodeCapability",
     "RoutingDecodeError",
+    "RoutingHookDecoder",
     "ScoreSemantics",
+    "TokenSequencePolicy",
     "native_id_map",
     "validate_decoded_routing",
+    "validate_observed_routing",
     "CustomLoaderExecutionError",
     "LoadResult",
     "LoadedModel",
@@ -80,6 +87,7 @@ __all__ = [
     "RoutingCaptureTarget",
     "run_mixtral_routing_forward",
     "run_mixtral_prompt_prefill",
+    "run_routing_forward",
     "load_custom",
     "load_huggingface",
     "load_and_scan",

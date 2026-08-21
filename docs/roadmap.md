@@ -69,15 +69,20 @@ adapter-declared layout tags, explicit shared-expert semantics — the named
 `project_rectangular_universe()` reduction now consumed by
 `aggregate_routing_load(declared_universe=...)` so routing-load gates
 rectangularity explicitly at its API boundary (see [analysis](analysis.md)),
-and the model-neutral routing decode capabilities
+the model-neutral routing decode capabilities
 (`RouterPayloadShape`, `ScoreSemantics`, `RoutingDecodeCapability`,
 `validate_decoded_routing`, `native_id_map`) with fake unknown-family
 runtimes covering mapping-keyed arrays, assignment-only 3-D payloads, sparse
-native identifiers, and variable top-k (see [runtime](runtime.md)). Shared
-forward execution still composes family-named runner entry points; adopting
-the capability seam inside `run_*_routing_forward` and adding
-input-preparation/observation capability protocols remain for later slices
-in this sequence.
+native identifiers, and variable top-k, and the universal
+`run_routing_forward()` execution seam: family-neutral forward composition
+over declared `RoutingHookDecoder` capabilities and
+`TokenSequencePolicy` token validation, with `validate_observed_routing()`
+complete-capture postconditions, an explicit rectangular projection gate at
+the capture boundary, and the Mixtral/Qwen3.5 runners preserved as thin
+compatibility wrappers while an unknown-family fixture executes end-to-end
+through the neutral seam alone (see [runtime](runtime.md)). A provider/task
+input-preparation capability protocol remains for later slices in this
+sequence, landing with the run engine where it gains a real consumer.
 
 Sequence 4 (universal execution capabilities) is complete only when:
 

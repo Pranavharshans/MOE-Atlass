@@ -24,6 +24,7 @@ from ..core import CapabilityLabel, CaptureSource, ComponentKind
 from ..discovery import DiscoverySignal
 from ..events import RoutingEvent, TokenEvent
 from ..probe import ProbeTarget
+from .capabilities import RouterPayloadShape, ScoreSemantics
 from .routing import RoutingCaptureTarget
 
 _ADAPTER_NAME: Final = "huggingface-qwen3.5-moe-static"
@@ -501,6 +502,18 @@ class Qwen3_5RoutingDecoder:
     """Decode one exact, single-use Qwen3.5 packed router capture per path."""
 
     __slots__ = ("_bindings", "_token_events", "_used_paths")
+
+    @property
+    def payload_shape(self) -> RouterPayloadShape:
+        """The packed gate tuple is the declared raw payload vocabulary."""
+
+        return RouterPayloadShape.SCORES_INDICES_TUPLE
+
+    @property
+    def score_semantics(self) -> ScoreSemantics:
+        """Emitted rows always carry observed router logits."""
+
+        return ScoreSemantics.LOGITS
 
     def __init__(
         self,
