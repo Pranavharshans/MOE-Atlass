@@ -1,13 +1,19 @@
 # Routing-shard storage
 
 Feature 19 adds one bounded, caller-invoked persistence seam:
-`append_mixtral_routing_shard(workspace, result, *, store_token_text=False)`.
-It accepts only a complete model-neutral `RoutingForwardResult` from the
-Feature 18 one-forward boundary. The historical Mixtral function name remains
-backward-compatible and accepts Qwen3.5 or future-family results without
-changing the persisted schema. The result is freshly revalidated before any managed
+`append_routing_shard(workspace, result, *, store_token_text=False)`. It accepts
+only a complete model-neutral `RoutingForwardResult` from the Feature 18
+one-forward boundary. `append_mixtral_routing_shard` remains an exact identity
+alias for backward compatibility and accepts Qwen3.5 or future-family results
+without changing the persisted schema. Because each historical name is the same
+function object as its canonical name (not a wrapper), introspection attributes
+such as `__name__`, `__qualname__`, and `inspect.getsource` report the neutral
+canonical name; this exact-identity trade-off is accepted so alias identity,
+signatures, and monkeypatch targets stay stable. The result is freshly revalidated
+through the runtime-independent event collection boundary before any managed
 directory is created; the opaque model output is never serialized, inspected,
-or retained by storage.
+or retained by storage. Concrete `RoutingForwardResult` typing is retained for
+this compatibility slice; a broader result protocol requires a separate gate.
 Feature 27 and Feature 28 validate Qwen3.5 through append, reopen, the
 read-only run inventory, neutral aggregation, and neutral visualization. The
 stored schema remains unchanged; this model-free path is not checkpoint/GPU
@@ -42,7 +48,8 @@ Only hidden, non-symlink staging directories with the exact staging-name
 pattern are ignored after a crash; staging files, symlinks, or malformed names
 are rejected. There is no concurrent-writer guarantee.
 
-`list_mixtral_routing_shards(workspace, *, run_key=...)` is non-mutating. It
+`list_routing_shards(workspace, *, run_key=...)` is non-mutating.
+`list_mixtral_routing_shards` is its exact compatibility alias. The function
 reopens every committed shard, rejects symlinks, extras, manifest/checksum/
 schema/count/identity/order corruption, and returns value-only receipts sorted
 by `shard_key`. `RoutingShardError` exposes only one fixed stage:
@@ -118,8 +125,9 @@ unchanged.
 ## Bounded routing-run inventory
 
 Feature 23 adds a read-only inventory primitive over the committed shard tree.
-Call it as `list_mixtral_routing_runs(workspace, *, max_runs, max_shards,
-max_event_rows, max_source_bytes)`.
+Call it as `list_routing_runs(workspace, *, max_runs, max_shards,
+max_event_rows, max_source_bytes)`. `list_mixtral_routing_runs` remains an exact
+identity alias with the same signature and output.
 All four budgets are required positive, non-bool integers. It scans only
 `routing/v1`, counts run and committed-shard candidates before DuckDB, sums the
 exact three managed files per shard, bounds declared and actual event rows,

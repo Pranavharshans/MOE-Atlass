@@ -9,8 +9,11 @@ from .routing_shards import (
     RoutingShardError,
     RoutingShardReceipt,
     append_mixtral_routing_shard,
+    append_routing_shard,
     list_mixtral_routing_runs,
     list_mixtral_routing_shards,
+    list_routing_runs,
+    list_routing_shards,
 )
 
 __all__ = [
@@ -21,6 +24,9 @@ __all__ = [
     "RoutingRunInventoryError",
     "RoutingShardError",
     "RoutingShardReceipt",
+    "append_routing_shard",
+    "list_routing_runs",
+    "list_routing_shards",
     "append_mixtral_routing_shard",
     "list_mixtral_routing_runs",
     "list_mixtral_routing_shards",

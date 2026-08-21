@@ -36,6 +36,17 @@ nested objects/arrays are defensively frozen after validation. Metadata is
 evidence, not identity: changing it cannot change a previously computed
 `token_key`.
 
+## Collection and link validation
+
+`moeatlas.event_validation` owns model-runtime-independent validation across
+normalized event collections. `fresh_token_events()` and
+`fresh_routing_events()` produce exact fresh schema values, while
+`validate_routing_links()` checks selected routes, supplied-token references,
+unique token/layer/rank links, complete token representation, and deterministic
+layer/token/rank order. Runtime and storage consume this shared seam instead of
+owning duplicate or family-specific link rules. It imports no runtime, storage,
+DuckDB, PyTorch, Transformers, or other model package.
+
 These contracts do not capture tensors, install hooks, write Parquet/DuckDB,
 run inference, derive model values, or provide a storage engine. Those runtime
 and persistence responsibilities remain later feature boundaries and the real

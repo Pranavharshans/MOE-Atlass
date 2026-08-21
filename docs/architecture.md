@@ -20,7 +20,7 @@ Planned internal areas:
 | `core` | typed identities, manifests, capabilities, and shared contracts | Probe core |
 | `discovery` | static traversal and confidence-scored MoE candidates | Probe core |
 | `probe` | serializable plans, passive hooks, bounded policy, cleanup | Probe core |
-| `events` | versioned token, routing, and expert evidence contracts | Probe core |
+| `events` | versioned token/routing/expert contracts and runtime-independent collection validation | Probe core |
 | `loading` | source requests, load policy, plan identity, resolution evidence | Probe core |
 | `runtime` | validated instance/custom execution plus lazy HF/local loading | Useful alpha / causal beta |
 | `analysis` | bounded routing-load aggregation and later association/behavior/causal metrics | Research beta |
@@ -135,6 +135,11 @@ capability remains `EXPERIMENTAL` and MV-03 through MV-08 stay deferred.
 Feature 19 adds only a bounded routing-shard prerequisite above that result:
 DuckDB writes fixed ZSTD Parquet rows and a strict manifest into one
 content-addressed shard, with sequential idempotence and reopen validation.
+The shared `event_validation` seam now owns fresh collection and routing-link
+checks for runtime and storage. Canonical storage functions are model-neutral;
+historical Mixtral function names remain exact aliases. The concrete
+`RoutingForwardResult` acceptance boundary and all persisted contracts remain
+unchanged; a public result protocol is deferred to its own compatibility gate.
 It is not a full workspace/catalog, persistent database, migration, compaction,
 query, layer partition, DataFrame/export, CLI, server, UI, heatmap, prompt,
 expert-metric, or performance subsystem. Storage capability remains

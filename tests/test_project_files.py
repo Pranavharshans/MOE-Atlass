@@ -14,6 +14,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "architecture.md",
             ROOT / "docs" / "development.md",
             ROOT / "docs" / "model-validation-ledger.md",
+            ROOT / "docs" / "roadmap.md",
             ROOT / "docs" / "schemas.md",
             ROOT / "docs" / "discovery.md",
             ROOT / "docs" / "probe.md",
@@ -55,6 +56,22 @@ class ProjectFilesTests(unittest.TestCase):
         self.assertIn("Status: deferred", ledger)
         self.assertIn("No model files are downloaded", ledger)
         self.assertIn("final VM", ledger)
+
+    def test_roadmap_preserves_authority_status_and_no_download_policy(self) -> None:
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        for term in (
+            "Status: in progress",
+            "MoEAtlas PRD",
+            "Architecture",
+            "model-validation ledger",
+            "model-free complete",
+            "VM/GPU deferred",
+            "kickbacks-v2.vsix",
+            "append_routing_shard",
+            "public structural result protocol",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, roadmap)
 
     def test_qwen35_acceptance_anchors_are_present(self) -> None:
         adapter_docs = (ROOT / "docs" / "adapters.md").read_text()

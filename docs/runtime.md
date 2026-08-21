@@ -216,11 +216,15 @@ If the retry also fails, no result is published; the existing
 
 Only a complete, non-truncated, zero-dropped capture publishes a
 `RoutingForwardResult` (with the historical `MixtralRoutingForwardResult`
-identity alias). The frozen, slots, identity-equality result
-retains only the exact caller-owned output object and fresh token/routing
-events; its output identity is preserved and hidden from `repr`. Every supplied token must be
-represented, every route must reference a supplied token, links must be unique
-by token/layer/rank, and all routes must be selected. No partial result is
+identity alias). The frozen, slots, identity-equality result retains only the
+exact caller-owned output object and fresh token/routing events; its output
+identity is preserved and hidden from `repr`. Fresh collection copies and
+cross-event link checks are owned by the runtime-independent
+`moeatlas.event_validation` seam and shared unchanged with storage. The
+historical private runtime validator names remain identity aliases for
+compatibility. Every supplied token must be represented, every route must
+reference a supplied token, links must be unique by token/layer/rank, and all
+routes must be selected. No partial result is
 published on model, decoder, event, budget, hook, or cleanup failure. The
 wrapper is `EXPERIMENTAL` and is not a tokenizer, prompt builder, or generation runner.
 It is not a dataset pipeline, storage sink, CLI, server, or UI. Model-dependent
@@ -251,7 +255,7 @@ from moeatlas.analysis import (
     render_routing_load_heatmap,
 )
 from moeatlas.runtime import run_mixtral_prompt_prefill
-from moeatlas.store import append_mixtral_routing_shard, list_mixtral_routing_runs
+from moeatlas.store import append_routing_shard, list_routing_runs
 
 workspace = Path("./moeatlas-workspace")  # This directory must already exist.
 run_key = "run-1"
@@ -264,8 +268,8 @@ result = run_mixtral_prompt_prefill(
     sequence_id="sequence-1", add_special_tokens=False,
     max_prompt_chars=4096, max_tokens=256, max_events=expected_events,
 )
-append_mixtral_routing_shard(workspace, result)  # Token text is redacted by default.
-inventory = list_mixtral_routing_runs(
+append_routing_shard(workspace, result)  # Token text is redacted by default.
+inventory = list_routing_runs(
     workspace,
     max_runs=32,
     max_shards=1024,
@@ -286,8 +290,9 @@ html = render_routing_load_heatmap(
 )
 ```
 
-The historical Mixtral analysis names are identity aliases of these neutral
-functions and preserve the same matrix and HTML bytes.
+The historical Mixtral storage and analysis names are identity aliases of
+these neutral functions and preserve the same signatures, matrix values, and
+HTML bytes.
 
 The tokenizer call is exactly `tokenizer(prompt, add_special_tokens=..., padding=False,
 truncation=False, return_attention_mask=True, return_token_type_ids=False,
