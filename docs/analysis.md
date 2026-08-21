@@ -217,6 +217,118 @@ with task-labeled executors in later sequences, so the contract is exercised
 over synthetic tables; prompt-vs-rollout agreement and cross-run stability
 of association are later slices in this sequence.
 
+## Prompt-vs-rollout agreement
+
+`moeatlas.analysis.routing_agreement` implements PRD §11.2's prompt-level vs
+rollout-level routing agreement. `PromptRolloutCounts(layer_keys,
+expert_keys, prompt_counts, rollout_counts)` pairs two rectangular
+selection-count tables over one shared per-layer expert universe; every layer
+needs a strictly positive total in both phases so both conditional
+distributions are defined, while individual unused experts are fine.
+`analyze_routing_agreement(counts, *, max_cells)` derives, per layer and in
+canonical order:
+
+- `js_divergence_rows` — base-2 Jensen-Shannon divergence between the
+  prompt-phase and rollout-phase routing distributions, bounded in `[0, 1]`
+  (float noise is clamped so the documented bounds hold exactly).
+- `agreement_rows` — `1 - JSD`, the bounded similarity complement: 1.0 when
+  both phases route identically, 0.0 on disjoint supports.
+- `tv_distance_rows` — half the L1 distance between the distributions, an
+  order-independent disagreement lens also bounded in `[0, 1]`.
+
+The result is a frozen `RoutingAgreement` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.routing_agreement` artifact type;
+positive phase totals are construction preconditions, so no cell is ever
+null. Agreement compares distributions only — consistency of routing across
+phases is never specialization or causality.
+
+## Router margin
+
+`moeatlas.analysis.router_margin` implements PRD §11.1's router margin —
+the difference between a token's two top selected-route scores at one layer,
+a routing-confidence lens. `RouterMarginSamples(layer_keys, token_scores)`
+holds, per layer, one inner tuple per token with that token's selected-route
+scores ordered best-first (logits or probabilities alike; any finite scores;
+negative values are legal). `analyze_router_margin(samples, *, max_tokens)`
+derives per layer:
+
+- `mean_margin_rows` — mean top1-minus-top2 margin over tokens with at
+  least two scored ranks; `null` when no token in the layer has a defined
+  margin.
+- `margin_token_rows` — the count of tokens that contributed a margin.
+- `token_rows` — the count of all supplied tokens.
+
+Tokens with fewer than two scored ranks contribute no margin — absence is
+evidence, never inferred. The result is a frozen `RouterMarginSummary` with
+`to_dict`/`to_json`/`from_json` round-trips under the
+`moeatlas.router_margin` artifact type. A margin describes routing
+confidence only — never specialization or causality.
+
+## Route churn
+
+`moeatlas.analysis.route_churn` implements PRD §11.1's route churn — how
+expert selection changes across adjacent steps. Token keys are content
+digests, so adjacency is a caller-supplied ordering (adjacent generated
+tokens, prompt perturbations, or any routed-step sequence);
+`RouteChurnSequences(layer_keys, step_experts)` holds, per layer, one
+selected-expert tuple per step in that order (order inside a step is
+irrelevant; empty steps are legal). `analyze_route_churn(sequences, *,
+max_steps)` derives per layer:
+
+- `churn_rate_rows` — the fraction of adjacent pairs whose selected sets
+  differ; `null` with fewer than two steps.
+- `mean_jaccard_rows` — mean Jaccard distance `1 - |A ∩ B| / |A ∪ B|` over
+  the pairs, with the documented conventions that empty-to-empty is no
+  change and empty-to-nonempty is full change.
+- `pair_rows` — the count of adjacent pairs.
+
+The result is a frozen `RouteChurnSummary` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.route_churn` artifact type.
+Churn describes routing stability only — never specialization or causality.
+
+## Co-routing graphs
+
+`moeatlas.analysis.corouting` implements the model-neutral core of PRD
+§11.3's expert co-activation and conditional co-routing graphs.
+`ExpertCoRoutingCounts(layer_keys, expert_keys, pair_counts)` holds, per
+layer, a symmetric square matrix of co-selection counts over that layer's
+experts (zero diagonal — an expert is never paired with itself).
+`summarize_co_routing(counts, *, max_cells, max_pairs)` derives per layer:
+
+- `total_pair_selections` — the layer's total co-selection mass.
+- `coupled_expert_rows` — how many experts appear in at least one
+  co-selection (uncoupled experts stay explicit, never inferred away).
+- `top_pairs` — `(expert_a, expert_b, count, share)` tuples sorted by
+  descending count then ascending keys and bounded by `max_pairs`, with
+  `share` normalizing each pair by the layer's total mass.
+
+The result is a frozen `CoRoutingGraph` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.corouting` artifact type.
+Co-routing is association evidence only:
+it never implies specialization or causality.
+
+## Cross-run association stability
+
+`moeatlas.analysis.association_stability` implements PRD §11.2's cross-run
+stability of expert-task association.
+`analyze_association_stability(counts_a, counts_b, *, max_cells)` takes two
+`TaskExpertCounts` tables over one identical (layer, task, expert) topology —
+any key mismatch is a contract error, not a silent realignment — and
+compares, for every (layer, task) cell, the two runs' conditional routing
+distributions P(expert | task):
+
+- `js_divergence_rows` — base-2 Jensen-Shannon divergence between the runs,
+  bounded in `[0, 1]` (float noise clamped so the bounds hold exactly).
+- `agreement_rows` — `1 - JSD`: 1.0 when both runs route a task identically,
+  0.0 on disjoint supports.
+- `mean_agreement_rows` — per-layer mean agreement across tasks.
+
+The result is a frozen `AssociationStability` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.association_stability` artifact
+type; positive task totals are a construction precondition of both inputs, so
+no cell is ever null. Agreement between runs is evidence of reproducible
+routing behavior — never specialization or causality.
+
 ## Evidence Cards
 
 `moeatlas.analysis.evidence_cards` implements the structured alternative to a
@@ -246,3 +358,29 @@ frozen value round-trips through canonical JSON as a
 wrong types and `ValueError` for bad values, and `EvidenceCardError` reports
 fixed `contract`/`serialization` stages. Cards are exercised over synthetic
 values; real-model evidence remains deferred MV work.
+
+## Expert similarity
+
+`moeatlas.analysis.expert_similarity` implements PRD §11.3's expert weight
+and representation similarity. `ExpertVectors(layer_keys, expert_keys,
+vectors)` holds, per layer, exactly one finite vector per expert key; every
+vector within one layer shares its length, and zero vectors are legal input.
+The contract is agnostic to provenance: callers supply expert weight
+summaries or representation summaries alike, because token keys are content
+digests and vector extraction is adapter territory.
+`analyze_expert_similarity(vectors, *, max_cells)` derives, per layer, the
+symmetric cosine-similarity matrix over that layer's experts:
+
+- `similarity_rows[layer][i][j]` — cosine similarity between experts i and
+  j, clamped to `[-1, 1]`; diagonals of nonzero vectors are exactly `1.0`.
+- cells touching a zero-norm expert are `null` — undefined geometry is
+  evidence, never inferred;
+- `undefined_expert_rows` counts zero-norm experts per layer.
+
+Similarity describes geometry only:
+it never implies specialization or causality.
+The result is a frozen `ExpertSimilarity` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.expert_similarity` artifact type;
+`ExpertSimilarityError` reports fixed `contract`/`budget` stages. Vectors are
+exercised over synthetic values; real weight/activation capture remains
+deferred MV work.

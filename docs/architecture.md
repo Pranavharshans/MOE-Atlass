@@ -372,3 +372,20 @@ identity, routing/task-association/behavior/causality/stability sections kept
 separate and optional (`null` means not measured), capability labels over a
 fixed tier vocabulary, and honest limitations/warnings — canonically
 serializable as `moeatlas.evidence_card` artifacts, still family-blind.
+Prompt-vs-rollout agreement (`moeatlas.analysis.routing_agreement`) closes
+the §11.2 pair with per-layer Jensen-Shannon agreement, its bounded
+complement, and total-variation distance between paired prompt-phase and
+rollout-phase selection distributions, and cross-run association stability
+(`moeatlas.analysis.association_stability`) compares two runs' P(expert |
+task) distributions over one identical topology with the same bounded
+agreement math plus per-layer means, and the router margin
+(`moeatlas.analysis.router_margin`) summarizes per-layer top1-minus-top2
+score differences with explicit defined/total token counts, route churn
+(`moeatlas.analysis.route_churn`) measures how selected-expert sets change
+across caller-ordered adjacent steps with churn rates and Jaccard distances,
+and co-routing graphs (`moeatlas.analysis.corouting`) summarize symmetric
+pairwise co-selection matrices into deterministic top-pair rankings with
+normalized shares, while expert similarity
+(`moeatlas.analysis.expert_similarity`) derives per-layer cosine-similarity
+matrices over caller-supplied expert vectors with explicit `null` cells for
+zero-norm experts.

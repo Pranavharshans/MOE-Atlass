@@ -149,6 +149,36 @@ deliberately deferred.
   fixed tier vocabulary and honest limitations/warnings — canonically
   serializable as `moeatlas.evidence_card` artifacts; see
   [analysis](docs/analysis.md).
+- `EXPERIMENTAL` prompt-vs-rollout routing agreement:
+  `analyze_routing_agreement()` compares paired prompt-phase and
+  rollout-phase selection distributions per layer with base-2 Jensen-Shannon
+  divergence, its bounded agreement complement, and total-variation distance
+  — deterministic, budget-bounded, canonically serializable; see
+  [analysis](docs/analysis.md).
+- `EXPERIMENTAL` cross-run association stability:
+  `analyze_association_stability()` compares two runs' P(expert | task)
+  distributions over one identical (layer, task, expert) topology with
+  base-2 Jensen-Shannon divergence, its bounded agreement complement, and
+  per-layer means — deterministic, budget-bounded, canonically serializable;
+  see [analysis](docs/analysis.md).
+- `EXPERIMENTAL` router margin: `analyze_router_margin()` summarizes
+  per-layer top1-minus-top2 selected-score differences over caller-supplied
+  ranked score samples, with explicit defined/total token counts and `null`
+  means where no token has two scored ranks; see
+  [analysis](docs/analysis.md).
+- `EXPERIMENTAL` route churn: `analyze_route_churn()` measures how
+  selected-expert sets change across caller-ordered adjacent steps with
+  churn rates, mean Jaccard distances, and explicit pair counts; see
+  [analysis](docs/analysis.md).
+- `EXPERIMENTAL` co-routing graphs: `summarize_co_routing()` reduces
+  symmetric per-layer expert co-selection matrices into total mass,
+  coupled-expert counts, and deterministically ranked top pairs with
+  normalized shares; see [analysis](docs/analysis.md).
+- `EXPERIMENTAL` expert similarity: `analyze_expert_similarity()` derives
+  per-layer cosine-similarity matrices over caller-supplied expert vectors,
+  with exact `1.0` diagonals, explicit `null` cells wherever a zero-norm
+  expert is touched, and per-layer undefined-expert counts; see
+  [analysis](docs/analysis.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

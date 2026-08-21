@@ -390,3 +390,55 @@ contract tests. No model or tokenizer participates; populating cards with
 real routing, behavior, causal, and replication evidence remains deferred to
 the VM/GPU lane, so MV-01 through MV-08 and ST-01 through ST-04 keep their
 deferred status.
+
+Prompt-vs-rollout routing agreement: Status: implemented at the model-free
+boundary. Paired-count validation, Jensen-Shannon agreement with exact
+expected values, total-variation distance, scale invariance, budget bounds,
+and canonical `moeatlas.routing_agreement` round-trips are covered by
+synthetic contract tests. No model or tokenizer participates; agreement over
+real prompt/rollout phases of a real checkpoint remains deferred VM/GPU
+evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their deferred
+status.
+
+Cross-run association stability: Status: implemented at the model-free
+boundary. Topology-mismatch rejection, exact Jensen-Shannon agreement values,
+scale invariance, budget bounds, and canonical
+`moeatlas.association_stability` round-trips are covered by synthetic
+contract tests. No model or tokenizer participates; stability across real
+runs of a real checkpoint remains deferred VM/GPU evidence, so MV-01 through
+MV-08 and ST-01 through ST-04 keep their deferred status.
+
+Router margin: Status: implemented at the model-free boundary. Sample
+strictness (including non-finite score rejection), exact margin values,
+undefined-token accounting, budget bounds, and canonical
+`moeatlas.router_margin` round-trips are covered by synthetic contract
+tests. No model or tokenizer participates; margins over real router scores
+of a real checkpoint remain deferred VM/GPU evidence, so MV-01 through MV-08
+and ST-01 through ST-04 keep their deferred status.
+
+Route churn: Status: implemented at the model-free boundary. Sequence
+strictness (including duplicate-expert rejection), exact churn/Jaccard
+values, empty-step conventions, budget bounds, and canonical
+`moeatlas.route_churn` round-trips are covered by synthetic contract tests.
+No model or tokenizer participates; churn across real generated tokens of a
+real checkpoint remains deferred VM/GPU evidence, so MV-01 through MV-08 and
+ST-01 through ST-04 keep their deferred status.
+
+Co-routing graphs: Status: implemented at the model-free boundary. Matrix
+strictness (square, symmetric, zero-diagonal), exact ranking/share values,
+deterministic top-pair bounding, budget bounds, and canonical
+`moeatlas.corouting` round-trips are covered by synthetic contract tests. No
+model or tokenizer participates; co-routing over real activations of a real
+checkpoint remains deferred VM/GPU evidence, so MV-01 through MV-08 and
+ST-01 through ST-04 keep their deferred status.
+
+Expert similarity: Status: implemented at the model-free boundary. Vector
+strictness (one finite per-expert vector per layer, shared within-layer
+length), exact cosine values including identical/orthogonal/opposite
+directions, symmetric matrices with exact `1.0` diagonals, explicit `null`
+cells touching zero-norm experts, budget bounds, and canonical
+`moeatlas.expert_similarity` round-trips are covered by synthetic contract
+tests. No model or tokenizer participates; similarity over real expert
+weights or activations of a real checkpoint remains deferred VM/GPU
+evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their deferred
+status.

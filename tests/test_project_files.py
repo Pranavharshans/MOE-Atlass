@@ -44,6 +44,12 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "services" / "run_service.py",
             ROOT / "src" / "moeatlas" / "analysis" / "task_association.py",
             ROOT / "src" / "moeatlas" / "analysis" / "evidence_cards.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "routing_agreement.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "association_stability.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "router_margin.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "route_churn.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "corouting.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "expert_similarity.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
@@ -56,6 +62,12 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_services_run_service.py",
             ROOT / "tests" / "test_analysis_task_association.py",
             ROOT / "tests" / "test_analysis_evidence_cards.py",
+            ROOT / "tests" / "test_analysis_routing_agreement.py",
+            ROOT / "tests" / "test_analysis_association_stability.py",
+            ROOT / "tests" / "test_analysis_router_margin.py",
+            ROOT / "tests" / "test_analysis_route_churn.py",
+            ROOT / "tests" / "test_analysis_corouting.py",
+            ROOT / "tests" / "test_analysis_expert_similarity.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1348,6 +1360,332 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
         self.assertTrue((ROOT / "tests" / "test_analysis_evidence_cards.py").is_file())
+
+    def test_routing_agreement_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Prompt-vs-rollout agreement",
+                    "PromptRolloutCounts",
+                    "analyze_routing_agreement",
+                    "RoutingAgreement",
+                    "moeatlas.routing_agreement",
+                    "never specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.routing_agreement",)),
+            (roadmap, ("analyze_routing_agreement",)),
+            (ledger, ("Prompt-vs-rollout routing agreement",)),
+            (readme, ("analyze_routing_agreement()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "routing_agreement.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "ROUTING_AGREEMENT_SCHEMA_VERSION",
+            "RoutingAgreementError",
+            "PromptRolloutCounts",
+            "RoutingAgreement",
+            "analyze_routing_agreement",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The agreement layer stays pure: no storage reads, clocks, randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue(
+            (ROOT / "tests" / "test_analysis_routing_agreement.py").is_file()
+        )
+
+    def test_association_stability_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Cross-run association stability",
+                    "analyze_association_stability",
+                    "AssociationStability",
+                    "moeatlas.association_stability",
+                    "never specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.association_stability",)),
+            (roadmap, ("analyze_association_stability",)),
+            (ledger, ("Cross-run association stability",)),
+            (readme, ("analyze_association_stability()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "association_stability.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "ASSOCIATION_STABILITY_SCHEMA_VERSION",
+            "AssociationStabilityError",
+            "AssociationStability",
+            "analyze_association_stability",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The stability layer stays pure: no storage reads, clocks, randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue(
+            (ROOT / "tests" / "test_analysis_association_stability.py").is_file()
+        )
+
+    def test_router_margin_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Router margin",
+                    "RouterMarginSamples",
+                    "analyze_router_margin",
+                    "RouterMarginSummary",
+                    "moeatlas.router_margin",
+                    "never specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.router_margin",)),
+            (roadmap, ("analyze_router_margin",)),
+            (ledger, ("Router margin",)),
+            (readme, ("analyze_router_margin()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "router_margin.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "ROUTER_MARGIN_SCHEMA_VERSION",
+            "RouterMarginError",
+            "RouterMarginSamples",
+            "RouterMarginSummary",
+            "analyze_router_margin",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The margin layer stays pure: no storage reads, clocks, randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_analysis_router_margin.py").is_file())
+
+    def test_route_churn_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Route churn",
+                    "RouteChurnSequences",
+                    "analyze_route_churn",
+                    "RouteChurnSummary",
+                    "moeatlas.route_churn",
+                    "never specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.route_churn",)),
+            (roadmap, ("analyze_route_churn",)),
+            (ledger, ("Route churn",)),
+            (readme, ("analyze_route_churn()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "route_churn.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "ROUTE_CHURN_SCHEMA_VERSION",
+            "RouteChurnError",
+            "RouteChurnSequences",
+            "RouteChurnSummary",
+            "analyze_route_churn",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The churn layer stays pure: no storage reads, clocks, randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_analysis_route_churn.py").is_file())
+
+    def test_corouting_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Co-routing graphs",
+                    "ExpertCoRoutingCounts",
+                    "summarize_co_routing",
+                    "CoRoutingGraph",
+                    "moeatlas.corouting",
+                    "never implies specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.corouting",)),
+            (roadmap, ("summarize_co_routing",)),
+            (ledger, ("Co-routing graphs",)),
+            (readme, ("summarize_co_routing()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "corouting.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "COROUTING_SCHEMA_VERSION",
+            "CoRoutingError",
+            "CoRoutingGraph",
+            "ExpertCoRoutingCounts",
+            "summarize_co_routing",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The co-routing layer stays pure: no storage, clocks, or randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_analysis_corouting.py").is_file())
+
+    def test_expert_similarity_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Expert similarity",
+                    "ExpertVectors",
+                    "analyze_expert_similarity",
+                    "ExpertSimilarity",
+                    "moeatlas.expert_similarity",
+                    "it never implies specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.expert_similarity",)),
+            (roadmap, ("analyze_expert_similarity",)),
+            (ledger, ("Expert similarity",)),
+            (readme, ("analyze_expert_similarity()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "expert_similarity.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "EXPERT_SIMILARITY_SCHEMA_VERSION",
+            "ExpertSimilarityError",
+            "ExpertSimilarity",
+            "ExpertVectors",
+            "analyze_expert_similarity",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The similarity layer stays pure: no storage, clocks, or randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_analysis_expert_similarity.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

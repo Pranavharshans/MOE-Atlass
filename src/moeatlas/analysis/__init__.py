@@ -1,5 +1,11 @@
 """Bounded, read-only routing-load analysis over immutable routing shards."""
 
+from .association_stability import (
+    ASSOCIATION_STABILITY_SCHEMA_VERSION,
+    AssociationStability,
+    AssociationStabilityError,
+    analyze_association_stability,
+)
 from .bundle import (
     ANALYSIS_BUNDLE_SCHEMA_VERSION,
     AnalysisBundleEntry,
@@ -9,6 +15,13 @@ from .bundle import (
 from .compare_heatmap import (
     ROUTING_COMPARE_HEATMAP_SCHEMA_VERSION,
     render_routing_load_comparison,
+)
+from .corouting import (
+    COROUTING_SCHEMA_VERSION,
+    CoRoutingError,
+    CoRoutingGraph,
+    ExpertCoRoutingCounts,
+    summarize_co_routing,
 )
 from .evidence_cards import (
     EVIDENCE_CARD_SCHEMA_VERSION,
@@ -20,6 +33,34 @@ from .evidence_cards import (
     RoutingSection,
     StabilitySection,
     TaskAssociationSection,
+)
+from .expert_similarity import (
+    EXPERT_SIMILARITY_SCHEMA_VERSION,
+    ExpertSimilarity,
+    ExpertSimilarityError,
+    ExpertVectors,
+    analyze_expert_similarity,
+)
+from .route_churn import (
+    ROUTE_CHURN_SCHEMA_VERSION,
+    RouteChurnError,
+    RouteChurnSequences,
+    RouteChurnSummary,
+    analyze_route_churn,
+)
+from .router_margin import (
+    ROUTER_MARGIN_SCHEMA_VERSION,
+    RouterMarginError,
+    RouterMarginSamples,
+    RouterMarginSummary,
+    analyze_router_margin,
+)
+from .routing_agreement import (
+    ROUTING_AGREEMENT_SCHEMA_VERSION,
+    PromptRolloutCounts,
+    RoutingAgreement,
+    RoutingAgreementError,
+    analyze_routing_agreement,
 )
 from .routing_compare import (
     ROUTING_COMPARE_SCHEMA_VERSION,
@@ -53,8 +94,33 @@ from .task_association import (
 )
 
 __all__ = [
+    "ASSOCIATION_STABILITY_SCHEMA_VERSION",
+    "AssociationStability",
+    "AssociationStabilityError",
+    "analyze_association_stability",
     "EVIDENCE_CARD_SCHEMA_VERSION",
     "EVIDENCE_TIERS",
+    "EXPERT_SIMILARITY_SCHEMA_VERSION",
+    "ExpertSimilarity",
+    "ExpertSimilarityError",
+    "ExpertVectors",
+    "analyze_expert_similarity",
+    "COROUTING_SCHEMA_VERSION",
+    "CoRoutingError",
+    "CoRoutingGraph",
+    "ExpertCoRoutingCounts",
+    "summarize_co_routing",
+    "ROUTING_AGREEMENT_SCHEMA_VERSION",
+    "ROUTER_MARGIN_SCHEMA_VERSION",
+    "ROUTE_CHURN_SCHEMA_VERSION",
+    "RouteChurnError",
+    "RouteChurnSequences",
+    "RouteChurnSummary",
+    "analyze_route_churn",
+    "RouterMarginError",
+    "RouterMarginSamples",
+    "RouterMarginSummary",
+    "analyze_router_margin",
     "BehaviorSection",
     "CausalitySection",
     "EvidenceCard",
@@ -62,6 +128,10 @@ __all__ = [
     "RoutingSection",
     "StabilitySection",
     "TaskAssociationSection",
+    "PromptRolloutCounts",
+    "RoutingAgreement",
+    "RoutingAgreementError",
+    "analyze_routing_agreement",
     "TASK_ASSOCIATION_SCHEMA_VERSION",
     "TaskAssociationError",
     "TaskAssociationMatrix",
