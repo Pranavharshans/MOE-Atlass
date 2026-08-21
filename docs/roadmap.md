@@ -200,8 +200,14 @@ separate optional sections (`null` means not measured), with capability
 labels over a fixed tier vocabulary, str-only limitations/warnings, and
 canonical `moeatlas.evidence_card` round-trips — never collapsing tiers into
 one score and never claiming specialization or causality from association.
-Per-token task-labeled evidence, prompt-vs-rollout agreement, and cross-run
-association stability are later slices in this sequence.
+Its third landed slice is prompt-vs-rollout routing agreement (see
+[analysis](analysis.md)): `analyze_routing_agreement` in
+`moeatlas.analysis.routing_agreement` compares paired prompt-phase and
+rollout-phase selection distributions per layer with base-2 Jensen-Shannon
+divergence, its bounded agreement complement, and total-variation distance,
+canonically serializable as `moeatlas.routing_agreement` artifacts. Per-token
+task-labeled evidence and cross-run association stability are later slices in
+this sequence.
 
 Sequence 6 (prompt and dataset run engine) is complete only when:
 

@@ -372,3 +372,7 @@ identity, routing/task-association/behavior/causality/stability sections kept
 separate and optional (`null` means not measured), capability labels over a
 fixed tier vocabulary, and honest limitations/warnings — canonically
 serializable as `moeatlas.evidence_card` artifacts, still family-blind.
+Prompt-vs-rollout agreement (`moeatlas.analysis.routing_agreement`) closes
+the §11.2 pair with per-layer Jensen-Shannon agreement, its bounded
+complement, and total-variation distance between paired prompt-phase and
+rollout-phase selection distributions.

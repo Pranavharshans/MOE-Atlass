@@ -21,6 +21,13 @@ from .evidence_cards import (
     StabilitySection,
     TaskAssociationSection,
 )
+from .routing_agreement import (
+    ROUTING_AGREEMENT_SCHEMA_VERSION,
+    PromptRolloutCounts,
+    RoutingAgreement,
+    RoutingAgreementError,
+    analyze_routing_agreement,
+)
 from .routing_compare import (
     ROUTING_COMPARE_SCHEMA_VERSION,
     RoutingLoadComparison,
@@ -55,6 +62,7 @@ from .task_association import (
 __all__ = [
     "EVIDENCE_CARD_SCHEMA_VERSION",
     "EVIDENCE_TIERS",
+    "ROUTING_AGREEMENT_SCHEMA_VERSION",
     "BehaviorSection",
     "CausalitySection",
     "EvidenceCard",
@@ -62,6 +70,10 @@ __all__ = [
     "RoutingSection",
     "StabilitySection",
     "TaskAssociationSection",
+    "PromptRolloutCounts",
+    "RoutingAgreement",
+    "RoutingAgreementError",
+    "analyze_routing_agreement",
     "TASK_ASSOCIATION_SCHEMA_VERSION",
     "TaskAssociationError",
     "TaskAssociationMatrix",

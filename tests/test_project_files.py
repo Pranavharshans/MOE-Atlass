@@ -44,6 +44,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "services" / "run_service.py",
             ROOT / "src" / "moeatlas" / "analysis" / "task_association.py",
             ROOT / "src" / "moeatlas" / "analysis" / "evidence_cards.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "routing_agreement.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
@@ -56,6 +57,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_services_run_service.py",
             ROOT / "tests" / "test_analysis_task_association.py",
             ROOT / "tests" / "test_analysis_evidence_cards.py",
+            ROOT / "tests" / "test_analysis_routing_agreement.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1348,6 +1350,62 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
         self.assertTrue((ROOT / "tests" / "test_analysis_evidence_cards.py").is_file())
+
+    def test_routing_agreement_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Prompt-vs-rollout agreement",
+                    "PromptRolloutCounts",
+                    "analyze_routing_agreement",
+                    "RoutingAgreement",
+                    "moeatlas.routing_agreement",
+                    "never specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.routing_agreement",)),
+            (roadmap, ("analyze_routing_agreement",)),
+            (ledger, ("Prompt-vs-rollout routing agreement",)),
+            (readme, ("analyze_routing_agreement()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "routing_agreement.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "ROUTING_AGREEMENT_SCHEMA_VERSION",
+            "RoutingAgreementError",
+            "PromptRolloutCounts",
+            "RoutingAgreement",
+            "analyze_routing_agreement",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The agreement layer stays pure: no storage reads, clocks, randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue(
+            (ROOT / "tests" / "test_analysis_routing_agreement.py").is_file()
+        )
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

@@ -390,3 +390,12 @@ contract tests. No model or tokenizer participates; populating cards with
 real routing, behavior, causal, and replication evidence remains deferred to
 the VM/GPU lane, so MV-01 through MV-08 and ST-01 through ST-04 keep their
 deferred status.
+
+Prompt-vs-rollout routing agreement: Status: implemented at the model-free
+boundary. Paired-count validation, Jensen-Shannon agreement with exact
+expected values, total-variation distance, scale invariance, budget bounds,
+and canonical `moeatlas.routing_agreement` round-trips are covered by
+synthetic contract tests. No model or tokenizer participates; agreement over
+real prompt/rollout phases of a real checkpoint remains deferred VM/GPU
+evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their deferred
+status.

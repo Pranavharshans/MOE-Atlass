@@ -217,6 +217,31 @@ with task-labeled executors in later sequences, so the contract is exercised
 over synthetic tables; prompt-vs-rollout agreement and cross-run stability
 of association are later slices in this sequence.
 
+## Prompt-vs-rollout agreement
+
+`moeatlas.analysis.routing_agreement` implements PRD §11.2's prompt-level vs
+rollout-level routing agreement. `PromptRolloutCounts(layer_keys,
+expert_keys, prompt_counts, rollout_counts)` pairs two rectangular
+selection-count tables over one shared per-layer expert universe; every layer
+needs a strictly positive total in both phases so both conditional
+distributions are defined, while individual unused experts are fine.
+`analyze_routing_agreement(counts, *, max_cells)` derives, per layer and in
+canonical order:
+
+- `js_divergence_rows` — base-2 Jensen-Shannon divergence between the
+  prompt-phase and rollout-phase routing distributions, bounded in `[0, 1]`
+  (float noise is clamped so the documented bounds hold exactly).
+- `agreement_rows` — `1 - JSD`, the bounded similarity complement: 1.0 when
+  both phases route identically, 0.0 on disjoint supports.
+- `tv_distance_rows` — half the L1 distance between the distributions, an
+  order-independent disagreement lens also bounded in `[0, 1]`.
+
+The result is a frozen `RoutingAgreement` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.routing_agreement` artifact type;
+positive phase totals are construction preconditions, so no cell is ever
+null. Agreement compares distributions only — consistency of routing across
+phases is never specialization or causality.
+
 ## Evidence Cards
 
 `moeatlas.analysis.evidence_cards` implements the structured alternative to a
