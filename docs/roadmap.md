@@ -42,7 +42,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | 1 | Neutral event validation and storage APIs | `model-free complete` | Runtime-independent collection validation; canonical and historical storage functions are exact aliases; persisted behavior unchanged; all local gates pass | Events, runtime, storage docs and tests |
 | 2 | Run identity, provenance, and lifecycle | `model-free complete` | Versioned immutable run specs/state/progress/cancellation/lineage with deterministic transition and serialization tests | PRD §9.3 and schema tests |
 | 3 | Application services and workspace/catalog | `model-free complete` | Shared CLI/server services, storage ports, migrations, bounded queries, reopen/repair, and v1 shard compatibility | PRD §10; ST-01–ST-04 remain separate |
-| 4 | Universal execution capabilities | `planned` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
+| 4 | Universal execution capabilities | `in progress` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
 | 5 | Raw evidence and open storage/export | `planned` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
 | 6 | Prompt and dataset run engine | `planned` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
 | 7 | Task association and Evidence Cards | `planned` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests |
@@ -61,6 +61,16 @@ Sequence 2 delivered the content-addressed run specifications and deterministic
 lifecycle contracts in `moeatlas.runs` (see [runs](runs.md)); Sequence 3
 delivered the versioned workspace catalog, model-neutral storage ports, and
 the shared application-service layer (see [workspace](workspace.md)).
+
+Sequence 4 is `in progress`. Its first slice landed the adapter-published
+`RoutingUniverse` contract (see [adapters](adapters.md)): per-layer expert
+universes, parallel native expert indices, variable top-k schedules,
+adapter-declared layout tags, explicit shared-expert semantics, and the named
+`project_rectangular_universe()` reduction that replaces routing-load's
+hidden rectangular assumptions. Unknown-family publication and
+non-rectangular shapes are contract-tested; wiring analysis to consume the
+universe plus input-preparation/invocation/decoding/observation capability
+protocols remain for later slices in this sequence.
 
 Sequence 4 (universal execution capabilities) is complete only when:
 

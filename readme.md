@@ -157,6 +157,14 @@ deliberately deferred.
   (initialize/open/register/record/sync/query) that the CLI, Python API, and
   future server share. It is not yet a query engine, lock manager, or CLI
   surface; see [workspace](docs/workspace.md).
+- `EXPERIMENTAL` adapter-published `RoutingUniverse` contracts: a versioned,
+  family-blind per-layer routing topology (expert universes, parallel native
+  expert indices, variable top-k schedules, shared experts, adapter-declared
+  layout tags) with `publish_routing_universe()` from any conforming
+  inspection and `project_rectangular_universe()` as the explicit rectangular
+  reduction for legacy analysis. Non-rectangular and unknown-family shapes
+  are first-class; analysis does not yet consume the universe.
+  See [adapters](docs/adapters.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

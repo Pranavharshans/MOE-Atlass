@@ -47,6 +47,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_cli_routing_runs.py",
             ROOT / "src" / "moeatlas" / "runtime" / "prompt_prefill.py",
             ROOT / "tests" / "test_runtime_prompt_prefill.py",
+            ROOT / "src" / "moeatlas" / "adapters" / "universe.py",
+            ROOT / "tests" / "test_adapters_universe.py",
             ROOT / "src" / "moeatlas" / "adapters" / "qwen3_5_moe.py",
             ROOT / "tests" / "fixtures" / "qwen3_5_moe.py",
             ROOT / "tests" / "test_qwen3_5_moe_adapter.py",
@@ -128,6 +130,35 @@ class ProjectFilesTests(unittest.TestCase):
             "query_runs",
         ):
             self.assertIn(term, services_source)
+
+    def test_routing_universe_docs_preserve_contract_anchors(self) -> None:
+        adapters_docs = (ROOT / "docs" / "adapters.md").read_text()
+        for term in (
+            "RoutingUniverse",
+            "publish_routing_universe",
+            "project_rectangular_universe",
+            "expert_indices",
+            "routed_top_k",
+            "shared_expert_keys",
+            "legacy_indexed",
+            "family-blind",
+            "non-rectangular",
+            "final VM",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, adapters_docs)
+        universe_source = (
+            ROOT / "src" / "moeatlas" / "adapters" / "universe.py"
+        ).read_text()
+        for term in (
+            "ROUTING_UNIVERSE_SCHEMA_VERSION",
+            "LayerRoutingUniverse",
+            "RectangularProjection",
+            "RoutingUniverseError",
+            "manifest_type",
+            "routing_universe",
+        ):
+            self.assertIn(term, universe_source)
 
     def test_qwen35_acceptance_anchors_are_present(self) -> None:
         adapter_docs = (ROOT / "docs" / "adapters.md").read_text()
