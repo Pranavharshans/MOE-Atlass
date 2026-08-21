@@ -10,12 +10,14 @@ dist/
 .ruff_cache/
 .mypy_cache/
 
-# Local MoEAtlas data and model material
-models/
-checkpoints/
-artifacts/
-runs/
-workspace/
+# Local MoEAtlas data and model material (anchored to the repository root so
+# these patterns never ignore package source directories such as
+# src/moeatlas/runs/)
+/models/
+/checkpoints/
+/artifacts/
+/runs/
+/workspace/
 
 # Editors and operating systems
 .DS_Store

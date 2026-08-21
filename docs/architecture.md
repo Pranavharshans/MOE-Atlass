@@ -22,6 +22,7 @@ Planned internal areas:
 | `probe` | serializable plans, passive hooks, bounded policy, cleanup | Probe core |
 | `events` | versioned token/routing/expert contracts and runtime-independent collection validation | Probe core |
 | `loading` | source requests, load policy, plan identity, resolution evidence | Probe core |
+| `runs` | content-addressed run specifications, provenance groups, and the deterministic lifecycle state machine | Run engine foundation |
 | `runtime` | validated instance/custom execution plus lazy HF/local loading | Useful alpha / causal beta |
 | `analysis` | bounded routing-load aggregation and later association/behavior/causal metrics | Research beta |
 | `store` | bounded content-addressed routing shards (Feature 19) | Experimental prerequisite |

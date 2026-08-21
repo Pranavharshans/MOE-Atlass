@@ -21,6 +21,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "events.md",
             ROOT / "docs" / "cli.md",
             ROOT / "docs" / "loading.md",
+            ROOT / "docs" / "runs.md",
             ROOT / "docs" / "runtime.md",
             ROOT / "docs" / "adapters.md",
             ROOT / "docs" / "storage.md",
@@ -72,6 +73,21 @@ class ProjectFilesTests(unittest.TestCase):
         ):
             with self.subTest(term=term):
                 self.assertIn(term, roadmap)
+
+    def test_run_contracts_docs_preserve_identity_and_lifecycle_anchors(self) -> None:
+        runs_doc = (ROOT / "docs" / "runs.md").read_text()
+        for term in (
+            "RunSpecification",
+            "run:<64 lowercase hex>",
+            "RunRecord",
+            "RunLifecycleError",
+            "intervention_opt_in",
+            "redacted",
+            "retry",
+            "model-validation-ledger.md",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, runs_doc)
 
     def test_qwen35_acceptance_anchors_are_present(self) -> None:
         adapter_docs = (ROOT / "docs" / "adapters.md").read_text()

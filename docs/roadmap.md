@@ -40,7 +40,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | Sequence | Area | Status | Exit criterion | Evidence authority |
 | ---: | --- | --- | --- | --- |
 | 1 | Neutral event validation and storage APIs | `model-free complete` | Runtime-independent collection validation; canonical and historical storage functions are exact aliases; persisted behavior unchanged; all local gates pass | Events, runtime, storage docs and tests |
-| 2 | Run identity, provenance, and lifecycle | `planned` | Versioned immutable run specs/state/progress/cancellation/lineage with deterministic transition and serialization tests | PRD §9.3 and schema tests |
+| 2 | Run identity, provenance, and lifecycle | `model-free complete` | Versioned immutable run specs/state/progress/cancellation/lineage with deterministic transition and serialization tests | PRD §9.3 and schema tests |
 | 3 | Application services and workspace/catalog | `planned` | Shared CLI/server services, storage ports, migrations, bounded queries, reopen/repair, and v1 shard compatibility | PRD §10; ST-01–ST-04 remain separate |
 | 4 | Universal execution capabilities | `planned` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
 | 5 | Raw evidence and open storage/export | `planned` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests | PRD §§10 and 16 |
@@ -54,25 +54,28 @@ tracks dependency order and exit criteria without redefining those documents.
 
 ## Current slice exit criteria
 
-Sequence 1 (neutral event validation and storage APIs: canonical
-`append_routing_shard`, `list_routing_shards`, and `list_routing_runs` with
-exact historical aliases) is `model-free complete`.
+Sequences 1–2 are `model-free complete`. Sequence 1 delivered the neutral
+event-validation seam and canonical storage APIs (`append_routing_shard`,
+`list_routing_shards`, `list_routing_runs` with exact historical aliases);
+Sequence 2 delivered the content-addressed run specifications and deterministic
+lifecycle contracts in `moeatlas.runs` (see [runs](runs.md)).
 
-Sequence 2 (run identity, provenance, and lifecycle) is complete only when:
+Sequence 3 (application services and workspace/catalog) is complete only when:
 
-1. Immutable versioned run specification/manifest contracts bind model and
-   tokenizer revisions, loading policy, adapter/plugin provenance, inspection
-   and probe-plan identities, input fingerprint, execution settings, privacy
-   policy, and intervention lineage.
-2. Prompt/dataset identity and derived-run lineage are first-class serializable
-   contracts reusing the strict manifest digest machinery.
-3. Run states and legal transitions are deterministic; cancellation,
-   retry/resume, and terminal-state behavior are independently testable.
-4. Serializable domain state stays separate from process-local model/tokenizer/
-   runtime handles.
-5. No-download contract/serialization/state-machine tests pass with schema
-   documentation updated, the full local gate is green, and the feature commit
-   is pushed before Sequence 3 starts.
+1. An application-service layer shared by CLI and the future server exists;
+   orchestration is not duplicated in presentation layers.
+2. Model-neutral storage ports/readers/writers wrap the existing DuckDB/Parquet
+   implementation, and analysis consumes reader/query contracts rather than
+   concrete storage internals.
+3. The workspace/catalog provides schema versioning/migrations, a run registry,
+   bounded queries, repair/reopen behavior, and atomic publication.
+4. Existing v1 shards remain readable under compatibility tests.
+5. Writes stay incremental, bounded, resumable, content-addressed where
+   appropriate, and safe under cancellation/failure.
+6. Catalog/query/migration/repair/concurrency tests use synthetic runs only;
+   ST-01–ST-04 VM/filesystem/scale checks remain deferred ledger evidence.
+7. The full local gate is green and the feature commit is pushed before
+   Sequence 4 starts.
 
 A public structural result protocol, neutral inventory-class rename, or stored
 schema migration each changes observable compatibility and requires its own

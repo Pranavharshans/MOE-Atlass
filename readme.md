@@ -140,6 +140,14 @@ deliberately deferred.
   coherent directory of canonical artifact documents plus a digest-bearing
   manifest, atomically per file with full failure cleanup and a frozen
   receipt. See [analysis](docs/analysis.md).
+- Model-neutral run contracts: content-addressed `RunSpecification` manifests
+  binding resolved model/tokenizer revisions, probe plans, prompt/dataset
+  fingerprints, generation settings, privacy policy, and intervention lineage
+  into a deterministic `run:<hex>` key, plus the frozen `RunRecord` lifecycle
+  state machine (planned → provisioning → running → finalizing → completed,
+  with fail/cancel/retry paths) over pure serializable transitions. These
+  contracts execute nothing; the run engine and workspace catalog arrive in
+  later slices. See [runs](docs/runs.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
