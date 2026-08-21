@@ -205,6 +205,62 @@ def build_parser() -> argparse.ArgumentParser:
         help="replace an existing --output file",
     )
     compare.set_defaults(handler=_handle_compare, _compare_parser=compare)
+
+    adapters = subparsers.add_parser(
+        "adapters",
+        help="inspect the adapter plugin registry",
+        description=(
+            "List built-in adapters and third-party plugins published under "
+            "the moeatlas.adapters entry-point group through one contract."
+        ),
+    )
+    adapters_subparsers = adapters.add_subparsers(dest="adapters_command")
+    adapters_list = adapters_subparsers.add_parser(
+        "list",
+        help="list registered adapter plugins with provenance and status",
+        description=(
+            "List every registered adapter plugin with provenance, trust "
+            "policy status, and declared architecture families. Discovery "
+            "is metadata-only; no model is loaded and nothing is downloaded."
+        ),
+        epilog=(
+            "Policy flags compose: --builtin-only restricts trusted sources, "
+            "--enable allow-lists specific plugins, --disable force-disables "
+            "names, and --family keeps only enabled records serving one "
+            "architecture family. A name passed to both --enable and "
+            "--disable is rejected."
+        ),
+    )
+    adapters_list.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the canonical moeatlas.adapter_registry document",
+    )
+    adapters_list.add_argument(
+        "--builtin-only",
+        action="store_true",
+        help="treat entry-point plugins as untrusted (listed as disabled)",
+    )
+    adapters_list.add_argument(
+        "--enable",
+        action="append",
+        metavar="NAME",
+        default=[],
+        help="allow-list one plugin name (repeatable)",
+    )
+    adapters_list.add_argument(
+        "--disable",
+        action="append",
+        metavar="NAME",
+        default=[],
+        help="force-disable one plugin name (repeatable)",
+    )
+    adapters_list.add_argument(
+        "--family",
+        metavar="FAMILY",
+        help="keep only enabled records serving this architecture family",
+    )
+    adapters_list.set_defaults(handler=_handle_adapters_list)
     return parser
 
 
@@ -697,6 +753,118 @@ def _handle_routing_runs(args: argparse.Namespace) -> int:
         return 2
 
     print(f"saved routing run inventory to {output}", file=sys.stderr)
+    return 0
+
+
+def _handle_adapters_list(args: argparse.Namespace) -> int:
+    try:
+        from .adapters import (
+            AdapterRegistryPolicy,
+            collect_adapter_registry,
+            match_adapters_for_family,
+        )
+
+        policy = AdapterRegistryPolicy(
+            trusted_sources=("builtin",) if args.builtin_only else ("builtin", "entry_point"),
+            enabled_names=tuple(sorted(set(args.enable))) if args.enable else None,
+            disabled_names=tuple(sorted(set(args.disable))),
+        )
+        report = collect_adapter_registry(policy=policy)
+        if args.family is not None:
+            matching = match_adapters_for_family(report.entries, family=args.family)
+            report = type(report)(
+                schema_version=report.schema_version,
+                entries=matching,
+                collisions=report.collisions,
+                failures=report.failures,
+            )
+    except (TypeError, ValueError):
+        print(
+            "moeatlas adapters list: invalid adapter policy or family filter",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.json:
+        sys.stdout.write(report.to_json() + "\n")
+        return 0
+
+    enabled = sum(1 for entry in report.entries if entry.status == "enabled")
+    print(
+        f"adapter plugins: {len(report.entries)} listed "
+        f"({enabled} enabled, {len(report.entries) - enabled} disabled)"
+    )
+    for entry in report.entries:
+        record = entry.record
+        distribution = record.distribution if record.distribution is not None else "-"
+        families = ",".join(record.architecture_families)
+        print(
+            f"{record.name} {record.version} {entry.status} {record.source} "
+            f"{distribution} families={families}"
+        )
+    for name, kept, suppressed in report.collisions:
+        print(
+            f"collision: {name} kept {kept}; suppressed {suppressed}",
+            file=sys.stderr,
+        )
+    for value, reason in report.failures:
+        print(f"plugin failure: {value}: {reason}", file=sys.stderr)
+    return 0
+
+
+def _handle_adapters_list(args: argparse.Namespace) -> int:
+    try:
+        from .adapters import (
+            AdapterRegistryPolicy,
+            collect_adapter_registry,
+            match_adapters_for_family,
+        )
+
+        policy = AdapterRegistryPolicy(
+            trusted_sources=("builtin",) if args.builtin_only else ("builtin", "entry_point"),
+            enabled_names=tuple(sorted(set(args.enable))) if args.enable else None,
+            disabled_names=tuple(sorted(set(args.disable))),
+        )
+        report = collect_adapter_registry(policy=policy)
+        if args.family is not None:
+            matching = match_adapters_for_family(report.entries, family=args.family)
+            report = type(report)(
+                schema_version=report.schema_version,
+                entries=matching,
+                collisions=report.collisions,
+                failures=report.failures,
+            )
+    except (TypeError, ValueError):
+        print(
+            "moeatlas adapters list: invalid adapter policy or family filter",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.json:
+        sys.stdout.write(report.to_json() + "\n")
+        return 0
+
+    enabled = sum(1 for entry in report.entries if entry.status == "enabled")
+    print(
+        f"adapter plugins: {len(report.entries)} listed "
+        f"({enabled} enabled, {len(report.entries) - enabled} disabled)"
+    )
+    for entry in report.entries:
+        record = entry.record
+        distribution = record.distribution if record.distribution is not None else "-"
+        families = ",".join(record.architecture_families)
+        print(
+            f"{record.name} {record.version} {entry.status} {record.source} "
+            f"{distribution} families={families}"
+        )
+    for name, kept, suppressed in report.collisions:
+        print(
+            f"collision: {name} kept {kept}; suppressed {suppressed}",
+            file=sys.stderr,
+        )
+    for value, reason in report.failures:
+        print(f"plugin failure: {value}: {reason}", file=sys.stderr)
     return 0
 
 

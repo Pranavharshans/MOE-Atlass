@@ -165,3 +165,25 @@ KeyboardInterrupt and SystemExit remain control-flow exceptions. The command
 is EXPERIMENTAL: it creates no model, tokenizer, browser, network, cache,
 catalog, ranking, or specialization surface, and does not alter MV-01 through
 MV-08.
+
+## Adapter plugin listing
+
+`moeatlas adapters list` prints the versioned adapter plugin registry (see
+[adapters](adapters.md)): every built-in adapter and third-party
+`moeatlas.adapters` entry-point plugin, one deterministic line per record
+carrying name, version, policy status (`enabled`/`disabled`), source
+(`builtin`/`entry_point`), publishing distribution, and declared
+architecture families. Discovery is metadata-only — a plugin module is
+imported just enough to read its descriptor; no model is loaded, nothing is
+downloaded, and no network path exists.
+
+Policy flags compose: `--builtin-only` treats entry-point plugins as
+untrusted (still listed, marked disabled), `--enable NAME` allow-lists
+specific plugins (repeatable; unlisted plugins become disabled),
+`--disable NAME` force-disables names (repeatable), and `--family FAMILY`
+keeps only enabled records whose families serve that architecture family.
+A name passed to both `--enable` and `--disable` exits 2 with the fixed
+message `moeatlas adapters list: invalid adapter policy or family filter`.
+Suppressed collisions and isolated plugin failures print fixed lines on
+stderr while the listing itself still succeeds. `--json` emits the exact
+canonical `moeatlas.adapter_registry` document instead of text.

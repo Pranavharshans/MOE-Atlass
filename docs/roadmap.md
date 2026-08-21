@@ -250,9 +250,13 @@ with provenance records (`AdapterPluginRecord`), trust/enable-disable
 policy (`AdapterRegistryPolicy`), collision handling (built-ins first,
 then lexicographic entry-point value, every suppressed loser reported),
 and failure isolation with a fixed reason vocabulary — canonically
-serializable as `moeatlas.adapter_registry` artifacts. The
-`moeatlas adapters list` command and the remaining PRD CLI flows (run,
-export, compare over shared services) are later slices in this sequence.
+serializable as `moeatlas.adapter_registry` artifacts. Its second landed
+slice surfaces the registry as the `moeatlas adapters list` command (see
+[cli](cli.md)) with composable trust policy flags (`--builtin-only`,
+`--enable`, `--disable`), `--family` capability filtering, `--json`
+canonical output, and stderr reporting of collisions and isolated plugin
+failures. The remaining PRD CLI flows (run, export, compare over shared
+services) are later slices in this sequence.
 
 Sequence 8 (plugins and complete headless CLI/API) is complete only when:
 

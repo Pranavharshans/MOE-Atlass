@@ -271,7 +271,9 @@ deliberately deferred.
   deterministic contract with provenance records, trust/enable-disable
   policy, collision handling that reports suppressed losers, and failure
   isolation with fixed reason vocabulary; `match_adapters_for_family()` is
-  the capability-negotiation seam. See [adapters](docs/adapters.md).
+  the capability-negotiation seam, and `moeatlas adapters list` exposes the
+  listing on the CLI with `--json`, policy flags, and `--family` filtering.
+  See [adapters](docs/adapters.md) and [cli](docs/cli.md).
   See [runtime](docs/runtime.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred

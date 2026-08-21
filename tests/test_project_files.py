@@ -70,6 +70,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_analysis_corouting.py",
             ROOT / "tests" / "test_analysis_expert_similarity.py",
             ROOT / "tests" / "test_adapters_registry.py",
+            ROOT / "tests" / "test_cli_adapters.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1711,6 +1712,10 @@ class ProjectFilesTests(unittest.TestCase):
             (roadmap, ("collect_adapter_registry()",)),
             (ledger, ("Adapter plugin registry",)),
             (readme, ("collect_adapter_registry()",)),
+            (
+                (ROOT / "docs" / "cli.md").read_text(),
+                ("moeatlas adapters list", "moeatlas.adapter_registry"),
+            ),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1747,7 +1752,12 @@ class ProjectFilesTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
+        cli_source = (ROOT / "src" / "moeatlas" / "cli.py").read_text()
+        for term in ("adapters", "adapters_list", "_handle_adapters_list"):
+            with self.subTest(term=term):
+                self.assertIn(term, cli_source)
         self.assertTrue((ROOT / "tests" / "test_adapters_registry.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_cli_adapters.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()
