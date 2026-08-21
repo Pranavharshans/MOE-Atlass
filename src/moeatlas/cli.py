@@ -205,6 +205,144 @@ def build_parser() -> argparse.ArgumentParser:
         help="replace an existing --output file",
     )
     compare.set_defaults(handler=_handle_compare, _compare_parser=compare)
+
+    adapters = subparsers.add_parser(
+        "adapters",
+        help="inspect the adapter plugin registry",
+        description=(
+            "List built-in adapters and third-party plugins published under "
+            "the moeatlas.adapters entry-point group through one contract."
+        ),
+    )
+    adapters_subparsers = adapters.add_subparsers(dest="adapters_command")
+    adapters_list = adapters_subparsers.add_parser(
+        "list",
+        help="list registered adapter plugins with provenance and status",
+        description=(
+            "List every registered adapter plugin with provenance, trust "
+            "policy status, and declared architecture families. Discovery "
+            "is metadata-only; no model is loaded and nothing is downloaded."
+        ),
+        epilog=(
+            "Policy flags compose: --builtin-only restricts trusted sources, "
+            "--enable allow-lists specific plugins, --disable force-disables "
+            "names, and --family keeps only enabled records serving one "
+            "architecture family. A name passed to both --enable and "
+            "--disable is rejected."
+        ),
+    )
+    adapters_list.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the canonical moeatlas.adapter_registry document",
+    )
+    adapters_list.add_argument(
+        "--builtin-only",
+        action="store_true",
+        help="treat entry-point plugins as untrusted (listed as disabled)",
+    )
+    adapters_list.add_argument(
+        "--enable",
+        action="append",
+        metavar="NAME",
+        default=[],
+        help="allow-list one plugin name (repeatable)",
+    )
+    adapters_list.add_argument(
+        "--disable",
+        action="append",
+        metavar="NAME",
+        default=[],
+        help="force-disable one plugin name (repeatable)",
+    )
+    adapters_list.add_argument(
+        "--family",
+        metavar="FAMILY",
+        help="keep only enabled records serving this architecture family",
+    )
+    adapters_list.set_defaults(handler=_handle_adapters_list)
+
+    run = subparsers.add_parser(
+        "run",
+        help="execute one headless run through the shared run service",
+        description=(
+            "Build a content-addressed RunSpecification from one validated "
+            "loading plan plus exactly one input form (--prompt TEXT or "
+            "--dataset DESCRIPTOR.json) and execute it through the shared "
+            "run service with an executor plugin from the moeatlas.executors "
+            "entry-point group."
+        ),
+        epilog=(
+            "The executor is mandatory and never built in: real model "
+            "execution belongs to adapter plugins, and no command downloads "
+            "a model implicitly. Dataset locations resolve relative to the "
+            "workspace directory. Timestamps come only from --at; the CLI "
+            "never reads a clock."
+        ),
+    )
+    run.add_argument("workspace", metavar="WORKSPACE")
+    run.add_argument("--loading-plan", required=True, metavar="PLAN.json")
+    run.add_argument("--prompt", metavar="TEXT")
+    run.add_argument("--dataset", metavar="DESCRIPTOR.json")
+    run.add_argument("--executor", required=True, metavar="NAME")
+    run.add_argument("--at", metavar="TIMESTAMP", help="caller-supplied timestamp")
+    run.add_argument("--created-by", metavar="LABEL")
+    run.add_argument("--checkpoint-directory", metavar="DIR")
+    run.add_argument("--resume-from", metavar="CHECKPOINT.json")
+    run.add_argument("--max-input-bytes", metavar="N")
+    run.add_argument("--max-rows", metavar="N")
+    run.add_argument("--max-row-bytes", metavar="N")
+    run.add_argument("--max-result-bytes", metavar="N")
+    run.set_defaults(handler=_handle_run)
+
+    export = subparsers.add_parser(
+        "export",
+        help="export one run's committed evidence as a canonical bundle",
+        description=(
+            "Export every committed shard of one routing run as a bounded, "
+            "tamper-evident bundle directory with a manifest written last."
+        ),
+        epilog=(
+            "The destination must be nonexistent or an empty real directory. "
+            "Two exports of the same committed run state are byte-identical. "
+            "No model, tokenizer, network, cache, or generation path is used."
+        ),
+    )
+    export.add_argument("workspace", metavar="WORKSPACE")
+    export.add_argument("run_key", metavar="RUN_KEY")
+    export.add_argument(
+        "--format",
+        default="bundle",
+        choices=("bundle",),
+        help="evidence format (only the canonical bundle exists today)",
+    )
+    export.add_argument("--output", required=True, metavar="DEST_DIR")
+    export.add_argument("--max-event-rows", metavar="N")
+    export.add_argument("--max-file-bytes", metavar="N")
+    export.set_defaults(handler=_handle_export)
+
+    ui = subparsers.add_parser(
+        "ui",
+        help="launch the local read-only server for one workspace",
+        description=(
+            "Serve the local read-only API (health, workspace snapshot, "
+            "bounded run listings, adapter registry) for one workspace."
+        ),
+        epilog=(
+            "The server binds to the loopback interface by default and never "
+            "loads a model, downloads anything, or writes to storage. Remote "
+            "binding requires an explicit opt-in."
+        ),
+    )
+    ui.add_argument("workspace", metavar="WORKSPACE")
+    ui.add_argument("--host", default="127.0.0.1", metavar="HOST")
+    ui.add_argument("--port", default="8000", metavar="N")
+    ui.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="explicitly allow binding to a non-loopback interface",
+    )
+    ui.set_defaults(handler=_handle_ui)
     return parser
 
 
@@ -697,6 +835,341 @@ def _handle_routing_runs(args: argparse.Namespace) -> int:
         return 2
 
     print(f"saved routing run inventory to {output}", file=sys.stderr)
+    return 0
+
+
+def _handle_adapters_list(args: argparse.Namespace) -> int:
+    try:
+        from .adapters import (
+            AdapterRegistryPolicy,
+            collect_adapter_registry,
+            match_adapters_for_family,
+        )
+
+        policy = AdapterRegistryPolicy(
+            trusted_sources=("builtin",) if args.builtin_only else ("builtin", "entry_point"),
+            enabled_names=tuple(sorted(set(args.enable))) if args.enable else None,
+            disabled_names=tuple(sorted(set(args.disable))),
+        )
+        report = collect_adapter_registry(policy=policy)
+        if args.family is not None:
+            matching = match_adapters_for_family(report.entries, family=args.family)
+            report = type(report)(
+                schema_version=report.schema_version,
+                entries=matching,
+                collisions=report.collisions,
+                failures=report.failures,
+            )
+    except (TypeError, ValueError):
+        print(
+            "moeatlas adapters list: invalid adapter policy or family filter",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.json:
+        sys.stdout.write(report.to_json() + "\n")
+        return 0
+
+    enabled = sum(1 for entry in report.entries if entry.status == "enabled")
+    print(
+        f"adapter plugins: {len(report.entries)} listed "
+        f"({enabled} enabled, {len(report.entries) - enabled} disabled)"
+    )
+    for entry in report.entries:
+        record = entry.record
+        distribution = record.distribution if record.distribution is not None else "-"
+        families = ",".join(record.architecture_families)
+        print(
+            f"{record.name} {record.version} {entry.status} {record.source} "
+            f"{distribution} families={families}"
+        )
+    for name, kept, suppressed in report.collisions:
+        print(
+            f"collision: {name} kept {kept}; suppressed {suppressed}",
+            file=sys.stderr,
+        )
+    for value, reason in report.failures:
+        print(f"plugin failure: {value}: {reason}", file=sys.stderr)
+    return 0
+
+
+def _handle_adapters_list(args: argparse.Namespace) -> int:
+    try:
+        from .adapters import (
+            AdapterRegistryPolicy,
+            collect_adapter_registry,
+            match_adapters_for_family,
+        )
+
+        policy = AdapterRegistryPolicy(
+            trusted_sources=("builtin",) if args.builtin_only else ("builtin", "entry_point"),
+            enabled_names=tuple(sorted(set(args.enable))) if args.enable else None,
+            disabled_names=tuple(sorted(set(args.disable))),
+        )
+        report = collect_adapter_registry(policy=policy)
+        if args.family is not None:
+            matching = match_adapters_for_family(report.entries, family=args.family)
+            report = type(report)(
+                schema_version=report.schema_version,
+                entries=matching,
+                collisions=report.collisions,
+                failures=report.failures,
+            )
+    except (TypeError, ValueError):
+        print(
+            "moeatlas adapters list: invalid adapter policy or family filter",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.json:
+        sys.stdout.write(report.to_json() + "\n")
+        return 0
+
+    enabled = sum(1 for entry in report.entries if entry.status == "enabled")
+    print(
+        f"adapter plugins: {len(report.entries)} listed "
+        f"({enabled} enabled, {len(report.entries) - enabled} disabled)"
+    )
+    for entry in report.entries:
+        record = entry.record
+        distribution = record.distribution if record.distribution is not None else "-"
+        families = ",".join(record.architecture_families)
+        print(
+            f"{record.name} {record.version} {entry.status} {record.source} "
+            f"{distribution} families={families}"
+        )
+    for name, kept, suppressed in report.collisions:
+        print(
+            f"collision: {name} kept {kept}; suppressed {suppressed}",
+            file=sys.stderr,
+        )
+    for value, reason in report.failures:
+        print(f"plugin failure: {value}: {reason}", file=sys.stderr)
+    return 0
+
+
+_RUN_SERVICE_STAGES = frozenset({"checkpoint", "lifecycle"})
+_EXPORT_BUNDLE_STAGES = frozenset(
+    {"dependency", "workspace", "source", "format", "budget", "write", "publish", "conflict"}
+)
+_EXECUTOR_ENTRY_POINT_GROUP = "moeatlas.executors"
+
+
+class _RunInputError(ValueError):
+    """Raised when run inputs cannot be safely accepted by the CLI."""
+
+
+def _load_executor(name: str):
+    """Resolve one executor plugin from the moeatlas.executors group."""
+
+    from importlib.metadata import entry_points
+
+    if not name or name != name.strip():
+        raise _RunInputError("--executor must be a non-empty name")
+    try:
+        candidates = entry_points(group=_EXECUTOR_ENTRY_POINT_GROUP)
+    except Exception as exc:
+        raise _RunInputError("executor registry could not be read") from exc
+    for candidate in candidates:
+        if candidate.name != name:
+            continue
+        try:
+            executor = candidate.load()
+        except Exception as exc:
+            raise _RunInputError("executor plugin failed to load") from exc
+        if not callable(executor):
+            raise _RunInputError("executor plugin is not callable")
+        return executor
+    raise _RunInputError("executor plugin is not registered")
+
+
+def _read_run_loading_plan(path: str):
+    try:
+        payload = Path(path).read_bytes()
+    except (OSError, ValueError) as exc:
+        raise _RunInputError("could not read loading plan") from exc
+    try:
+        from .loading import LoadingPlan
+
+        return LoadingPlan.from_json(payload)
+    except Exception as exc:
+        raise _RunInputError("loading plan is not a valid LoadingPlan document") from exc
+
+
+def _build_run_input(args: argparse.Namespace):
+    if (args.prompt is None) == (args.dataset is None):
+        raise _RunInputError("exactly one of --prompt or --dataset is required")
+    try:
+        from .runs.specs import DatasetInputSpec, PromptInputSpec
+
+        if args.prompt is not None:
+            return PromptInputSpec(text=args.prompt)
+        payload = Path(args.dataset).read_bytes()
+        return DatasetInputSpec.model_validate_json(payload)
+    except _RunInputError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise _RunInputError("dataset descriptor is not a valid document") from exc
+
+
+def _safe_run_failure(exc: Exception) -> str:
+    from .services import RunServiceError
+
+    if type(exc) is RunServiceError and exc.stage in _RUN_SERVICE_STAGES:
+        message = f"run service failed at {exc.stage}"
+        if str(exc) == message:
+            return message
+    return "run execution failed"
+
+
+def _handle_run(args: argparse.Namespace) -> int:
+    try:
+        budgets = {
+            name: _parse_heatmap_budget(getattr(args, name), name)
+            for name in ("max_input_bytes", "max_rows", "max_row_bytes", "max_result_bytes")
+            if getattr(args, name) is not None
+        }
+        plan = _read_run_loading_plan(args.loading_plan)
+        _preflight_loading_plan(plan)
+        input_spec = _build_run_input(args)
+        executor = _load_executor(args.executor)
+
+        from .runs.specs import DataProvenance, ModelProvenance, RunSpecification
+        from .services import execute_specification, publish_run_report
+        from .services.workspace import open_workspace
+
+        open_workspace(args.workspace)
+        specification = RunSpecification(
+            model=ModelProvenance(
+                loading_plan_id=plan.plan_id,
+                model_id=plan.resolution.model_id,
+                model_revision=plan.resolution.resolved_model_revision,
+                tokenizer_revision=plan.resolution.resolved_tokenizer_revision,
+            ),
+            data=DataProvenance(input=input_spec),
+            created_by=args.created_by,
+        )
+        report = execute_specification(
+            specification,
+            executor=executor,
+            base_directory=args.workspace,
+            at=args.at,
+            checkpoint_directory=args.checkpoint_directory,
+            resume_from=args.resume_from,
+            **budgets,
+        )
+        publish_run_report(args.workspace, report, at=args.at)
+    except _RunInputError as exc:
+        print(f"moeatlas run: {exc}", file=sys.stderr)
+        return 2
+    except _HeatmapInputError as exc:
+        print(f"moeatlas run: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:
+        print(f"moeatlas run: {_safe_run_failure(exc)}", file=sys.stderr)
+        return 2
+
+    final = report.final_record
+    progress = final.progress
+    completed = progress.completed_units if progress is not None else 0
+    total = progress.total_units if progress is not None else 0
+    print(f"run {report.run_key} {final.state.value}")
+    print(f"rows: {completed} of {total} units; resumed from batch {report.resumed_from_batch}")
+    if report.checkpoint_path is not None:
+        print(f"checkpoint: {report.checkpoint_path}")
+    return 0
+
+
+def _safe_export_failure(exc: Exception) -> str:
+    from .store import RunBundleError
+
+    if type(exc) is RunBundleError and exc.stage in _EXPORT_BUNDLE_STAGES:
+        message = f"run bundle failed at {exc.stage}"
+        if str(exc) == message:
+            return message
+    return "run export failed"
+
+
+def _handle_export(args: argparse.Namespace) -> int:
+    try:
+        budgets = {
+            name: _parse_heatmap_budget(getattr(args, name), name)
+            for name in ("max_event_rows", "max_file_bytes")
+            if getattr(args, name) is not None
+        }
+        from .store import export_run_bundle
+
+        receipt = export_run_bundle(
+            args.workspace,
+            args.output,
+            run_key=args.run_key,
+            **budgets,
+        )
+    except _HeatmapInputError as exc:
+        print(f"moeatlas export: {exc}", file=sys.stderr)
+        return 2
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        print(f"moeatlas export: {_safe_export_failure(exc)}", file=sys.stderr)
+        return 2
+
+    print(
+        f"exported run {receipt.run_key} to {args.output} "
+        f"({receipt.shard_count} shards, {receipt.token_count} token events, "
+        f"{receipt.routing_count} routing events)"
+    )
+    print(f"manifest sha256: {receipt.manifest_sha256}")
+    return 0
+
+
+def _run_ui_server(app: object, *, host: str, port: int) -> None:
+    """Serve the app until interrupted; isolated for testing."""
+
+    import uvicorn
+
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _handle_ui(args: argparse.Namespace) -> int:
+    host = args.host
+    if not (
+        host == "localhost"
+        or host.startswith("127.")
+        or host == "::1"
+        or host == "[::1]"
+    ):
+        if not args.allow_remote:
+            print(
+                "moeatlas ui: non-loopback hosts require --allow-remote",
+                file=sys.stderr,
+            )
+            return 2
+    if type(args.port) is not str or _CANONICAL_DECIMAL.fullmatch(args.port) is None:
+        print("moeatlas ui: --port must be a canonical positive decimal integer", file=sys.stderr)
+        return 2
+    port = int(args.port, 10)
+    if port > 65535:
+        print("moeatlas ui: --port must be at most 65535", file=sys.stderr)
+        return 2
+    try:
+        from .server import ServerDependencyError, create_app
+
+        app = create_app(args.workspace)
+    except ServerDependencyError:
+        print(
+            "moeatlas ui: server dependency 'fastapi' is not installed; "
+            "install moeatlas with the 'server' extra",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        _run_ui_server(app, host=host, port=port)
+    except KeyboardInterrupt:
+        pass
+    print(f"served workspace {args.workspace} at http://{host}:{port}", file=sys.stderr)
     return 0
 
 

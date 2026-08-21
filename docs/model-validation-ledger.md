@@ -442,3 +442,49 @@ tests. No model or tokenizer participates; similarity over real expert
 weights or activations of a real checkpoint remains deferred VM/GPU
 evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their deferred
 status.
+
+Adapter plugin registry: Status: implemented at the model-free boundary.
+Record/policy strictness, builtin provenance, entry-point discovery with
+fixed failure-reason vocabulary, deterministic collision resolution,
+policy-driven enable/disable statuses, family negotiation, and canonical
+`moeatlas.adapter_registry` round-trips are covered by synthetic contract
+tests with injected fake entry points. No model, tokenizer, network, or
+third-party distribution participates; registry behavior against real
+published plugin distributions remains deferred release-engineering
+evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their
+deferred status.
+
+Headless CLI run/export flows: Status: implemented at the model-free
+boundary. Parser contracts, exactly-one input enforcement, executor-plugin
+resolution with fixed rejection messages, loading-plan provenance
+projection, checkpoint publication, workspace-catalog recording, canonical
+budget parsing, bundle export with manifest digest reporting, and fixed
+safe errors are covered by synthetic contract tests over fake executors and
+local fixtures. No model, tokenizer, network, or GPU participates; real
+model execution through a registered adapter plugin remains deferred VM/GPU
+evidence (MV-01 through MV-08), and ST-01 through ST-04 keep their deferred
+status.
+
+Local server and UI launch: Status: implemented at the model-free boundary.
+Wire DTO strictness, construction budgets, health identity, workspace/run
+endpoints over initialized and uninitialized catalogs, bounded state
+filtering, adapter-registry exposure, fixed dependency errors, and the
+loopback-by-default `moeatlas ui` policy are covered by synthetic contract
+tests using FastAPI's TestClient over temporary workspaces. No model,
+tokenizer, download, or GPU participates. The React/TypeScript single-page
+UI, packaged frontend assets, and synthetic browser end-to-end tests are
+deferred release-engineering evidence, not passed work; MV-01 through MV-08
+and ST-01 through ST-04 keep their deferred status.
+
+Intervention mechanics: Status: implemented at the model-free boundary.
+Recipe contracts (fixed operation vocabulary, per-operation parameter
+exclusivity, sorted unique targets, canonical serialization, content
+fingerprints binding `InterventionLineage`), budget bounds and failures,
+and the failure-safe engine (`run_intervention()` capture → apply →
+observe → restore with restoration guaranteed on apply failure, execution
+failure, cancellation, and restore-stage reporting) are covered by
+synthetic-module contract tests. No model, tokenizer, download, or GPU
+participates. Real-model causal effect, regret, stability, and replication
+evidence — including explicit unsupported/fused/quantized limitations —
+remains deferred VM/GPU evidence under MV-01 through MV-08; ST-01 through
+ST-04 keep their deferred status.

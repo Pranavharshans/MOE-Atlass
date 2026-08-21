@@ -50,6 +50,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "analysis" / "route_churn.py",
             ROOT / "src" / "moeatlas" / "analysis" / "corouting.py",
             ROOT / "src" / "moeatlas" / "analysis" / "expert_similarity.py",
+            ROOT / "src" / "moeatlas" / "adapters" / "registry.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
@@ -68,6 +69,22 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_analysis_route_churn.py",
             ROOT / "tests" / "test_analysis_corouting.py",
             ROOT / "tests" / "test_analysis_expert_similarity.py",
+            ROOT / "tests" / "test_adapters_registry.py",
+            ROOT / "tests" / "test_cli_adapters.py",
+            ROOT / "src" / "moeatlas" / "server" / "__init__.py",
+            ROOT / "src" / "moeatlas" / "server" / "dto.py",
+            ROOT / "src" / "moeatlas" / "server" / "app.py",
+            ROOT / "docs" / "server.md",
+            ROOT / "src" / "moeatlas" / "interventions" / "__init__.py",
+            ROOT / "src" / "moeatlas" / "interventions" / "recipes.py",
+            ROOT / "src" / "moeatlas" / "interventions" / "engine.py",
+            ROOT / "docs" / "interventions.md",
+            ROOT / "tests" / "test_interventions_recipes.py",
+            ROOT / "tests" / "test_interventions_engine.py",
+            ROOT / "tests" / "test_cli_run.py",
+            ROOT / "tests" / "test_cli_export.py",
+            ROOT / "tests" / "test_server_app.py",
+            ROOT / "tests" / "test_cli_ui.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1686,6 +1703,213 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
         self.assertTrue((ROOT / "tests" / "test_analysis_expert_similarity.py").is_file())
+
+    def test_adapter_registry_docs_and_surface_are_present(self) -> None:
+        adapters_doc = (ROOT / "docs" / "adapters.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                adapters_doc,
+                (
+                    "Adapter plugin registry",
+                    "AdapterPluginRecord",
+                    "collect_adapter_registry()",
+                    "AdapterRegistryPolicy",
+                    "moeatlas.adapter_registry",
+                    "match_adapters_for_family()",
+                ),
+            ),
+            (architecture, ("entry-point plugin registry",)),
+            (roadmap, ("collect_adapter_registry()",)),
+            (ledger, ("Adapter plugin registry",)),
+            (readme, ("collect_adapter_registry()",)),
+            (
+                (ROOT / "docs" / "cli.md").read_text(),
+                (
+                    "moeatlas adapters list",
+                    "moeatlas.adapter_registry",
+                    "moeatlas run WORKSPACE",
+                    "--executor NAME",
+                    "moeatlas export WORKSPACE RUN_KEY",
+                    "manifest sha256",
+                ),
+            ),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "adapters" / "registry.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "adapters" / "__init__.py").read_text()
+        for term in (
+            "ADAPTER_REGISTRY_SCHEMA_VERSION",
+            "ENTRY_POINT_GROUP",
+            "AdapterPluginRecord",
+            "AdapterRegistryEntry",
+            "AdapterRegistryError",
+            "AdapterRegistryPolicy",
+            "AdapterRegistryReport",
+            "apply_registry_policy",
+            "builtin_adapter_records",
+            "collect_adapter_registry",
+            "discover_entry_point_records",
+            "match_adapters_for_family",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The registry stays model-free: no storage, clocks, randomness, or
+        # model/network imports.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        cli_source = (ROOT / "src" / "moeatlas" / "cli.py").read_text()
+        for term in ("adapters", "adapters_list", "_handle_adapters_list"):
+            with self.subTest(term=term):
+                self.assertIn(term, cli_source)
+        self.assertTrue((ROOT / "tests" / "test_adapters_registry.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_cli_adapters.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_cli_run.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_cli_export.py").is_file())
+
+    def test_server_docs_and_surface_are_present(self) -> None:
+        server_doc = (ROOT / "docs" / "server.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                server_doc,
+                (
+                    "create_app()",
+                    "/healthz",
+                    "/api/workspace",
+                    "/api/runs",
+                    "/api/adapters",
+                    "moeatlas ui WORKSPACE",
+                    "--allow-remote",
+                    "workspace is not initialized",
+                    "deferred release-engineering evidence",
+                ),
+            ),
+            (roadmap, ("create_app()", "moeatlas ui WORKSPACE")),
+            (ledger, ("Local server and UI launch",)),
+            (readme, ("moeatlas.server.create_app()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        app_source = (ROOT / "src" / "moeatlas" / "server" / "app.py").read_text()
+        dto_source = (ROOT / "src" / "moeatlas" / "server" / "dto.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "server" / "__init__.py").read_text()
+        for term in (
+            "SERVER_SCHEMA_VERSION",
+            "ServerDependencyError",
+            "create_app",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, app_source)
+                self.assertIn(term, exports)
+        for term in (
+            "HealthResponse",
+            "WorkspaceResponse",
+            "RunEntryResponse",
+            "RunsResponse",
+            "AdapterEntryResponse",
+            "AdaptersResponse",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, dto_source)
+                self.assertIn(term, exports)
+        # The server stays read-only and model-free: no storage writes,
+        # clocks, randomness, or model imports.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, app_source)
+                self.assertNotIn(forbidden, dto_source)
+        cli_source = (ROOT / "src" / "moeatlas" / "cli.py").read_text()
+        for term in ("_handle_ui", "_run_ui_server", "--allow-remote"):
+            with self.subTest(term=term):
+                self.assertIn(term, cli_source)
+        self.assertTrue((ROOT / "tests" / "test_server_app.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_cli_ui.py").is_file())
+
+    def test_intervention_docs_and_surface_are_present(self) -> None:
+        interventions_doc = (ROOT / "docs" / "interventions.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                interventions_doc,
+                (
+                    "run_intervention()",
+                    "InterventionRecipe",
+                    "InterventionBudget",
+                    "InterventionCapability",
+                    "moeatlas.intervention_recipe",
+                    "moeatlas.intervention_budget",
+                    "moeatlas.intervention_outcome",
+                    "sha256:<64 hex>",
+                    "restore",
+                ),
+            ),
+            (roadmap, ("run_intervention()", "InterventionRecipe")),
+            (architecture, ("moeatlas.interventions",)),
+            (ledger, ("Intervention mechanics",)),
+            (readme, ("moeatlas.interventions",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        recipes_source = (
+            ROOT / "src" / "moeatlas" / "interventions" / "recipes.py"
+        ).read_text()
+        engine_source = (
+            ROOT / "src" / "moeatlas" / "interventions" / "engine.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "interventions" / "__init__.py").read_text()
+        for term in (
+            "InterventionOperation",
+            "InterventionRecipe",
+            "InterventionBudget",
+            "INTERVENTION_SCHEMA_VERSION",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, recipes_source)
+                self.assertIn(term, exports)
+        for term in (
+            "run_intervention",
+            "InterventionOutcome",
+            "InterventionEngineError",
+            "InterventionCapability",
+            "INTERVENTION_ENGINE_SCHEMA_VERSION",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, engine_source)
+                self.assertIn(term, exports)
+        # The interventions package stays family-blind and model-free.
+        for forbidden in ("torch", "transformers", "duckdb", "urllib"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, recipes_source)
+                self.assertNotIn(forbidden, engine_source)
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

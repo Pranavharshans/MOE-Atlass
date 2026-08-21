@@ -34,11 +34,19 @@ dependencies = [
 # runtime or a large accelerator stack into a contributor's environment.
 dev = [
     "duckdb>=1.4.5,<1.5",
+    "fastapi>=0.115",
+    "httpx>=0.27",
     "pytest>=8.3,<9",
     "ruff>=0.12,<0.13",
+    "uvicorn>=0.30",
 ]
 store = [
     "duckdb>=1.4.5,<1.5",
+]
+server = [
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "uvicorn>=0.30",
 ]
 model = [
     "accelerate>=1.0",

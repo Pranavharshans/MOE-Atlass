@@ -18,6 +18,20 @@ from .mixtral import MixtralStaticAdapter
 from .planning import AdapterProbePlanError, build_routing_probe_plan
 from .qwen3_5_moe import Qwen3_5MoeStaticAdapter
 from .qwen3_moe import Qwen3MoeStaticAdapter
+from .registry import (
+    ADAPTER_REGISTRY_SCHEMA_VERSION,
+    ENTRY_POINT_GROUP,
+    AdapterPluginRecord,
+    AdapterRegistryEntry,
+    AdapterRegistryError,
+    AdapterRegistryPolicy,
+    AdapterRegistryReport,
+    apply_registry_policy,
+    builtin_adapter_records,
+    collect_adapter_registry,
+    discover_entry_point_records,
+    match_adapters_for_family,
+)
 from .universe import (
     ROUTING_UNIVERSE_SCHEMA_VERSION,
     LayerRoutingUniverse,
@@ -29,11 +43,23 @@ from .universe import (
 )
 
 __all__ = [
+    "ADAPTER_REGISTRY_SCHEMA_VERSION",
+    "ENTRY_POINT_GROUP",
     "AdapterContractError",
     "AdapterDescriptor",
     "AdapterDetection",
     "AdapterExecutionError",
     "AdapterInspection",
+    "AdapterPluginRecord",
+    "AdapterRegistryEntry",
+    "AdapterRegistryError",
+    "AdapterRegistryPolicy",
+    "AdapterRegistryReport",
+    "apply_registry_policy",
+    "builtin_adapter_records",
+    "collect_adapter_registry",
+    "discover_entry_point_records",
+    "match_adapters_for_family",
     "RoutingUniverse",
     "LayerRoutingUniverse",
     "RectangularProjection",

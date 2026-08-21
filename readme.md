@@ -266,6 +266,37 @@ deliberately deferred.
   experts, semantics-agreeing score columns) with no central family branch.
   Fake unknown-family runtimes cover dict arrays, assignment-only 3-D
   payloads, sparse native IDs, and variable top-k.
+- `EXPERIMENTAL` adapter plugin registry: `collect_adapter_registry()` lists
+  shipped adapters and `moeatlas.adapters` entry-point plugins through one
+  deterministic contract with provenance records, trust/enable-disable
+  policy, collision handling that reports suppressed losers, and failure
+  isolation with fixed reason vocabulary; `match_adapters_for_family()` is
+  the capability-negotiation seam, and `moeatlas adapters list` exposes the
+  listing on the CLI with `--json`, policy flags, and `--family` filtering.
+  See [adapters](docs/adapters.md) and [cli](docs/cli.md).
+- `EXPERIMENTAL` headless CLI run flow: `moeatlas run WORKSPACE` turns one
+  validated loading plan plus exactly one input form (`--prompt TEXT` or
+  `--dataset DESCRIPTOR.json`) into a content-addressed `RunSpecification`
+  executed through the shared run service with an explicitly registered
+  executor plugin — mandatory, never built in, never downloading a model —
+  with checkpoints, resume, caller-supplied timestamps, and workspace-catalog
+  publication; `moeatlas export WORKSPACE RUN_KEY` publishes the canonical
+  tamper-evident run evidence bundle. See [cli](docs/cli.md).
+- `EXPERIMENTAL` local read-only server: `moeatlas.server.create_app()`
+  binds one workspace behind strict budgets and serves `/healthz`,
+  `/api/workspace`, bounded `/api/runs`, and `/api/adapters` — a thin wire
+  layer over the same shared services, with fixed safe errors; FastAPI is
+  an optional extra (`pip install moeatlas[server]`), and
+  `moeatlas ui WORKSPACE` launches it loopback-by-default with an explicit
+  `--allow-remote` opt-in. The React/TypeScript SPA is deferred release
+  work recorded honestly in the validation ledger. See [server](docs/server.md).
+- `EXPERIMENTAL` causal intervention mechanics: `moeatlas.interventions`
+  provides immutable, content-addressed recipes over the fixed
+  `ablate`/`scale`/`reroute`/`alter_router` vocabulary, immutable budgets,
+  and the failure-safe `run_intervention()` engine that guarantees module
+  restoration on every path behind adapter-supplied capabilities.
+  Synthetic modules prove the mechanics; real-model causal claims are
+  deferred to the validation ledger. See [interventions](docs/interventions.md).
   See [runtime](docs/runtime.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
