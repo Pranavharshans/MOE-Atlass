@@ -39,6 +39,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "services" / "__init__.py",
             ROOT / "src" / "moeatlas" / "services" / "workspace.py",
             ROOT / "src" / "moeatlas" / "services" / "datasets.py",
+            ROOT / "src" / "moeatlas" / "services" / "run_engine.py",
+            ROOT / "src" / "moeatlas" / "services" / "run_inputs.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
@@ -46,6 +48,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_store_run_tables.py",
             ROOT / "tests" / "test_services_workspace.py",
             ROOT / "tests" / "test_services_datasets.py",
+            ROOT / "tests" / "test_services_run_engine.py",
+            ROOT / "tests" / "test_services_run_inputs.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1063,6 +1067,114 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
         self.assertTrue((ROOT / "tests" / "test_services_datasets.py").is_file())
+
+    def test_run_engine_docs_and_surface_are_present(self) -> None:
+        runs_doc = (ROOT / "docs" / "runs.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                runs_doc,
+                (
+                    "Deterministic execution core",
+                    "execute_row_schedule",
+                    "ExecutionOutcome",
+                    "RowFailure",
+                    "should_cancel",
+                    "cancelled_before_row",
+                    "executing",
+                ),
+            ),
+            (architecture, ("moeatlas.services.run_engine",)),
+            (roadmap, ("execute_row_schedule",)),
+            (ledger, ("Deterministic run-engine execution core",)),
+            (readme, ("execute_row_schedule",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "services" / "run_engine.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "services" / "__init__.py").read_text()
+        for term in (
+            "RUN_ENGINE_SCHEMA_VERSION",
+            "ROW_FAILURE_KINDS",
+            "EXECUTION_PROGRESS_STAGE",
+            "RunEngineError",
+            "RowFailure",
+            "RowResult",
+            "RowRecord",
+            "ExecutionOutcome",
+            "execute_row_schedule",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The core stays deterministic and family-blind: no clocks, randomness,
+        # network, or model dependencies.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "urllib",
+            "requests",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_services_run_engine.py").is_file())
+
+    def test_run_input_preparation_docs_and_surface_are_present(self) -> None:
+        runs_doc = (ROOT / "docs" / "runs.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                runs_doc,
+                (
+                    "Input preparation",
+                    "prepare_input_rows",
+                    "plan_input_batches",
+                    "RunInputError",
+                    "never branches on input kind",
+                ),
+            ),
+            (architecture, ("moeatlas.services.run_inputs",)),
+            (roadmap, ("prepare_input_rows",)),
+            (ledger, ("Run input preparation service",)),
+            (readme, ("prepare_input_rows",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "services" / "run_inputs.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "services" / "__init__.py").read_text()
+        for term in (
+            "RUN_INPUTS_SCHEMA_VERSION",
+            "RunInputError",
+            "prepare_prompt_rows",
+            "plan_input_batches",
+            "prepare_input_rows",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # Preparation stays deterministic and family-blind.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_services_run_inputs.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

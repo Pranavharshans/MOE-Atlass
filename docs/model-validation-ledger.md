@@ -346,3 +346,20 @@ Descriptors never fetch data and no test downloads a dataset; real
 tokenizer/dataset ingestion equivalence and large-file scale remain deferred
 MV/ST evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their
 deferred status.
+
+Deterministic run-engine execution core: Status: implemented at the
+model-free boundary. `execute_row_schedule` schedule driving, per-row
+failure classification, result budgeting, progress monotonicity,
+cancellation semantics, outcome invariants, and determinism are covered by
+synthetic local tests over fake executors. No real model executes anywhere;
+real forward/generation equivalence and performance remain deferred MV
+evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their deferred
+status.
+
+Run input preparation service: Status: implemented at the model-free
+boundary. `prepare_input_rows` / `plan_input_batches` prompt and dataset
+preparation, role projection, descriptor-driven schedules, budget
+propagation, and end-to-end composition with the execution core are covered
+by synthetic local tests. No tokenizer or model participates; real
+chat-template/tokenization equivalence remains deferred MV evidence, so
+MV-01 through MV-08 and ST-01 through ST-04 keep their deferred status.

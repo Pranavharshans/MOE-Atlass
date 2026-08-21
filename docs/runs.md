@@ -113,6 +113,53 @@ seed, and an unseeded sample cap keeps the deterministic first-cap prefix.
 `iterable` descriptors carry no file location and are rejected at the reader
 boundary; the run engine consumes iterables directly.
 
+## Input preparation
+
+`moeatlas.services.run_inputs` closes the input-preparation half of the
+engine: `prepare_input_rows(spec, ...)` turns either input descriptor into
+the exact `{row_index: values}` mapping `execute_row_schedule` consumes, and
+`plan_input_batches(spec, total_rows)` derives the schedule the descriptor
+implies — so the execution core never branches on input kind. Prompt specs
+become exactly one row: raw text as `{"prompt": text}`, chat messages as
+`{"messages": [{"role", "content"}, ...]}` in declared order, canonically
+encodable within `max_input_bytes` (`RunInputError`, stages `spec`,
+`format`, `budget`). Dataset descriptors compose the bounded reader with
+task-role projection when a column mapping is declared, preserving
+read-order indices; their schedules apply the descriptor's own
+sample/batch/shuffle/seed settings through the SHA-256-keyed planner.
+Preparation is deterministic and touches no clock, no randomness, no
+network, and no model dependency.
+
+## Deterministic execution core
+
+`moeatlas.services.run_engine` is the model-neutral execution heart:
+`execute_row_schedule(schedule, *, executor, row_values, should_cancel,
+max_result_bytes)` drives one planned batch schedule through a
+caller-supplied row executor. Each row is invoked as
+`executor(row_index=..., batch_index=..., values=...)`; real adapters plug in
+as executors later, and local tests use fake runtimes.
+
+A row failure is evidence, not a run death. Controlled failures are declared
+by raising `RowFailure(kind, message)` with a kind from the same fixed
+vocabulary as `RunFailure.error_kind`; any other `Exception` becomes an
+`execution` failure carrying only the exception class name;
+`KeyboardInterrupt` and `SystemExit` always propagate. Results must be
+string-keyed mappings canonically encodable within `max_result_bytes`;
+violations become per-row `validation` failures. Progress snapshots use the
+lifecycle's `RunProgress` with the single engine stage `executing`, emitted
+cumulatively after every batch and checked through `advance_progress`.
+Cancellation is cooperative: `should_cancel` is consulted before each row,
+and observing it freezes a cancelled outcome that preserves everything
+already executed (`cancelled_before_row` names the first unexecuted row).
+The returned `ExecutionOutcome` is a strict frozen record — results,
+failures, progress trail, counts — whose `status` property suggests the
+terminal lifecycle state: `cancelled` wins, then `failed` when no row
+succeeded, else `completed`. Schedules are validated exactly (non-empty
+batches, non-negative integer indices, no duplicate rows) and every input
+violation raises `RunEngineError` at stage `contract`. The core performs no
+clock reads, no randomness, no network access, and no publication;
+persistence stays a separate slice.
+
 ## Boundaries and deferred evidence
 
 These contracts bind artifacts by identifier; they do not verify that a
