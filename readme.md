@@ -137,6 +137,12 @@ deliberately deferred.
   completed batch, validated `load_checkpoint()`/`resume_from` continuation,
   and explicit `publish_run_report()` catalog publication; fake-runtime tests
   only; see [runs](docs/runs.md).
+- `EXPERIMENTAL` task association metrics: `analyze_task_association()` turns
+  a strict per-(layer, task, expert) `TaskExpertCounts` table into enrichment
+  `P(expert|task)/P(expert)`, PMI/MI in bits, Jensen-Shannon task
+  separability, and exclusivity/generality — deterministic, budget-bounded,
+  `null`-for-undefined, canonically serializable; association is never
+  specialization or causality; see [analysis](docs/analysis.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

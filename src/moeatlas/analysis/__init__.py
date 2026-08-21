@@ -33,8 +33,20 @@ from .routing_summary import (
     RoutingLoadSummary,
     summarize_routing_load,
 )
+from .task_association import (
+    TASK_ASSOCIATION_SCHEMA_VERSION,
+    TaskAssociationError,
+    TaskAssociationMatrix,
+    TaskExpertCounts,
+    analyze_task_association,
+)
 
 __all__ = [
+    "TASK_ASSOCIATION_SCHEMA_VERSION",
+    "TaskAssociationError",
+    "TaskAssociationMatrix",
+    "TaskExpertCounts",
+    "analyze_task_association",
     "ANALYSIS_BUNDLE_SCHEMA_VERSION",
     "AnalysisBundleEntry",
     "AnalysisBundleReceipt",

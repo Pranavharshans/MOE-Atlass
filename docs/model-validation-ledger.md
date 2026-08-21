@@ -373,3 +373,11 @@ tests over temporary fixtures. No tokenizer or model participates; real
 generation equivalence, checkpoint behavior under GPU execution, and
 filesystem durability at scale remain deferred evidence, so MV-01 through
 MV-08 and ST-01 through ST-04 keep their deferred status.
+
+Task association metrics: Status: implemented at the model-free boundary.
+`TaskExpertCounts` validation, enrichment, PMI/MI, Jensen-Shannon
+separability, and exclusivity/generality are covered by synthetic-table
+tests with exact expected values. No model or tokenizer participates;
+association over real per-token task-labeled routing evidence remains
+deferred until task-labeled executors land, so MV-01 through MV-08 and
+ST-01 through ST-04 keep their deferred status.

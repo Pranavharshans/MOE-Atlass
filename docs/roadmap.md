@@ -45,7 +45,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | 4 | Universal execution capabilities | `in progress` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
 | 5 | Raw evidence and open storage/export | `model-free complete` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
 | 6 | Prompt and dataset run engine | `model-free complete` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
-| 7 | Task association and Evidence Cards | `planned` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests |
+| 7 | Task association and Evidence Cards | `in progress` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests |
 | 8 | Plugins and complete headless CLI/API | `planned` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
 | 9 | FastAPI server and React UI | `planned` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14 |
 | 10 | Intervention and causal evidence | `planned` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
@@ -137,6 +137,15 @@ Sequence 5 (raw evidence and open storage/export) is complete only when:
    compatibility are contract-tested on synthetic data.
 5. The full local gate is green and the feature commit is pushed.
 
+Sequence 7 (task association and Evidence Cards) is complete only when:
+
+1. Routing-, behavior-, and causal-tier metrics exist with documented
+   denominators, null/unsupported behavior, and deterministic ordering.
+2. Evidence Cards keep routing, internal behavior, causal, replication,
+   uncertainty, limitations, and capability tiers separate.
+3. No output claims specialization or causality from association alone.
+4. The full local gate is green and the feature commit is pushed.
+
 Known limitation, deferred rather than expanded here: documentation files
 (including this roadmap) are repository artifacts and are not packaged into the
 wheel/sdist, matching the existing distribution pattern for all `docs/` content.
@@ -174,6 +183,18 @@ checkpoints after every completed batch, validated `load_checkpoint` /
 explicit `publish_run_report` catalog publication. Real token/routing event
 publication arrives with real executors in later sequences; every behavior
 this sequence promises is exercised over fake runtimes.
+
+Sequence 7 is `in progress`. Its first landed slice is the association
+math of PRD §11.2 (see [analysis](analysis.md)):
+`TaskExpertCounts` in `moeatlas.analysis.task_association` is a strict frozen
+contingency table of selected-route counts per (layer, task, expert), and
+`analyze_task_association` derives enrichment `P(expert|task)/P(expert)`,
+PMI/MI in bits (with task-share-consistent specific MI), mean pairwise
+Jensen-Shannon separability, and exclusivity/generality per expert — all
+deterministic, budget-bounded, `null`-for-undefined, and canonically
+serializable as `moeatlas.task_association` artifacts. Per-token task-labeled
+evidence, prompt-vs-rollout agreement, cross-run association stability, and
+the Evidence Cards themselves are later slices in this sequence.
 
 Sequence 6 (prompt and dataset run engine) is complete only when:
 
