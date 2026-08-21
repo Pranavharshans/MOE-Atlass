@@ -266,6 +266,12 @@ deliberately deferred.
   experts, semantics-agreeing score columns) with no central family branch.
   Fake unknown-family runtimes cover dict arrays, assignment-only 3-D
   payloads, sparse native IDs, and variable top-k.
+- `EXPERIMENTAL` adapter plugin registry: `collect_adapter_registry()` lists
+  shipped adapters and `moeatlas.adapters` entry-point plugins through one
+  deterministic contract with provenance records, trust/enable-disable
+  policy, collision handling that reports suppressed losers, and failure
+  isolation with fixed reason vocabulary; `match_adapters_for_family()` is
+  the capability-negotiation seam. See [adapters](docs/adapters.md).
   See [runtime](docs/runtime.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred

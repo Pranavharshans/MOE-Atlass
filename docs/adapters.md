@@ -261,3 +261,33 @@ against its inspection publication and through that projection before any
 shard work (see [analysis](analysis.md)).
 Real-checkpoint equivalence for non-rectangular families remains deferred
 to the final VM phase.
+
+## Adapter plugin registry
+
+`moeatlas.adapters.registry` is the single model-neutral surface behind
+`adapters list`: shipped adapters and third-party plugins published under
+the `moeatlas.adapters` entry-point group appear through one contract.
+`AdapterPluginRecord` carries identity and provenance (name, version,
+`builtin`/`entry_point` source, publishing distribution, importable
+location, architecture families); discovery is metadata-only — a plugin
+module is imported just enough to read its `AdapterDescriptor`, never to
+load a model.
+
+`collect_adapter_registry()` produces one deterministic
+`AdapterRegistryReport` (`moeatlas.adapter_registry` artifact):
+
+- `entries` — every surviving record with its `AdapterRegistryPolicy`
+  status (`enabled`/`disabled`); policy covers trusted sources, an optional
+  enable allow-list, and force-disabled names;
+- `collisions` — duplicate names resolved deterministically (built-ins
+  first, then lexicographic entry-point value) with every suppressed loser
+  reported, never silently dropped;
+- `failures` — isolated plugin problems with fixed reason vocabulary
+  (`load failed`, `missing descriptor`, `entry name mismatch`,
+  `descriptor contract violated`); one broken plugin never breaks the
+  listing.
+
+`match_adapters_for_family()` is capability negotiation: enabled records
+whose declared families serve a requested family, sorted deterministically.
+The registry stays model-free — no storage, clocks, randomness, network, or
+family knowledge beyond what adapters publish about themselves.

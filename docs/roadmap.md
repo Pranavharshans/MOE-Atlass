@@ -46,7 +46,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | 5 | Raw evidence and open storage/export | `model-free complete` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
 | 6 | Prompt and dataset run engine | `model-free complete` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
 | 7 | Task association and Evidence Cards | `model-free complete` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests; real-evidence capture stays in Sequence 12 |
-| 8 | Plugins and complete headless CLI/API | `planned` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
+| 8 | Plugins and complete headless CLI/API | `in progress` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
 | 9 | FastAPI server and React UI | `planned` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14 |
 | 10 | Intervention and causal evidence | `planned` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
 | 11 | Privacy, reliability, benchmarks, and release | `planned` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19 |
@@ -241,6 +241,31 @@ task-labeled routing from live runs, activation/contribution summaries and
 gradient attribution over real tensors, shared-vs-routed comparison on a
 real checkpoint, and intervention causality (Sequence 10 supplies the
 recipe mechanics first).
+
+Sequence 8 is `in progress`. Its first landed slice is the adapter plugin
+registry (see [adapters](adapters.md)): `collect_adapter_registry()` in
+`moeatlas.adapters.registry` unifies shipped adapters and
+`moeatlas.adapters` entry-point plugins behind one deterministic listing
+with provenance records (`AdapterPluginRecord`), trust/enable-disable
+policy (`AdapterRegistryPolicy`), collision handling (built-ins first,
+then lexicographic entry-point value, every suppressed loser reported),
+and failure isolation with a fixed reason vocabulary — canonically
+serializable as `moeatlas.adapter_registry` artifacts. The
+`moeatlas adapters list` command and the remaining PRD CLI flows (run,
+export, compare over shared services) are later slices in this sequence.
+
+Sequence 8 (plugins and complete headless CLI/API) is complete only when:
+
+1. A versioned entry-point registry lists built-ins and plugins through
+   one contract with provenance, trust policy, collision handling, and
+   failure isolation.
+2. Every PRD CLI flow (scan, run, compare, export, adapters list, doctor)
+   works headlessly through the shared application services.
+3. Parser contracts, isolated fake plugins in clean subprocesses,
+   resumable synthetic runs, complete export/import round-trips, fixed
+   safe errors, and backward compatibility are contract-tested.
+4. No command downloads models or touches the network implicitly.
+5. The full local gate is green and the feature commit is pushed.
 
 Sequence 6 (prompt and dataset run engine) is complete only when:
 

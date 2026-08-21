@@ -50,6 +50,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "analysis" / "route_churn.py",
             ROOT / "src" / "moeatlas" / "analysis" / "corouting.py",
             ROOT / "src" / "moeatlas" / "analysis" / "expert_similarity.py",
+            ROOT / "src" / "moeatlas" / "adapters" / "registry.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
@@ -68,6 +69,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_analysis_route_churn.py",
             ROOT / "tests" / "test_analysis_corouting.py",
             ROOT / "tests" / "test_analysis_expert_similarity.py",
+            ROOT / "tests" / "test_adapters_registry.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1686,6 +1688,66 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
         self.assertTrue((ROOT / "tests" / "test_analysis_expert_similarity.py").is_file())
+
+    def test_adapter_registry_docs_and_surface_are_present(self) -> None:
+        adapters_doc = (ROOT / "docs" / "adapters.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                adapters_doc,
+                (
+                    "Adapter plugin registry",
+                    "AdapterPluginRecord",
+                    "collect_adapter_registry()",
+                    "AdapterRegistryPolicy",
+                    "moeatlas.adapter_registry",
+                    "match_adapters_for_family()",
+                ),
+            ),
+            (architecture, ("entry-point plugin registry",)),
+            (roadmap, ("collect_adapter_registry()",)),
+            (ledger, ("Adapter plugin registry",)),
+            (readme, ("collect_adapter_registry()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "adapters" / "registry.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "adapters" / "__init__.py").read_text()
+        for term in (
+            "ADAPTER_REGISTRY_SCHEMA_VERSION",
+            "ENTRY_POINT_GROUP",
+            "AdapterPluginRecord",
+            "AdapterRegistryEntry",
+            "AdapterRegistryError",
+            "AdapterRegistryPolicy",
+            "AdapterRegistryReport",
+            "apply_registry_policy",
+            "builtin_adapter_records",
+            "collect_adapter_registry",
+            "discover_entry_point_records",
+            "match_adapters_for_family",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The registry stays model-free: no storage, clocks, randomness, or
+        # model/network imports.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_adapters_registry.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

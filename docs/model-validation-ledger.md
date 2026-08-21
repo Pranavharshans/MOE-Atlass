@@ -442,3 +442,14 @@ tests. No model or tokenizer participates; similarity over real expert
 weights or activations of a real checkpoint remains deferred VM/GPU
 evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their deferred
 status.
+
+Adapter plugin registry: Status: implemented at the model-free boundary.
+Record/policy strictness, builtin provenance, entry-point discovery with
+fixed failure-reason vocabulary, deterministic collision resolution,
+policy-driven enable/disable statuses, family negotiation, and canonical
+`moeatlas.adapter_registry` round-trips are covered by synthetic contract
+tests with injected fake entry points. No model, tokenizer, network, or
+third-party distribution participates; registry behavior against real
+published plugin distributions remains deferred release-engineering
+evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their
+deferred status.

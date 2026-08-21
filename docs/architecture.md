@@ -28,7 +28,7 @@ Planned internal areas:
 | `store` | bounded content-addressed routing shards (Feature 19), versioned workspace catalog, and model-neutral storage ports | Experimental prerequisite |
 | `services` | shared workspace/run-registry orchestration over catalog and storage ports for CLI, Python API, and server | Application services |
 | `server` | local FastAPI API and run progress | Useful alpha |
-| `adapters` | explicit static semantic protocol, Mixtral/Qwen3-MoE structure adapters, and STRUCTURE-only inspection | Useful alpha |
+| `adapters` | explicit static semantic protocol, Mixtral/Qwen3-MoE structure adapters, STRUCTURE-only inspection, and the versioned entry-point plugin registry | Useful alpha |
 | `cli` | headless commands and diagnostics | Foundation / all phases |
 
 The foundation `cli` and diagnostics modules, the `core` capability/identity/
