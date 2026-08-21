@@ -13,6 +13,13 @@ from .datasets import (
     resolve_dataset_location,
     validate_column_mapping,
 )
+from .retention import (
+    RETENTION_SCHEMA_VERSION,
+    RetentionError,
+    RetentionPolicy,
+    RetentionReport,
+    evaluate_retention,
+)
 from .run_engine import (
     EXECUTION_PROGRESS_STAGE,
     ROW_FAILURE_KINDS,
@@ -65,6 +72,11 @@ __all__ = [
     "RUN_INPUTS_SCHEMA_VERSION",
     "RUN_SERVICE_SCHEMA_VERSION",
     "DatasetReadError",
+    "RETENTION_SCHEMA_VERSION",
+    "RetentionError",
+    "RetentionReport",
+    "RetentionPolicy",
+    "evaluate_retention",
     "DatasetRow",
     "ExecutionOutcome",
     "RowFailure",

@@ -384,3 +384,30 @@ The result is a frozen `ExpertSimilarity` with `to_dict`/`to_json`/
 `ExpertSimilarityError` reports fixed `contract`/`budget` stages. Vectors are
 exercised over synthetic values; real weight/activation capture remains
 deferred MV work.
+
+## Causal evidence summaries (PRD §11.4)
+
+`analyze_causal_evidence` in `moeatlas.analysis.causal_evidence` reduces
+caller-supplied `CausalPair` observations — one pair per metric label and
+replication index holding baseline and intervened values — into a frozen
+`CausalEvidence` with sorted labels and, per label:
+
+- `mean_baseline` / `mean_intervened` — replication means;
+- `absolute_effects` — intervened minus baseline;
+- `relative_effects` — effect over `abs(mean_baseline)`, `null` where the
+  baseline mean is zero;
+- `direction_consistency` — the share of replication effects matching the
+  mean-effect sign, `null` where the mean effect is exactly zero;
+- `stable_labels` — true only when every replication effect shares one
+  nonzero direction (strict stability: mixed or zero directions are not
+  stable);
+- `zero_effect_labels` — every replication effect is exactly zero.
+
+Duplicate `(label, replication)` entries fail at the fixed `contract`
+stage; oversized inputs fail at `budget`. The result round-trips under the
+`moeatlas.causal_evidence` artifact type. The layer is pure — no clocks,
+randomness, storage, or model knowledge. An effect summary describes paired
+observations only; it never by itself proves specialization, and real-model
+causal claims stay deferred to the validation ledger. These summaries are
+the content Evidence Cards' causality/stability sections carry; recipes and
+restoration guarantees live in [interventions](interventions.md).

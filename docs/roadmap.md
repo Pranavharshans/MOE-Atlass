@@ -42,15 +42,15 @@ tracks dependency order and exit criteria without redefining those documents.
 | 1 | Neutral event validation and storage APIs | `model-free complete` | Runtime-independent collection validation; canonical and historical storage functions are exact aliases; persisted behavior unchanged; all local gates pass | Events, runtime, storage docs and tests |
 | 2 | Run identity, provenance, and lifecycle | `model-free complete` | Versioned immutable run specs/state/progress/cancellation/lineage with deterministic transition and serialization tests | PRD §9.3 and schema tests |
 | 3 | Application services and workspace/catalog | `model-free complete` | Shared CLI/server services, storage ports, migrations, bounded queries, reopen/repair, and v1 shard compatibility | PRD §10; ST-01–ST-04 remain separate |
-| 4 | Universal execution capabilities | `in progress` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
+| 4 | Universal execution capabilities | `model-free complete` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
 | 5 | Raw evidence and open storage/export | `model-free complete` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
 | 6 | Prompt and dataset run engine | `model-free complete` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
 | 7 | Task association and Evidence Cards | `model-free complete` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests; real-evidence capture stays in Sequence 12 |
-| 8 | Plugins and complete headless CLI/API | `in progress` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
-| 9 | FastAPI server and React UI | `in progress` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14; React SPA and browser E2E stay deferred release work |
-| 10 | Intervention and causal evidence | `in progress` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
-| 11 | Privacy, reliability, benchmarks, and release | `planned` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19 |
-| 12 | Final VM/GPU certification and PRD audit | `VM/GPU deferred` | MV-01–MV-08 and ST-01–ST-04 have recorded evidence; every v1 acceptance row traces to passing implementation and validation | PRD §20 and validation ledger |
+| 8 | Plugins and complete headless CLI/API | `model-free complete` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
+| 9 | FastAPI server and React UI | `VM/GPU deferred` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14; React SPA and browser E2E stay deferred release work |
+| 10 | Intervention and causal evidence | `model-free complete` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
+| 11 | Privacy, reliability, benchmarks, and release | `model-free complete` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19; clean-install/Docker/screenshots stay deferred release work |
+| 12 | Final VM/GPU certification and PRD audit | `VM/GPU deferred` | MV-01–MV-08 and ST-01–ST-04 have recorded evidence; every v1 acceptance row traces to passing implementation and validation. The model-free audit is complete (see [prd-audit](prd-audit.md)); certification stays blocked on VM access | PRD §20 and validation ledger |
 
 ## Current slice exit criteria
 
@@ -62,7 +62,7 @@ lifecycle contracts in `moeatlas.runs` (see [runs](runs.md)); Sequence 3
 delivered the versioned workspace catalog, model-neutral storage ports, and
 the shared application-service layer (see [workspace](workspace.md)).
 
-Sequence 4 is `in progress`. Its landed slices cover the adapter-published
+Sequence 4 is `model-free complete`: every capability contract, unknown-family fixture, and non-rectangular projection is landed and tested. Its landed slices cover the adapter-published
 `RoutingUniverse` contract (see [adapters](adapters.md)) — per-layer expert
 universes, parallel native expert indices, variable top-k schedules,
 adapter-declared layout tags, explicit shared-expert semantics — the named
@@ -242,7 +242,7 @@ gradient attribution over real tensors, shared-vs-routed comparison on a
 real checkpoint, and intervention causality (Sequence 10 supplies the
 recipe mechanics first).
 
-Sequence 8 is `in progress`. Its first landed slice is the adapter plugin
+Sequence 8 is `model-free complete`: the registry and every PRD CLI flow are landed, contract-tested, and pushed. Its first landed slice is the adapter plugin
 registry (see [adapters](adapters.md)): `collect_adapter_registry()` in
 `moeatlas.adapters.registry` unifies shipped adapters and
 `moeatlas.adapters` entry-point plugins behind one deterministic listing
@@ -266,7 +266,7 @@ storage layer's canonical tamper-evident evidence bundle with fixed safe
 errors. The scan, compare, doctor, and adapters-list commands complete the
 PRD command set over shared services.
 
-Sequence 9 is `in progress`. Its first landed slice is the local read-only
+Sequence 9 is model-free complete at the wire boundary with the React/TypeScript SPA and browser E2E recorded as deferred release evidence (status `VM/GPU deferred`). Its first landed slice is the local read-only
 server (see [server](server.md)): `create_app()` in
 `moeatlas.server.app` binds one workspace behind strict construction
 budgets and exposes `/healthz`, `/api/workspace`, bounded `/api/runs` with
@@ -280,7 +280,10 @@ single-page UI, packaged frontend assets, and synthetic browser E2E remain
 deferred release-engineering evidence recorded in the validation ledger;
 the read-only wire contract above is what they will consume.
 
-Sequence 10 is `in progress`. Its first landed slice is the intervention
+Sequence 10 is `model-free complete`: recipes, budgets, the failure-safe
+engine, and paired causal-effect summaries are all constructible and
+contract-tested over synthetic modules (see [interventions](interventions.md)).
+Its first landed slice is the intervention
 mechanics (see [interventions](interventions.md)): immutable
 `InterventionRecipe` contracts over the fixed `ablate`, `scale`,
 `reroute`, and `alter_router` vocabulary with per-operation parameter
@@ -293,7 +296,68 @@ every path including cancellation, reports a distinct `restore` stage
 when cleanup itself fails, and publishes a `moeatlas.intervention_outcome`
 artifact only after successful restoration. Synthetic modules prove the
 mechanics locally; real-model causal effect, regret, stability, and
-replication evidence stays deferred to the validation ledger.
+replication evidence stays deferred to the validation ledger. Its second
+landed slice is the causal evidence summary (see [analysis](analysis.md)):
+`analyze_causal_evidence` in `moeatlas.analysis.causal_evidence` reduces
+paired baseline/intervention observations into per-label effect summaries —
+absolute and relative effects, direction consistency across replications,
+strict stability markers, and explicit zero-effect labels — canonically
+serializable as `moeatlas.causal_evidence` artifacts and feeding Evidence
+Cards' causality/stability sections. What remains deferred is real
+evidence, not contracts: interventions on live checkpoints, adapter
+declarations of unsupported/fused/quantized intervention paths, and actual
+causal/regret measurements on real models stay in Sequences 11–12 ledger
+work until VM/native-output certification exists.
+
+Sequence 10 (intervention and causal evidence) is complete only when:
+
+1. Recipes are immutable, content-addressed, and exclusive per operation;
+   budgets are immutable inputs that fail loudly.
+2. The engine sequences capture → apply → observe → restore behind adapter
+   capabilities, restores on every failure path including cancellation,
+   and never publishes an outcome before successful restoration.
+3. Paired causal summaries carry effect, direction-consistency, strict
+   stability, and zero-effect evidence with documented `null` semantics.
+4. Lineage binds derived runs to exact recipe content through the shared
+   fingerprint contract.
+5. Synthetic modules prove all mechanics locally; real-model claims are
+   deferred ledger rows, not silently assumed capabilities.
+6. The full local gate is green and the feature commit is pushed.
+
+Sequence 11 is `model-free complete`. Its first landed slice is retention
+evaluation (see [workspace](workspace.md)): `RetentionPolicy` and
+`evaluate_retention()` in `moeatlas.services.retention` classify registered
+runs into disjoint retained/expired sets under deterministic ordering —
+registration timestamp, then run key, untimestamped entries oldest for
+count bounds and exempt from age bounds — publishing
+`moeatlas.retention_report` artifacts without mutating any catalog or
+shard; enforcement stays an explicit caller decision, matching the
+append-only storage constitution. Its second landed slice is release
+engineering (see [development](development.md)): governance files
+(`SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, issue and pull-request
+templates), a three-Python-version CI workflow running the identical local
+gate model-free, and the synthetic example workspace exercised end-to-end in
+clean subprocesses. Its third landed slice is benchmark artifacts:
+`moeatlas.benchmarks` separates reproducible plans (`moeatlas.benchmark_plan`
+artifacts with canonical-JSON workloads and content-addressed fingerprints)
+from caller-measured results (`moeatlas.benchmark_results` bundles that
+require explicit environment/timestamp provenance and pin
+`release_evidence: false` — promotion to release evidence is a review
+decision, never an API flag). What remains deferred is infrastructure and
+release-time evidence, not contracts: clean-install checks in pristine
+environments, NOTICE/screenshot/demo assets, optional Docker paths, the
+evidence-generated compatibility matrix (Sequence 12), and concurrent
+reader/writer durability (ST-01 through ST-04).
+
+Sequence 12 is `VM/GPU deferred`. Its model-free half is done: the final
+audit ([prd-audit](prd-audit.md)) traces every PRD v1 acceptance area to
+its implementation surface, local test evidence, and honest status, and
+enumerates the complete deferred/blocked row list (MV-01 through MV-08,
+ST-01 through ST-04) that no local test promotes. Its other half —
+executing those rows on the final VM, the release-time review of official
+immutable revisions, and the evidence-generated compatibility matrix —
+stays blocked until VM/GPU access is provisioned; missing access records
+as `blocked`, never as `passed`.
 
 Sequence 8 (plugins and complete headless CLI/API) is complete only when:
 

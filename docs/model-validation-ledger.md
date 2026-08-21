@@ -488,3 +488,52 @@ participates. Real-model causal effect, regret, stability, and replication
 evidence — including explicit unsupported/fused/quantized limitations —
 remains deferred VM/GPU evidence under MV-01 through MV-08; ST-01 through
 ST-04 keep their deferred status.
+
+Causal evidence summaries: Status: implemented at the model-free boundary.
+Paired-effect reduction (`analyze_causal_evidence` over `CausalPair`
+observations), per-label means, absolute/relative effects, direction
+consistency, strict stability markers, duplicate-replication rejection,
+budget failures, and canonical round-trips are covered by synthetic
+contract tests. No model, tokenizer, download, or GPU participates.
+Real-model causal effect/regret/stability/replication measurements remain
+deferred VM/GPU evidence under MV-01 through MV-08; ST-01 through ST-04
+keep their deferred status.
+
+Retention evaluation: Status: implemented at the model-free boundary.
+Policy bounds and contract failures, deterministic classification rules,
+untimestamped-entry semantics, combined age/count bounds, tie-breaking by
+run key, empty registries, input type contracts, and canonical report
+round-trips are covered by synthetic contract tests over temporary
+registries. No model, tokenizer, download, or GPU participates. Real
+workspace-scale retention enforcement and filesystem durability remain
+deferred evidence under ST-01 through ST-04.
+
+Release-engineering surfaces: Status: implemented at the model-free
+boundary. Governance files (security policy with a private reporting path,
+code of conduct, Keep-a-Changelog process), issue/pull-request templates,
+the three-Python-version CI workflow mirroring the local serialized gate,
+and the synthetic example workspace (registered runs, registry query,
+retention evaluation) are verified by repository-anchor tests and a clean
+subprocess example test. No model, tokenizer, download, or GPU
+participates. Clean wheel/sdist installation into pristine environments,
+NOTICE/screenshot/demo assets, optional Docker packaging, and release
+publishing remain deferred release-engineering evidence.
+
+Benchmark artifacts: Status: implemented at the model-free boundary.
+Plan/result contracts (canonical-JSON workloads, content-addressed plan
+fingerprints, caller-supplied environment/timestamp provenance,
+one-result-per-case collection, pinned `release_evidence: false`) are
+covered by synthetic contract tests. No model, tokenizer, download, or GPU
+participates. Real performance measurements on provisioned infrastructure
+remain deferred VM/GPU evidence; developer-machine timing is never
+promoted to release evidence by this API.
+
+Final model-free PRD audit: Status: complete. `docs/prd-audit.md` traces
+every PRD v1 acceptance area to its implementation surface, local
+synthetic-test evidence, and honest status, and enumerates MV-01 through
+MV-08 and ST-01 through ST-04 as the complete list of infrastructure-bound
+claims this repository does not make. No model, tokenizer, download, or GPU
+participated in the audit. The VM/GPU half of Sequence 12 — executing those
+rows on provisioned hardware and the release-time review of official
+revisions — remains blocked until access exists; it is recorded as blocked,
+never passed.

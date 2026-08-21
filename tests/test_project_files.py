@@ -61,6 +61,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_services_run_engine.py",
             ROOT / "tests" / "test_services_run_inputs.py",
             ROOT / "tests" / "test_services_run_service.py",
+            ROOT / "src" / "moeatlas" / "services" / "retention.py",
+            ROOT / "tests" / "test_services_retention.py",
             ROOT / "tests" / "test_analysis_task_association.py",
             ROOT / "tests" / "test_analysis_evidence_cards.py",
             ROOT / "tests" / "test_analysis_routing_agreement.py",
@@ -81,6 +83,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "interventions.md",
             ROOT / "tests" / "test_interventions_recipes.py",
             ROOT / "tests" / "test_interventions_engine.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "causal_evidence.py",
+            ROOT / "tests" / "test_analysis_causal_evidence.py",
             ROOT / "tests" / "test_cli_run.py",
             ROOT / "tests" / "test_cli_export.py",
             ROOT / "tests" / "test_server_app.py",
@@ -1910,6 +1914,171 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, recipes_source)
                 self.assertNotIn(forbidden, engine_source)
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                ("analyze_causal_evidence", "moeatlas.causal_evidence", "CausalPair"),
+            ),
+            (roadmap, ("analyze_causal_evidence", "moeatlas.causal_evidence")),
+            (ledger, ("Causal evidence summaries",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        causal_source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "causal_evidence.py"
+        ).read_text()
+        analysis_exports = (
+            ROOT / "src" / "moeatlas" / "analysis" / "__init__.py"
+        ).read_text()
+        for term in (
+            "CAUSAL_EVIDENCE_SCHEMA_VERSION",
+            "CausalEvidence",
+            "CausalPair",
+            "analyze_causal_evidence",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, causal_source)
+                self.assertIn(term, analysis_exports)
+        # The causal-evidence layer stays pure: no clocks, randomness,
+        # storage, or model imports.
+        for forbidden in ("import time", "import random", "datetime", "duckdb",
+                          "urllib", "torch", "transformers"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, causal_source)
+
+    def test_retention_docs_and_surface_are_present(self) -> None:
+        workspace_doc = (ROOT / "docs" / "workspace.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        for document, terms in (
+            (
+                workspace_doc,
+                (
+                    "RetentionPolicy",
+                    "evaluate_retention(entries, policy)",
+                    "moeatlas.retention_report",
+                    "evaluation, not deletion",
+                ),
+            ),
+            (roadmap, ("evaluate_retention()", "moeatlas.retention_report")),
+            (ledger, ("Retention evaluation",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        retention_source = (
+            ROOT / "src" / "moeatlas" / "services" / "retention.py"
+        ).read_text()
+        services_exports = (
+            ROOT / "src" / "moeatlas" / "services" / "__init__.py"
+        ).read_text()
+        for term in (
+            "RETENTION_SCHEMA_VERSION",
+            "RetentionError",
+            "RetentionPolicy",
+            "RetentionReport",
+            "evaluate_retention",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, retention_source)
+                self.assertIn(term, services_exports)
+        # Retention evaluation never deletes: no catalog writes, no
+        # unlinking, and no model or storage-engine imports.
+        for forbidden in ("unlink", "rmtree", "shutil", "duckdb", "torch",
+                          "transformers"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, retention_source)
+
+    def test_release_engineering_files_are_present(self) -> None:
+        required = (
+            ROOT / "SECURITY.md",
+            ROOT / "CODE_OF_CONDUCT.md",
+            ROOT / "CHANGELOG.md",
+            ROOT / ".github" / "workflows" / "ci.yml",
+            ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md",
+            ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.md",
+            ROOT / ".github" / "ISSUE_TEMPLATE" / "feature_request.md",
+            ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml",
+            ROOT / "examples" / "synthetic_workspace.py",
+            ROOT / "src" / "moeatlas" / "benchmarks.py",
+            ROOT / "tests" / "test_benchmarks.py",
+            ROOT / "tests" / "test_examples.py",
+        )
+        for path in required:
+            with self.subTest(path=path):
+                self.assertTrue(path.is_file(), path)
+        security = (ROOT / "SECURITY.md").read_text()
+        for term in ("Report a vulnerability", "There is none"):
+            with self.subTest(term=term):
+                self.assertIn(term, security)
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        for term in ("Keep a Changelog", "Semantic Versioning", "[Unreleased]"):
+            with self.subTest(term=term):
+                self.assertIn(term, changelog)
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        for term in (
+            '"3.11"',
+            '"3.12"',
+            '"3.13"',
+            "uv sync --locked --extra dev",
+            "pytest -q",
+            "ruff check src tests",
+            "unittest discover -s tests -t .",
+            "uv build --no-sources",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, ci)
+        pull_request = (ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text()
+        for term in ("uv run --locked pytest -q", "deferred rows stay deferred"):
+            with self.subTest(term=term):
+                self.assertIn(term, pull_request)
+        example_source = (ROOT / "examples" / "synthetic_workspace.py").read_text()
+        for term in (
+            "initialize_workspace",
+            "register_run",
+            "evaluate_retention",
+            "downloads a model, touches the network, or requires a GPU",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, example_source)
+
+    def test_final_prd_audit_is_present_and_honest(self) -> None:
+        required = (
+            ROOT / "docs" / "prd-audit.md",
+            ROOT / "docs" / "specification" / "MoEAtlas_PRD_v1.docx",
+        )
+        for path in required:
+            with self.subTest(path=path):
+                self.assertTrue(path.is_file(), path)
+        audit = (ROOT / "docs" / "prd-audit.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                audit,
+                (
+                    "Acceptance-area traceability",
+                    "MV-01",
+                    "ST-04",
+                    "blocked: requires provisioned VM/GPU access that does not exist",
+                    "model-free complete, certification blocked on infrastructure",
+                ),
+            ),
+            (roadmap, ("prd-audit",)),
+            (ledger, ("Final model-free PRD audit",)),
+            (readme, ("prd-audit",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        # The audit must not quietly upgrade deferred rows: every
+        # infrastructure claim stays listed as deferred or blocked.
+        for row_id in ("MV-01", "MV-05", "MV-08", "ST-01", "ST-03"):
+            with self.subTest(row_id=row_id):
+                self.assertIn(row_id, audit)
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

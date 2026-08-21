@@ -117,3 +117,22 @@ appender, so catalog state can be rebuilt afterwards with
 - Catalog/query/reopen/repair tests use synthetic runs only. Filesystem
   durability, reopen-under-crash, and scale evidence remain `ST-01`–`ST-04`
   deferred rows in the [model-validation ledger](model-validation-ledger.md).
+
+## Retention evaluation (PRD §17)
+
+MoEAtlas storage is append-only and immutable by design, so retention is
+**evaluation, not deletion**. `RetentionPolicy` in
+`moeatlas.services.retention` carries two immutable bounds — `max_runs`
+(keep only the newest registered entries) and `before` (expire every entry
+registered strictly earlier than a canonical UTC boundary); at least one
+bound is required. `evaluate_retention(entries, policy)` classifies
+registry entries into disjoint retained/expired key sets under fixed
+ordering rules: registration timestamp first, then run key, with
+untimestamped entries ordering as oldest for count-based retention while
+staying exempt from age-based expiry (no timestamp means no age evidence —
+absence is never inferred).
+
+The resulting `RetentionReport` serializes canonically as a
+`moeatlas.retention_report` artifact. It never rewrites a catalog or
+removes shard data: acting on a report — exporting then dropping registry
+entries — stays an explicit caller decision recorded outside this module.

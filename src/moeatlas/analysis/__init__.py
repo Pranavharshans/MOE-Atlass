@@ -12,6 +12,13 @@ from .bundle import (
     AnalysisBundleReceipt,
     write_analysis_bundle,
 )
+from .causal_evidence import (
+    CAUSAL_EVIDENCE_SCHEMA_VERSION,
+    CausalEvidence,
+    CausalEvidenceError,
+    CausalPair,
+    analyze_causal_evidence,
+)
 from .compare_heatmap import (
     ROUTING_COMPARE_HEATMAP_SCHEMA_VERSION,
     render_routing_load_comparison,
@@ -98,6 +105,11 @@ __all__ = [
     "AssociationStability",
     "AssociationStabilityError",
     "analyze_association_stability",
+    "CAUSAL_EVIDENCE_SCHEMA_VERSION",
+    "CausalEvidence",
+    "CausalEvidenceError",
+    "CausalPair",
+    "analyze_causal_evidence",
     "EVIDENCE_CARD_SCHEMA_VERSION",
     "EVIDENCE_TIERS",
     "EXPERT_SIMILARITY_SCHEMA_VERSION",

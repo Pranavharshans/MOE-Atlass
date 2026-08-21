@@ -60,6 +60,25 @@ tests use the standard-library fixture for lifecycle behavior; real PyTorch
 signature, equivalence, and GPU checks remain deferred to MV-04 and the final
 VM. Future runtime work must preserve the same explicit boundaries.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs the same serialized local gate on Python
+3.11, 3.12, and 3.13: a locked `uv sync --extra dev` environment, then
+`pytest -q`, `ruff check src tests`, unittest discovery, and
+`uv build --no-sources`. CI never downloads models, tokenizers, or
+datasets — the same no-download rules that bind local tests bind CI.
+Clean wheel/sdist installation checks in pristine environments remain
+release-engineering work recorded in the validation ledger until a
+packaging lane lands.
+
+## Examples
+
+`examples/synthetic_workspace.py` builds a fresh workspace from public
+services only — registering two synthetic runs, querying the registry,
+and evaluating a retention policy — in a clean subprocess under test
+coverage (`tests/test_examples.py`). It is the reference for what a
+model-free session looks like.
+
 ## Packaging notes
 
 `pyproject.toml` uses a `src/` layout and exposes the `moeatlas` console
