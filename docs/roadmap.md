@@ -219,8 +219,12 @@ set. Its fifth landed slice adds the router margin of PRD §11.1 (see
 selected-score differences over caller-supplied ranked score samples, with
 explicit defined/total token counts and `null` means where no token has two
 scored ranks, canonically serializable as `moeatlas.router_margin` artifacts.
-Route churn, per-token task-labeled evidence, and the §11.3 behavior
-summaries are later slices in this sequence.
+Its sixth landed slice adds route churn (see [analysis](analysis.md)):
+`analyze_route_churn` in `moeatlas.analysis.route_churn` measures how
+selected-expert sets change across caller-ordered adjacent steps with churn
+rates, mean Jaccard distances, and explicit pair counts — canonically
+serializable as `moeatlas.route_churn` artifacts. Per-token task-labeled
+evidence and the §11.3 behavior summaries are later slices in this sequence.
 
 Sequence 6 (prompt and dataset run engine) is complete only when:
 

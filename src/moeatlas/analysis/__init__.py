@@ -27,6 +27,13 @@ from .evidence_cards import (
     StabilitySection,
     TaskAssociationSection,
 )
+from .route_churn import (
+    ROUTE_CHURN_SCHEMA_VERSION,
+    RouteChurnError,
+    RouteChurnSequences,
+    RouteChurnSummary,
+    analyze_route_churn,
+)
 from .router_margin import (
     ROUTER_MARGIN_SCHEMA_VERSION,
     RouterMarginError,
@@ -81,6 +88,11 @@ __all__ = [
     "EVIDENCE_TIERS",
     "ROUTING_AGREEMENT_SCHEMA_VERSION",
     "ROUTER_MARGIN_SCHEMA_VERSION",
+    "ROUTE_CHURN_SCHEMA_VERSION",
+    "RouteChurnError",
+    "RouteChurnSequences",
+    "RouteChurnSummary",
+    "analyze_route_churn",
     "RouterMarginError",
     "RouterMarginSamples",
     "RouterMarginSummary",

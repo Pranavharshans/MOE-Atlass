@@ -47,6 +47,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "analysis" / "routing_agreement.py",
             ROOT / "src" / "moeatlas" / "analysis" / "association_stability.py",
             ROOT / "src" / "moeatlas" / "analysis" / "router_margin.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "route_churn.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
@@ -62,6 +63,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_analysis_routing_agreement.py",
             ROOT / "tests" / "test_analysis_association_stability.py",
             ROOT / "tests" / "test_analysis_router_margin.py",
+            ROOT / "tests" / "test_analysis_route_churn.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1518,6 +1520,60 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
         self.assertTrue((ROOT / "tests" / "test_analysis_router_margin.py").is_file())
+
+    def test_route_churn_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Route churn",
+                    "RouteChurnSequences",
+                    "analyze_route_churn",
+                    "RouteChurnSummary",
+                    "moeatlas.route_churn",
+                    "never specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.route_churn",)),
+            (roadmap, ("analyze_route_churn",)),
+            (ledger, ("Route churn",)),
+            (readme, ("analyze_route_churn()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "route_churn.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "ROUTE_CHURN_SCHEMA_VERSION",
+            "RouteChurnError",
+            "RouteChurnSequences",
+            "RouteChurnSummary",
+            "analyze_route_churn",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The churn layer stays pure: no storage reads, clocks, randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_analysis_route_churn.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

@@ -166,6 +166,10 @@ deliberately deferred.
   ranked score samples, with explicit defined/total token counts and `null`
   means where no token has two scored ranks; see
   [analysis](docs/analysis.md).
+- `EXPERIMENTAL` route churn: `analyze_route_churn()` measures how
+  selected-expert sets change across caller-ordered adjacent steps with
+  churn rates, mean Jaccard distances, and explicit pair counts; see
+  [analysis](docs/analysis.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

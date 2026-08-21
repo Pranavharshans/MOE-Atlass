@@ -264,6 +264,28 @@ evidence, never inferred. The result is a frozen `RouterMarginSummary` with
 `moeatlas.router_margin` artifact type. A margin describes routing
 confidence only — never specialization or causality.
 
+## Route churn
+
+`moeatlas.analysis.route_churn` implements PRD §11.1's route churn — how
+expert selection changes across adjacent steps. Token keys are content
+digests, so adjacency is a caller-supplied ordering (adjacent generated
+tokens, prompt perturbations, or any routed-step sequence);
+`RouteChurnSequences(layer_keys, step_experts)` holds, per layer, one
+selected-expert tuple per step in that order (order inside a step is
+irrelevant; empty steps are legal). `analyze_route_churn(sequences, *,
+max_steps)` derives per layer:
+
+- `churn_rate_rows` — the fraction of adjacent pairs whose selected sets
+  differ; `null` with fewer than two steps.
+- `mean_jaccard_rows` — mean Jaccard distance `1 - |A ∩ B| / |A ∪ B|` over
+  the pairs, with the documented conventions that empty-to-empty is no
+  change and empty-to-nonempty is full change.
+- `pair_rows` — the count of adjacent pairs.
+
+The result is a frozen `RouteChurnSummary` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.route_churn` artifact type.
+Churn describes routing stability only — never specialization or causality.
+
 ## Cross-run association stability
 
 `moeatlas.analysis.association_stability` implements PRD §11.2's cross-run

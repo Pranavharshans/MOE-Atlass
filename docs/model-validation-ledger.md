@@ -415,3 +415,11 @@ undefined-token accounting, budget bounds, and canonical
 tests. No model or tokenizer participates; margins over real router scores
 of a real checkpoint remain deferred VM/GPU evidence, so MV-01 through MV-08
 and ST-01 through ST-04 keep their deferred status.
+
+Route churn: Status: implemented at the model-free boundary. Sequence
+strictness (including duplicate-expert rejection), exact churn/Jaccard
+values, empty-step conventions, budget bounds, and canonical
+`moeatlas.route_churn` round-trips are covered by synthetic contract tests.
+No model or tokenizer participates; churn across real generated tokens of a
+real checkpoint remains deferred VM/GPU evidence, so MV-01 through MV-08 and
+ST-01 through ST-04 keep their deferred status.

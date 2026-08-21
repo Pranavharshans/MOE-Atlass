@@ -380,4 +380,6 @@ rollout-phase selection distributions, and cross-run association stability
 task) distributions over one identical topology with the same bounded
 agreement math plus per-layer means, and the router margin
 (`moeatlas.analysis.router_margin`) summarizes per-layer top1-minus-top2
-score differences with explicit defined/total token counts.
+score differences with explicit defined/total token counts, and route churn
+(`moeatlas.analysis.route_churn`) measures how selected-expert sets change
+across caller-ordered adjacent steps with churn rates and Jaccard distances.
