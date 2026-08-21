@@ -278,7 +278,12 @@ def _wrap_storage(exc: RoutingShardError) -> RunBundleError:
 
 
 def _resolve_directory(
-    value: object, *, param: str, stage: str, require_empty: bool
+    value: object,
+    *,
+    param: str,
+    stage: str,
+    require_empty: bool,
+    error: type[RunBundleError] = RunBundleError,
 ) -> Path:
     if not isinstance(value, str | Path):
         raise TypeError(f"{param} must be a string or pathlib.Path")
@@ -288,51 +293,60 @@ def _resolve_directory(
         present = path.exists()
         directory = path.is_dir() if present else False
         empty = directory and not any(path.iterdir())
-    except RunBundleError:
+    except error:
         raise
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as exc:
-        raise RunBundleError(stage, f"{param} state is unreadable", cause=exc) from exc
+        raise error(stage, f"{param} state is unreadable", cause=exc) from exc
     if symlinked:
-        raise RunBundleError(stage, f"{param} must not be a symlink")
+        raise error(stage, f"{param} must not be a symlink")
     if require_empty:
         if present and not directory:
-            raise RunBundleError(stage, f"{param} is not a directory")
+            raise error(stage, f"{param} is not a directory")
         if directory and not empty:
-            raise RunBundleError(stage, f"{param} is not empty")
+            raise error(stage, f"{param} is not empty")
         return path
     if not directory:
-        raise RunBundleError(stage, f"{param} is not an existing directory")
+        raise error(stage, f"{param} is not an existing directory")
     return path
 
 
-def _check_parent(path: Path, *, param: str) -> None:
+def _check_parent(
+    path: Path, *, param: str, error: type[RunBundleError] = RunBundleError
+) -> None:
     parent = path.parent
     try:
         invalid = parent.is_symlink() or not parent.is_dir()
     except Exception as exc:
-        raise RunBundleError("workspace", f"{param} parent is unreadable", cause=exc) from exc
+        raise error("workspace", f"{param} parent is unreadable", cause=exc) from exc
     if invalid:
-        raise RunBundleError("workspace", f"{param} parent is not an existing directory")
+        raise error("workspace", f"{param} parent is not an existing directory")
 
 
-def _read_member(path: Path, *, label: str, max_file_bytes: int) -> bytes:
+def _read_member(
+    path: Path,
+    *,
+    label: str,
+    max_file_bytes: int,
+    error: type[RunBundleError] = RunBundleError,
+    noun: str = "bundle",
+) -> bytes:
     try:
         if path.is_symlink() or not path.is_file():
-            raise RunBundleError("format", f"bundle member is not a regular file: {label}")
+            raise error("format", f"{noun} member is not a regular file: {label}")
         size = path.stat().st_size
         if size > max_file_bytes:
-            raise RunBundleError("budget", f"bundle member exceeds the byte budget: {label}")
+            raise error("budget", f"{noun} member exceeds the byte budget: {label}")
         payload = path.read_bytes()
-    except RunBundleError:
+    except error:
         raise
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as exc:
-        raise RunBundleError("format", f"bundle member is unreadable: {label}", cause=exc)
+        raise error("format", f"{noun} member is unreadable: {label}", cause=exc)
     if len(payload) > max_file_bytes:
-        raise RunBundleError("budget", f"bundle member exceeds the byte budget: {label}")
+        raise error("budget", f"{noun} member exceeds the byte budget: {label}")
     return payload
 
 
@@ -744,7 +758,14 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _write_member(stage: Path, relative: str, payload: bytes) -> None:
+def _write_member(
+    stage: Path,
+    relative: str,
+    payload: bytes,
+    *,
+    error: type[RunBundleError] = RunBundleError,
+    noun: str = "bundle",
+) -> None:
     target = stage / relative
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -756,13 +777,18 @@ def _write_member(stage: Path, relative: str, payload: bytes) -> None:
             os.fsync(stream.fileno())
         _fsync_directory(target.parent)
     except Exception as exc:
-        raise RunBundleError(
-            "write", f"bundle member write failed: {relative}", cause=exc
+        raise error(
+            "write", f"{noun} member write failed: {relative}", cause=exc
         ) from exc
 
 
 def _publish_bundle(
-    destination: Path, payloads: dict[str, bytes], manifest_bytes: bytes
+    destination: Path,
+    payloads: dict[str, bytes],
+    manifest_bytes: bytes,
+    *,
+    error: type[RunBundleError] = RunBundleError,
+    noun: str = "bundle",
 ) -> None:
     stage = Path(
         tempfile.mkdtemp(
@@ -772,7 +798,7 @@ def _publish_bundle(
     published = False
     try:
         for relative, payload in sorted(payloads.items()):
-            _write_member(stage, relative, payload)
+            _write_member(stage, relative, payload, error=error, noun=noun)
         try:
             manifest_path = stage / _MANIFEST_FILE
             with manifest_path.open("wb") as stream:
@@ -785,12 +811,12 @@ def _publish_bundle(
                 os.chmod(stage, 0o700)
             _fsync_directory(stage)
         except Exception as exc:
-            raise RunBundleError("write", "bundle manifest write failed", cause=exc)
+            raise error("write", f"{noun} manifest write failed", cause=exc)
         try:
             os.rename(stage, destination)
             published = True
         except Exception as exc:
-            raise RunBundleError("publish", "bundle rename failed", cause=exc) from exc
+            raise error("publish", f"{noun} rename failed", cause=exc) from exc
     except BaseException:
         if not published:
             _cleanup_stage(stage)
@@ -798,7 +824,7 @@ def _publish_bundle(
     try:
         _fsync_directory(destination.parent)
     except Exception as exc:
-        raise RunBundleError("publish", "bundle parent fsync failed", cause=exc) from exc
+        raise error("publish", f"{noun} parent fsync failed", cause=exc) from exc
 
 
 def export_run_bundle(

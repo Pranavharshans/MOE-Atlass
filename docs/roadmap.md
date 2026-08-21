@@ -43,8 +43,8 @@ tracks dependency order and exit criteria without redefining those documents.
 | 2 | Run identity, provenance, and lifecycle | `model-free complete` | Versioned immutable run specs/state/progress/cancellation/lineage with deterministic transition and serialization tests | PRD §9.3 and schema tests |
 | 3 | Application services and workspace/catalog | `model-free complete` | Shared CLI/server services, storage ports, migrations, bounded queries, reopen/repair, and v1 shard compatibility | PRD §10; ST-01–ST-04 remain separate |
 | 4 | Universal execution capabilities | `in progress` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
-| 5 | Raw evidence and open storage/export | `in progress` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
-| 6 | Prompt and dataset run engine | `planned` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
+| 5 | Raw evidence and open storage/export | `model-free complete` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
+| 6 | Prompt and dataset run engine | `in progress` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
 | 7 | Task association and Evidence Cards | `planned` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests |
 | 8 | Plugins and complete headless CLI/API | `planned` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
 | 9 | FastAPI server and React UI | `planned` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14 |
@@ -105,15 +105,25 @@ A public structural result protocol, neutral inventory-class rename, or stored
 schema migration each changes observable compatibility and requires its own
 acceptance gate.
 
-Sequence 5 is `in progress`. Its first landed slice is the run-evidence export
+Sequence 5 is `complete`. Its first landed slice is the run-evidence export
 bundle (see [storage](storage.md)): `export_run_bundle` /
 `verify_run_bundle` / `import_run_bundle` publish one run's complete committed
 evidence as canonical JSONL under a digest-bearing manifest with per-shard
 redaction fidelity, strict row/byte budgets, byte-deterministic output,
 tamper/forged-digest rejection, atomic crash-safe publication, symlink safety,
-idempotent source re-import, and duckdb-free verification. Remaining for this
-sequence: analysis consuming reader/query contracts instead of storage
-internals, and CSV/Parquet export surfaces.
+idempotent source re-import, and duckdb-free verification. Its second landed
+slice routes analysis through storage: `aggregate_routing_load` now consumes
+the public `query_routing_run_assignments` seam (and the
+`RoutingRunReader.query_assignments` port) for source discovery, budgets,
+validation, conflict detection, and grouped reads, reaching into no concrete
+shard internals; analysis results are unchanged on all previously passing
+inputs and multi-shard grouped counts are provably per shard. Its third landed
+slice adds the tabular surfaces: `export_run_tables` projects one run into
+canonically encoded, byte-deterministic CSV plus optional Parquet under a
+digest-bearing canonical manifest with strict budgets, atomic crash-safe
+staging, redaction fidelity, and duckdb-free `verify_run_tables`; the
+projection is deliberately one-way, keeping lossless round-trips the bundle's
+contract.
 
 Sequence 5 (raw evidence and open storage/export) is complete only when:
 
@@ -131,6 +141,18 @@ Known limitation, deferred rather than expanded here: documentation files
 (including this roadmap) are repository artifacts and are not packaged into the
 wheel/sdist, matching the existing distribution pattern for all `docs/` content.
 Shipping docs with distributions is release-engineering work in Sequence 11.
+
+Sequence 6 is `in progress`. Its first landed slice is the bounded dataset
+reader (see [runs](runs.md)): `read_dataset_rows` in
+`moeatlas.services.datasets` turns `DatasetInputSpec` descriptors into
+deterministic frozen `DatasetRow` tuples for JSONL/CSV/Parquet/text and
+local HF-style snapshots under strict row/byte/file budgets, validates
+task-role column mappings, plans SHA-256-keyed deterministic
+`plan_dataset_batches` schedules (sample caps, shuffles, batches), resolves
+DuckDB lazily for Parquet only, and never touches the network. Remaining for
+this sequence: prompt/chat input preparation, the execution loop over fake
+runtimes with progress/cancellation/per-row failures/checkpoints/resume,
+incremental event publication, and the shared run-engine service surface.
 
 ## Validation lanes
 

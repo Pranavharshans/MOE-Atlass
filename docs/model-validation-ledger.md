@@ -318,3 +318,31 @@ budgets, crash-safe publication cleanup, symlink refusal, idempotent
 re-import, and duckdb-free verification are covered by synthetic local tests.
 Bundles carry no model-dependent claims; this feature does not change MV-01/MV-08
 or ST-01 through ST-04 status.
+Routing-run assignment query seam: Status: implemented at the model-free
+boundary. `aggregate_routing_load` now reads runs exclusively through the
+public `query_routing_run_assignments` seam; equivalence with prior analysis
+results, per-shard multi-shard grouped counts, budgets, conflicts,
+corruption-as-reopen, and typed error carriers are covered by synthetic local
+tests. The refactor is behavior-preserving for every previously passing input;
+no real-model or filesystem-scale claim changes, so MV-01 through MV-08 and
+ST-01 through ST-04 keep their deferred status.
+
+Tabular run exports (CSV/Parquet): Status: implemented at the model-free
+boundary. `export_run_tables` / `verify_run_tables` round-trips, canonical CSV
+encoding and byte determinism, redaction fidelity, multi-shard ordering,
+budgets, crash cleanup, tamper rejection, manifest-shape negotiation, and
+duckdb-free verification are covered by synthetic local tests over temporary
+workspaces. Parquet members are digest-recorded without a byte-determinism
+promise because writer metadata varies across engine versions; no real-model,
+GPU, or filesystem-scale claim is made, so MV-01 through MV-08 and ST-01
+through ST-04 keep their deferred status.
+
+Bounded dataset reading service: Status: implemented at the model-free
+boundary. `moeatlas.services.datasets` reading of JSONL/CSV/Parquet/text and
+local HF-style snapshots, budgets, column-mapping validation/projection,
+deterministic SHA-256-keyed batch planning, error stages, and lazy DuckDB
+resolution are covered by synthetic local tests over temporary files.
+Descriptors never fetch data and no test downloads a dataset; real
+tokenizer/dataset ingestion equivalence and large-file scale remain deferred
+MV/ST evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their
+deferred status.

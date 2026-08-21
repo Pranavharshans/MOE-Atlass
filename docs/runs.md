@@ -83,6 +83,36 @@ planned runs have no progress. Serializable domain state is fully separated
 from process-local model/tokenizer/runtime handles, which live in the runtime
 layer.
 
+## Bounded dataset reading
+
+`moeatlas.services.datasets` is the first engine step over those descriptors:
+`read_dataset_rows(descriptor, *, base_directory, max_rows, max_row_bytes,
+max_file_bytes, duckdb)` turns a `DatasetInputSpec` into a deterministic
+tuple of frozen `DatasetRow(index, values)` records for the file-backed
+formats — JSONL, CSV, Parquet, and text (one `{"text": line}` row per line) —
+plus `hf_datasets`, which means an existing local snapshot directory read in
+sorted filename order with a single data format. Descriptors never fetch
+data: relative locations require an explicit local `base_directory`,
+absolute paths pass through, and nothing ever reaches the network. DuckDB is
+imported lazily and only for Parquet members; every other format reads
+without it.
+
+Reading is bounded and deterministic: strict row, per-row canonical-JSON
+byte, and per-file byte budgets (exceeding any raises `DatasetReadError` at
+stage `budget`); rows keep file order with assigned indices. Failures use
+the fixed stage vocabulary `descriptor`, `dependency`, `format`, `budget`,
+`read` with the message `dataset read failed at <stage>`. Column mappings
+are validated against the fixed v1 role vocabulary
+`("domain", "prompt", "reference", "task")` and their target columns must
+exist in every row; `project_dataset_rows` applies the mapping onto those
+roles. `plan_dataset_batches(total_rows, *, batch_size, sample_cap, shuffle,
+seed)` derives sample selection, shuffles, and batch splits from SHA-256
+ordering keys over `(purpose, seed, index)`, so identical arguments produce
+identical schedules on every platform and process; shuffling requires a
+seed, and an unseeded sample cap keeps the deterministic first-cap prefix.
+`iterable` descriptors carry no file location and are rejected at the reader
+boundary; the run engine consumes iterables directly.
+
 ## Boundaries and deferred evidence
 
 These contracts bind artifacts by identifier; they do not verify that a

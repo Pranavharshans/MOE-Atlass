@@ -295,3 +295,36 @@ shards through the standard appender, making source-workspace re-import
 idempotent and cross-workspace import identity-preserving. The bundle is
 byte-deterministic, budget-bounded, atomic on publication, symlink-safe, and
 family-blind; it adds no analysis, migration, or model-dependent claim.
+
+The same layer publishes the bounded assignment-query seam
+(`query_routing_run_assignments` plus the `RoutingRunReader.query_assignments`
+port): per-shard validated summaries with typed error carriers, canonical
+ordering, strict budgets, and cross-shard conflict detection behind one public
+function. Analysis is now a consumer of that seam — `aggregate_routing_load`
+owns only inspection validation, universe reconciliation, matrix folding, and
+its connection lifecycle, and reaches into no concrete shard internals. The
+seam, like the bundle format, is family-blind: it knows shards, manifests,
+budgets, and identities, never model families.
+
+The persistence layer's third interchange surface projects that same evidence
+into open tabular formats: `export_run_tables` writes canonically encoded,
+byte-deterministic CSV (plus optional Parquet) under a digest-bearing
+canonical manifest with strict row/byte budgets, atomic crash-safe staging,
+and redaction fidelity, while `verify_run_tables` revalidates a directory —
+digests, canonicality, schema readability, manifest agreement — without
+importing DuckDB. The projection is deliberately one-way: flat rows serve
+spreadsheets and dataframes, and lossless round-trips remain the bundle's
+contract. Like the other two surfaces it is family-blind and adds no
+analysis or model-dependent claim.
+
+The services layer gains the run engine's first data step: bounded
+deterministic dataset reading (`moeatlas.services.datasets`). A
+`DatasetInputSpec` descriptor becomes a tuple of frozen `DatasetRow` records
+under strict row/byte/file budgets, with fixed-stage `DatasetReadError`
+carriers, task-role column-mapping validation and projection, SHA-256-keyed
+deterministic batch planning (sample caps, shuffles, batches), and lazy
+DuckDB resolution for Parquet members only. Descriptors never fetch data:
+locations resolve against an explicit local base directory, HF-style format
+means an existing local snapshot directory read in sorted order, and no code
+path reaches the network. The step is family-blind — it knows rows, roles,
+budgets, and schedules, never model families.

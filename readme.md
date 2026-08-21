@@ -102,6 +102,23 @@ deliberately deferred.
   content-addressed identity recomputation), redaction-faithful, atomic,
   symlink-safe, and relocatable across workspaces with idempotent re-import;
   see [storage](docs/storage.md).
+- `EXPERIMENTAL` routing-run assignment query seam:
+  `query_routing_run_assignments()` returns validated per-shard summaries —
+  identity sets plus grouped assignment counts — under strict budgets with
+  typed error carriers, and `aggregate_routing_load()` consumes exactly that
+  seam instead of concrete shard internals; see [storage](docs/storage.md).
+- `EXPERIMENTAL` bounded tabular run exports: `export_run_tables()` projects
+  one run's committed evidence into canonically encoded, byte-deterministic
+  CSV plus optional Parquet under a digest-bearing manifest, with strict
+  budgets, atomic publication, redaction fidelity, and duckdb-free
+  `verify_run_tables()`; the projection is one-way — lossless round-trips
+  stay the export bundle's contract; see [storage](docs/storage.md).
+- `EXPERIMENTAL` bounded dataset reading: `read_dataset_rows()` turns
+  `DatasetInputSpec` descriptors into deterministic frozen rows for
+  JSONL/CSV/Parquet/text and local HF-style snapshots under strict budgets,
+  with task-role column mappings and SHA-256-keyed deterministic
+  `plan_dataset_batches()` schedules; descriptors never fetch data and no
+  path reaches the network; see [runs](docs/runs.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict
