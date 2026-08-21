@@ -399,3 +399,11 @@ synthetic contract tests. No model or tokenizer participates; agreement over
 real prompt/rollout phases of a real checkpoint remains deferred VM/GPU
 evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their deferred
 status.
+
+Cross-run association stability: Status: implemented at the model-free
+boundary. Topology-mismatch rejection, exact Jensen-Shannon agreement values,
+scale invariance, budget bounds, and canonical
+`moeatlas.association_stability` round-trips are covered by synthetic
+contract tests. No model or tokenizer participates; stability across real
+runs of a real checkpoint remains deferred VM/GPU evidence, so MV-01 through
+MV-08 and ST-01 through ST-04 keep their deferred status.

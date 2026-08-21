@@ -205,9 +205,16 @@ Its third landed slice is prompt-vs-rollout routing agreement (see
 `moeatlas.analysis.routing_agreement` compares paired prompt-phase and
 rollout-phase selection distributions per layer with base-2 Jensen-Shannon
 divergence, its bounded agreement complement, and total-variation distance,
-canonically serializable as `moeatlas.routing_agreement` artifacts. Per-token
-task-labeled evidence and cross-run association stability are later slices in
-this sequence.
+canonically serializable as `moeatlas.routing_agreement` artifacts. Its
+fourth landed slice is cross-run association stability (see
+[analysis](analysis.md)): `analyze_association_stability` in
+`moeatlas.analysis.association_stability` compares two runs'
+P(expert | task) distributions over one identical (layer, task, expert)
+topology with base-2 Jensen-Shannon divergence, its bounded agreement
+complement, and per-layer means, canonically serializable as
+`moeatlas.association_stability` artifacts — completing the §11.2 metric
+set. Per-token task-labeled evidence and the §11.3 behavior summaries are
+later slices in this sequence.
 
 Sequence 6 (prompt and dataset run engine) is complete only when:
 

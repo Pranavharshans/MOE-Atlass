@@ -242,6 +242,28 @@ positive phase totals are construction preconditions, so no cell is ever
 null. Agreement compares distributions only — consistency of routing across
 phases is never specialization or causality.
 
+## Cross-run association stability
+
+`moeatlas.analysis.association_stability` implements PRD §11.2's cross-run
+stability of expert-task association.
+`analyze_association_stability(counts_a, counts_b, *, max_cells)` takes two
+`TaskExpertCounts` tables over one identical (layer, task, expert) topology —
+any key mismatch is a contract error, not a silent realignment — and
+compares, for every (layer, task) cell, the two runs' conditional routing
+distributions P(expert | task):
+
+- `js_divergence_rows` — base-2 Jensen-Shannon divergence between the runs,
+  bounded in `[0, 1]` (float noise clamped so the bounds hold exactly).
+- `agreement_rows` — `1 - JSD`: 1.0 when both runs route a task identically,
+  0.0 on disjoint supports.
+- `mean_agreement_rows` — per-layer mean agreement across tasks.
+
+The result is a frozen `AssociationStability` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.association_stability` artifact
+type; positive task totals are a construction precondition of both inputs, so
+no cell is ever null. Agreement between runs is evidence of reproducible
+routing behavior — never specialization or causality.
+
 ## Evidence Cards
 
 `moeatlas.analysis.evidence_cards` implements the structured alternative to a

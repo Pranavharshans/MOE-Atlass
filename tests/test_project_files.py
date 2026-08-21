@@ -45,6 +45,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "analysis" / "task_association.py",
             ROOT / "src" / "moeatlas" / "analysis" / "evidence_cards.py",
             ROOT / "src" / "moeatlas" / "analysis" / "routing_agreement.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "association_stability.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
@@ -58,6 +59,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_analysis_task_association.py",
             ROOT / "tests" / "test_analysis_evidence_cards.py",
             ROOT / "tests" / "test_analysis_routing_agreement.py",
+            ROOT / "tests" / "test_analysis_association_stability.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1405,6 +1407,60 @@ class ProjectFilesTests(unittest.TestCase):
                 self.assertNotIn(forbidden, source)
         self.assertTrue(
             (ROOT / "tests" / "test_analysis_routing_agreement.py").is_file()
+        )
+
+    def test_association_stability_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Cross-run association stability",
+                    "analyze_association_stability",
+                    "AssociationStability",
+                    "moeatlas.association_stability",
+                    "never specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.association_stability",)),
+            (roadmap, ("analyze_association_stability",)),
+            (ledger, ("Cross-run association stability",)),
+            (readme, ("analyze_association_stability()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "association_stability.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "ASSOCIATION_STABILITY_SCHEMA_VERSION",
+            "AssociationStabilityError",
+            "AssociationStability",
+            "analyze_association_stability",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The stability layer stays pure: no storage reads, clocks, randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue(
+            (ROOT / "tests" / "test_analysis_association_stability.py").is_file()
         )
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:

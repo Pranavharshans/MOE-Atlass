@@ -155,6 +155,12 @@ deliberately deferred.
   divergence, its bounded agreement complement, and total-variation distance
   — deterministic, budget-bounded, canonically serializable; see
   [analysis](docs/analysis.md).
+- `EXPERIMENTAL` cross-run association stability:
+  `analyze_association_stability()` compares two runs' P(expert | task)
+  distributions over one identical (layer, task, expert) topology with
+  base-2 Jensen-Shannon divergence, its bounded agreement complement, and
+  per-layer means — deterministic, budget-bounded, canonically serializable;
+  see [analysis](docs/analysis.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

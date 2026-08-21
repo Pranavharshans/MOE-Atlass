@@ -375,4 +375,7 @@ serializable as `moeatlas.evidence_card` artifacts, still family-blind.
 Prompt-vs-rollout agreement (`moeatlas.analysis.routing_agreement`) closes
 the §11.2 pair with per-layer Jensen-Shannon agreement, its bounded
 complement, and total-variation distance between paired prompt-phase and
-rollout-phase selection distributions.
+rollout-phase selection distributions, and cross-run association stability
+(`moeatlas.analysis.association_stability`) compares two runs' P(expert |
+task) distributions over one identical topology with the same bounded
+agreement math plus per-layer means.

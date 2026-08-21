@@ -1,5 +1,11 @@
 """Bounded, read-only routing-load analysis over immutable routing shards."""
 
+from .association_stability import (
+    ASSOCIATION_STABILITY_SCHEMA_VERSION,
+    AssociationStability,
+    AssociationStabilityError,
+    analyze_association_stability,
+)
 from .bundle import (
     ANALYSIS_BUNDLE_SCHEMA_VERSION,
     AnalysisBundleEntry,
@@ -60,6 +66,10 @@ from .task_association import (
 )
 
 __all__ = [
+    "ASSOCIATION_STABILITY_SCHEMA_VERSION",
+    "AssociationStability",
+    "AssociationStabilityError",
+    "analyze_association_stability",
     "EVIDENCE_CARD_SCHEMA_VERSION",
     "EVIDENCE_TIERS",
     "ROUTING_AGREEMENT_SCHEMA_VERSION",
