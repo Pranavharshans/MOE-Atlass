@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass
@@ -294,6 +295,56 @@ def _canonical_component(value: object, field_name: str) -> str:
     return value
 
 
+_ROUTING_LOAD_ARTIFACT_TYPE = "moeatlas.routing_load_matrix"
+
+
+def _strict_string_tuple(value: object, field_name: str) -> tuple[str, ...]:
+    if type(value) is not list or any(type(item) is not str for item in value):
+        raise ValueError(f"{field_name} must be a JSON array of strings")
+    return tuple(value)
+
+
+def _strict_index_tuple(value: object, field_name: str) -> tuple[int, ...]:
+    if type(value) is not list or any(
+        type(item) is not int or isinstance(item, bool) for item in value
+    ):
+        raise ValueError(f"{field_name} must be a JSON array of integers")
+    return tuple(value)
+
+
+def _strict_row_tuple(value: object, field_name: str) -> tuple[tuple[str, ...], ...]:
+    if type(value) is not list:
+        raise ValueError(f"{field_name} must be a JSON array of string arrays")
+    rows: list[tuple[str, ...]] = []
+    for row in value:
+        rows.append(_strict_string_tuple(row, field_name))
+    return tuple(rows)
+
+
+def _strict_count_rows(value: object, field_name: str) -> tuple[tuple[int, ...], ...]:
+    if type(value) is not list:
+        raise ValueError(f"{field_name} must be a JSON array of integer arrays")
+    rows: list[tuple[int, ...]] = []
+    for row in value:
+        if type(row) is not list or any(
+            type(item) is not int or isinstance(item, bool) for item in row
+        ):
+            raise ValueError(f"{field_name} must be a JSON array of integer arrays")
+        rows.append(tuple(row))
+    return tuple(rows)
+
+
+def _strict_float_rows(value: object, field_name: str) -> tuple[tuple[float, ...], ...]:
+    if type(value) is not list:
+        raise ValueError(f"{field_name} must be a JSON array of number arrays")
+    rows: list[tuple[float, ...]] = []
+    for row in value:
+        if type(row) is not list or any(type(item) is not float for item in row):
+            raise ValueError(f"{field_name} must be a JSON array of number arrays")
+        rows.append(tuple(row))
+    return tuple(rows)
+
+
 @dataclass(frozen=True, slots=True)
 class RoutingLoadMatrix:
     schema_version: str
@@ -451,6 +502,91 @@ class RoutingLoadMatrix:
         expected_assignments = self.token_count * len(layer_keys) * self.routed_top_k
         if self.assignment_count != expected_assignments:
             raise ValueError("assignment_count does not match token/layer/top-k formula")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible data without runtime objects."""
+
+        return {
+            "artifact_type": _ROUTING_LOAD_ARTIFACT_TYPE,
+            "schema_version": self.schema_version,
+            "store_schema_version": self.store_schema_version,
+            "event_schema_version": self.event_schema_version,
+            "run_key": self.run_key,
+            "model_key": self.model_key,
+            "adapter_name": self.adapter_name,
+            "adapter_version": self.adapter_version,
+            "inspection_digest": self.inspection_digest,
+            "layout": self.layout,
+            "shard_keys": list(self.shard_keys),
+            "token_count": self.token_count,
+            "assignment_count": self.assignment_count,
+            "routed_top_k": self.routed_top_k,
+            "layer_keys": list(self.layer_keys),
+            "layer_indices": list(self.layer_indices),
+            "expert_keys": [list(row) for row in self.expert_keys],
+            "assignment_counts": [list(row) for row in self.assignment_counts],
+            "assignment_shares": [list(row) for row in self.assignment_shares],
+            "load_ratios": [list(row) for row in self.load_ratios],
+        }
+
+    def to_json(self) -> str:
+        """Serialize this matrix with deterministic key order and no whitespace."""
+
+        return json.dumps(
+            self.to_dict(),
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @classmethod
+    def from_json(cls, payload: str | bytes | bytearray) -> RoutingLoadMatrix:
+        """Validate one canonical JSON document into an exact matrix value."""
+
+        try:
+            document = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("routing load matrix document is not valid JSON") from exc
+        if type(document) is not dict:
+            raise ValueError("routing load matrix document must be a JSON object")
+        if (
+            document.get("artifact_type") != _ROUTING_LOAD_ARTIFACT_TYPE
+            or document.get("schema_version") != ROUTING_LOAD_SCHEMA_VERSION
+        ):
+            raise ValueError("document is not a routing load matrix artifact")
+        try:
+            return cls(
+                schema_version=document["schema_version"],
+                store_schema_version=document["store_schema_version"],
+                event_schema_version=document["event_schema_version"],
+                run_key=document["run_key"],
+                model_key=document["model_key"],
+                adapter_name=document["adapter_name"],
+                adapter_version=document["adapter_version"],
+                inspection_digest=document["inspection_digest"],
+                layout=document["layout"],
+                shard_keys=_strict_string_tuple(document["shard_keys"], "shard_keys"),
+                token_count=document["token_count"],
+                assignment_count=document["assignment_count"],
+                routed_top_k=document["routed_top_k"],
+                layer_keys=_strict_string_tuple(document["layer_keys"], "layer_keys"),
+                layer_indices=_strict_index_tuple(document["layer_indices"], "layer_indices"),
+                expert_keys=_strict_row_tuple(document["expert_keys"], "expert_keys"),
+                assignment_counts=_strict_count_rows(
+                    document["assignment_counts"], "assignment_counts"
+                ),
+                assignment_shares=_strict_float_rows(
+                    document["assignment_shares"], "assignment_shares"
+                ),
+                load_ratios=_strict_float_rows(document["load_ratios"], "load_ratios"),
+            )
+        except KeyError as exc:
+            raise ValueError("routing load matrix document is missing fields") from exc
+        except (TypeError, ValueError):
+            raise
+        except Exception as exc:
+            raise ValueError("routing load matrix document is not usable") from exc
 
 
 def _validate_sources(

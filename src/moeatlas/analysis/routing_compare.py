@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from ..store import STORE_SCHEMA_VERSION
 from .routing_load import RoutingLoadMatrix
 
 ROUTING_COMPARE_SCHEMA_VERSION = "1.0"
+
+_ROUTING_COMPARE_ARTIFACT_TYPE = "moeatlas.routing_load_comparison"
 
 _TOLERANCE = 1e-12
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -240,6 +243,105 @@ class RoutingLoadComparison:
                 raise ValueError("share_deltas must sum to zero per layer")
             if abs(sum(ratio_row) / expert_count) > _TOLERANCE:
                 raise ValueError("ratio_deltas must have mean zero per layer")
+
+    def to_dict(self) -> dict[str, object]:
+        """Return JSON-compatible data without runtime objects."""
+
+        return {
+            "artifact_type": _ROUTING_COMPARE_ARTIFACT_TYPE,
+            "schema_version": self.schema_version,
+            "store_schema_version": self.store_schema_version,
+            "event_schema_version": self.event_schema_version,
+            "baseline_run_key": self.baseline_run_key,
+            "comparison_run_key": self.comparison_run_key,
+            "model_key": self.model_key,
+            "adapter_name": self.adapter_name,
+            "adapter_version": self.adapter_version,
+            "inspection_digest": self.inspection_digest,
+            "layout": self.layout,
+            "token_count": self.token_count,
+            "routed_top_k": self.routed_top_k,
+            "baseline_shard_keys": list(self.baseline_shard_keys),
+            "comparison_shard_keys": list(self.comparison_shard_keys),
+            "baseline_assignment_count": self.baseline_assignment_count,
+            "comparison_assignment_count": self.comparison_assignment_count,
+            "layer_keys": list(self.layer_keys),
+            "layer_indices": list(self.layer_indices),
+            "expert_keys": [list(row) for row in self.expert_keys],
+            "count_deltas": [list(row) for row in self.count_deltas],
+            "share_deltas": [list(row) for row in self.share_deltas],
+            "ratio_deltas": [list(row) for row in self.ratio_deltas],
+        }
+
+    def to_json(self) -> str:
+        """Serialize this comparison with deterministic key order."""
+
+        return json.dumps(
+            self.to_dict(),
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @classmethod
+    def from_json(cls, payload: str | bytes | bytearray) -> RoutingLoadComparison:
+        """Validate one canonical JSON document into an exact comparison value."""
+
+        from .routing_load import (
+            _strict_count_rows,
+            _strict_float_rows,
+            _strict_index_tuple,
+            _strict_row_tuple,
+            _strict_string_tuple,
+        )
+
+        try:
+            document = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("routing load comparison document is not valid JSON") from exc
+        if type(document) is not dict:
+            raise ValueError("routing load comparison document must be a JSON object")
+        if (
+            document.get("artifact_type") != _ROUTING_COMPARE_ARTIFACT_TYPE
+            or document.get("schema_version") != ROUTING_COMPARE_SCHEMA_VERSION
+        ):
+            raise ValueError("document is not a routing load comparison artifact")
+        try:
+            return cls(
+                schema_version=document["schema_version"],
+                store_schema_version=document["store_schema_version"],
+                event_schema_version=document["event_schema_version"],
+                baseline_run_key=document["baseline_run_key"],
+                comparison_run_key=document["comparison_run_key"],
+                model_key=document["model_key"],
+                adapter_name=document["adapter_name"],
+                adapter_version=document["adapter_version"],
+                inspection_digest=document["inspection_digest"],
+                layout=document["layout"],
+                token_count=document["token_count"],
+                routed_top_k=document["routed_top_k"],
+                baseline_shard_keys=_strict_string_tuple(
+                    document["baseline_shard_keys"], "baseline_shard_keys"
+                ),
+                comparison_shard_keys=_strict_string_tuple(
+                    document["comparison_shard_keys"], "comparison_shard_keys"
+                ),
+                baseline_assignment_count=document["baseline_assignment_count"],
+                comparison_assignment_count=document["comparison_assignment_count"],
+                layer_keys=_strict_string_tuple(document["layer_keys"], "layer_keys"),
+                layer_indices=_strict_index_tuple(document["layer_indices"], "layer_indices"),
+                expert_keys=_strict_row_tuple(document["expert_keys"], "expert_keys"),
+                count_deltas=_strict_count_rows(document["count_deltas"], "count_deltas"),
+                share_deltas=_strict_float_rows(document["share_deltas"], "share_deltas"),
+                ratio_deltas=_strict_float_rows(document["ratio_deltas"], "ratio_deltas"),
+            )
+        except KeyError as exc:
+            raise ValueError("routing load comparison document is missing fields") from exc
+        except (TypeError, ValueError):
+            raise
+        except Exception as exc:
+            raise ValueError("routing load comparison document is not usable") from exc
 
 
 def compare_routing_load(

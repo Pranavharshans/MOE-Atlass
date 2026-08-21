@@ -210,6 +210,13 @@ Router margin and route churn stay out because aggregate load shards do not
 carry score distributions or token sequences. It creates no I/O, ranking,
 comparison, or specialization claim; MV-01 through MV-08 remain deferred.
 
+Feature 33 adds only canonical JSON serialization to the three analysis
+values. Sorted compact documents with explicit artifact-type markers round-trip
+through strict staged validation into exactly equal values; unknown keys are
+ignored and every failure is a safe fixed message. It creates no I/O or new
+contract surface beyond the documents themselves; MV-01 through MV-08 remain
+deferred.
+
 The EXPERIMENTAL prompt-prefill seam accepts plain text, borrows the caller's
 validated model/tokenizer, and composes exactly one bounded Feature 18 forward;
 it is not a generation, storage, or CLI subsystem. Feature 24 intentionally

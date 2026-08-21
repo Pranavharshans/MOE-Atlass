@@ -128,6 +128,10 @@ deliberately deferred.
   Gini, population CV, top-expert shares, and dead-expert counts/fractions as
   a frozen range-checked value; no margin/churn/specialization claim. See
   [analysis](docs/analysis.md).
+- `EXPERIMENTAL` Feature 33 canonical JSON export/import for matrices,
+  comparisons, and summaries: byte-deterministic sorted documents with
+  artifact-type markers, strict staged import validation, and exact round-trip
+  equality. See [analysis](docs/analysis.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

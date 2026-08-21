@@ -186,6 +186,16 @@ range checks and the dead-fraction identity, scalar/tuple-only retention, AST
 forbidden-import guards, and package export reachability. The summary performs
 no I/O and does not change MV-01 through MV-08 or ST-01 through ST-04.
 
+Feature 33 adds canonical JSON export/import for the three analysis values.
+Tests cover round-trip equality and byte determinism for all artifacts,
+primitive-only dictionaries, canonical compact sorted form, artifact-type
+markers, all six cross-type mispairings, malformed payloads, wrong schema
+versions, missing fields, tolerated unknown extras, array type violations
+(bool/int/float confusion), non-finite import rejection, str/bytes/bytearray
+input acceptance, and AST purity guards on all three modules. Serialization
+performs no I/O and does not change MV-01 through MV-08 or ST-01 through
+ST-04.
+
 ## Deferred checks
 
 ### Required v1 family compatibility matrix

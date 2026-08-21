@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from ..store import STORE_SCHEMA_VERSION
 from .routing_load import RoutingLoadMatrix
 
 ROUTING_SUMMARY_SCHEMA_VERSION = "1.0"
+
+_ROUTING_SUMMARY_ARTIFACT_TYPE = "moeatlas.routing_load_summary"
 
 _TOLERANCE = 1e-12
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -243,6 +246,124 @@ class RoutingLoadSummary:
             raise TypeError("dead_expert_fraction must be a finite float")
         if abs(self.dead_expert_fraction - self.dead_expert_count / cells) > _TOLERANCE:
             raise ValueError("dead_expert_fraction does not match dead_expert_count")
+
+    def to_dict(self) -> dict[str, object]:
+        """Return JSON-compatible data without runtime objects."""
+
+        return {
+            "artifact_type": _ROUTING_SUMMARY_ARTIFACT_TYPE,
+            "schema_version": self.schema_version,
+            "store_schema_version": self.store_schema_version,
+            "event_schema_version": self.event_schema_version,
+            "run_key": self.run_key,
+            "model_key": self.model_key,
+            "adapter_name": self.adapter_name,
+            "adapter_version": self.adapter_version,
+            "inspection_digest": self.inspection_digest,
+            "layout": self.layout,
+            "token_count": self.token_count,
+            "routed_top_k": self.routed_top_k,
+            "assignment_count": self.assignment_count,
+            "shard_keys": list(self.shard_keys),
+            "layer_keys": list(self.layer_keys),
+            "layer_indices": list(self.layer_indices),
+            "expert_keys": [list(row) for row in self.expert_keys],
+            "layer_entropies": list(self.layer_entropies),
+            "normalized_layer_entropies": list(self.normalized_layer_entropies),
+            "effective_expert_counts": list(self.effective_expert_counts),
+            "normalized_diversities": list(self.normalized_diversities),
+            "layer_gini_coefficients": list(self.layer_gini_coefficients),
+            "layer_cv_counts": list(self.layer_cv_counts),
+            "top_expert_shares": list(self.top_expert_shares),
+            "dead_expert_count": self.dead_expert_count,
+            "dead_expert_fraction": self.dead_expert_fraction,
+        }
+
+    def to_json(self) -> str:
+        """Serialize this summary with deterministic key order."""
+
+        return json.dumps(
+            self.to_dict(),
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @classmethod
+    def from_json(cls, payload: str | bytes | bytearray) -> RoutingLoadSummary:
+        """Validate one canonical JSON document into an exact summary value."""
+
+        from .routing_load import (
+            _strict_float_rows,
+            _strict_index_tuple,
+            _strict_row_tuple,
+            _strict_string_tuple,
+        )
+
+        def strict_float_tuple(value: object, field_name: str) -> tuple[float, ...]:
+            rows = _strict_float_rows([value], field_name)
+            return rows[0]
+
+        try:
+            document = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("routing load summary document is not valid JSON") from exc
+        if type(document) is not dict:
+            raise ValueError("routing load summary document must be a JSON object")
+        if (
+            document.get("artifact_type") != _ROUTING_SUMMARY_ARTIFACT_TYPE
+            or document.get("schema_version") != ROUTING_SUMMARY_SCHEMA_VERSION
+        ):
+            raise ValueError("document is not a routing load summary artifact")
+        try:
+            return cls(
+                schema_version=document["schema_version"],
+                store_schema_version=document["store_schema_version"],
+                event_schema_version=document["event_schema_version"],
+                run_key=document["run_key"],
+                model_key=document["model_key"],
+                adapter_name=document["adapter_name"],
+                adapter_version=document["adapter_version"],
+                inspection_digest=document["inspection_digest"],
+                layout=document["layout"],
+                token_count=document["token_count"],
+                routed_top_k=document["routed_top_k"],
+                assignment_count=document["assignment_count"],
+                shard_keys=_strict_string_tuple(document["shard_keys"], "shard_keys"),
+                layer_keys=_strict_string_tuple(document["layer_keys"], "layer_keys"),
+                layer_indices=_strict_index_tuple(document["layer_indices"], "layer_indices"),
+                expert_keys=_strict_row_tuple(document["expert_keys"], "expert_keys"),
+                layer_entropies=strict_float_tuple(
+                    document["layer_entropies"], "layer_entropies"
+                ),
+                normalized_layer_entropies=strict_float_tuple(
+                    document["normalized_layer_entropies"], "normalized_layer_entropies"
+                ),
+                effective_expert_counts=strict_float_tuple(
+                    document["effective_expert_counts"], "effective_expert_counts"
+                ),
+                normalized_diversities=strict_float_tuple(
+                    document["normalized_diversities"], "normalized_diversities"
+                ),
+                layer_gini_coefficients=strict_float_tuple(
+                    document["layer_gini_coefficients"], "layer_gini_coefficients"
+                ),
+                layer_cv_counts=strict_float_tuple(
+                    document["layer_cv_counts"], "layer_cv_counts"
+                ),
+                top_expert_shares=strict_float_tuple(
+                    document["top_expert_shares"], "top_expert_shares"
+                ),
+                dead_expert_count=document["dead_expert_count"],
+                dead_expert_fraction=document["dead_expert_fraction"],
+            )
+        except KeyError as exc:
+            raise ValueError("routing load summary document is missing fields") from exc
+        except (TypeError, ValueError):
+            raise
+        except Exception as exc:
+            raise ValueError("routing load summary document is not usable") from exc
 
 
 def summarize_routing_load(

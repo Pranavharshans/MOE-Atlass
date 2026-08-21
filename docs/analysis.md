@@ -121,3 +121,24 @@ performs no I/O, writes nothing, ranks nothing across runs, and never claims
 specialization or causal effect; a low Gini or high entropy is load balance
 evidence only. MV-01 through MV-08 remain deferred; no model files are
 downloaded by this feature.
+
+## Canonical artifact serialization
+
+Feature 33 adds `to_dict()`, `to_json()`, and `from_json()` to
+`RoutingLoadMatrix`, `RoutingLoadComparison`, and `RoutingLoadSummary`.
+Documents are canonical: sorted keys, compact separators, `allow_nan=False`,
+and an explicit `artifact_type` marker (`moeatlas.routing_load_matrix`,
+`moeatlas.routing_load_comparison`, `moeatlas.routing_load_summary`) plus the
+artifact schema version. Repeated exports of one value are byte-identical, and
+`from_json(to_json())` returns an exactly equal value.
+
+Import is staged and strict: JSON parse failures, non-object documents, wrong
+artifact types or schema versions, missing fields, wrong JSON value types
+inside arrays (bools where integers are required, integers where floats are
+required), and every value-contract violation surface as safe fixed
+`TypeError`/`ValueError` messages without echoing input content. Unknown
+top-level keys are ignored so future additive revisions remain readable.
+Serialization is pure: it writes no files and touches no storage; callers own
+publication through the existing atomic writer or their own paths. This is an
+`EXPERIMENTAL` portable-evidence primitive; MV-01 through MV-08 remain
+deferred.
