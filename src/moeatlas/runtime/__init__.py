@@ -8,6 +8,15 @@ discovery after which cleanup succeeds; it does not add inference or CLI
 loading.
 """
 
+from .capabilities import (
+    ROUTING_DECODE_CAPABILITY_SCHEMA_VERSION,
+    RouterPayloadShape,
+    RoutingDecodeCapability,
+    RoutingDecodeError,
+    ScoreSemantics,
+    native_id_map,
+    validate_decoded_routing,
+)
 from .contracts import (
     CleanupCallback,
     CleanupError,
@@ -41,6 +50,13 @@ from .scan import load_and_scan
 __all__ = [
     "CleanupCallback",
     "CleanupError",
+    "ROUTING_DECODE_CAPABILITY_SCHEMA_VERSION",
+    "RouterPayloadShape",
+    "RoutingDecodeCapability",
+    "RoutingDecodeError",
+    "ScoreSemantics",
+    "native_id_map",
+    "validate_decoded_routing",
     "CustomLoaderExecutionError",
     "LoadResult",
     "LoadedModel",

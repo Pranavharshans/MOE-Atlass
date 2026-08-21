@@ -358,3 +358,28 @@ result alias; storage consumes the same event schema without migration. Feature
 aggregate, and visualization boundaries. Feature 28 accepts Qwen3.5 and
 future-family inspections through the complete structural routing-universe
 contract; checkpoint/GPU certification remains deferred to the final VM.
+
+## Routing decode capabilities (model-free)
+
+`moeatlas.runtime.capabilities` is the model-neutral seam between the shared
+runtime and family-specific router-output decoding. An adapter declares a
+`RouterPayloadShape` (`tuple_logits`, `tuple_scores_indices`,
+`dict_arrays`, `assignment_indices`) and `ScoreSemantics`
+(`logits`, `probabilities`, `none`) and implements
+`RoutingDecodeCapability.decode(payload, *, universe, token_key)` producing
+canonical `RoutingEvent` rows. The historical Mixtral and Qwen3.5 shapes are
+ordinary vocabulary values; unknown families declare their own without a
+central branch.
+
+`validate_decoded_routing()` enforces the shared postconditions on any
+decoded rows: exact token identity, layers inside the published
+`RoutingUniverse`, complete per-layer rank schedules `0..top_k-1` honoring
+variable top-k, unique experts drawn from that layer's universe, and score
+columns agreeing with the declared semantics. Assignment-only decode makes
+no logit or probability claims and pins `weight` to exactly `1.0` as the
+"selected, unweighted" marker required by the event contract.
+`native_id_map()` resolves sparse or unordered native expert identifiers
+through the universe's parallel `expert_indices`. Failures use fixed-stage
+`RoutingDecodeError` values (`dependency`, `decode`, `postcondition`). The
+module imports no model stack and downloads nothing; real-payload
+equivalence for unknown families remains deferred to the final VM phase.

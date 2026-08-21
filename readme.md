@@ -166,6 +166,14 @@ deliberately deferred.
   universe that must match the publication and pass the projection before any
   shard work. Non-rectangular and unknown-family shapes are first-class.
   See [adapters](docs/adapters.md) and [analysis](docs/analysis.md).
+- `EXPERIMENTAL` model-neutral routing decode capabilities: adapters declare
+  a payload shape and score semantics and decode native router payloads into
+  canonical events, while `validate_decoded_routing()` enforces shared
+  postconditions (complete variable top-k rank schedules, universe-bound
+  experts, semantics-agreeing score columns) with no central family branch.
+  Fake unknown-family runtimes cover dict arrays, assignment-only 3-D
+  payloads, sparse native IDs, and variable top-k.
+  See [runtime](docs/runtime.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

@@ -48,7 +48,9 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "runtime" / "prompt_prefill.py",
             ROOT / "tests" / "test_runtime_prompt_prefill.py",
             ROOT / "src" / "moeatlas" / "adapters" / "universe.py",
+            ROOT / "src" / "moeatlas" / "runtime" / "capabilities.py",
             ROOT / "tests" / "test_adapters_universe.py",
+            ROOT / "tests" / "test_runtime_capabilities.py",
             ROOT / "src" / "moeatlas" / "adapters" / "qwen3_5_moe.py",
             ROOT / "tests" / "fixtures" / "qwen3_5_moe.py",
             ROOT / "tests" / "test_qwen3_5_moe_adapter.py",
@@ -156,6 +158,19 @@ class ProjectFilesTests(unittest.TestCase):
             "checked, named gate",
         ):
             self.assertIn(term, analysis_docs)
+        runtime_docs = (ROOT / "docs" / "runtime.md").read_text()
+        for term in (
+            "RoutingDecodeCapability",
+            "RouterPayloadShape",
+            "ScoreSemantics",
+            "validate_decoded_routing",
+            "native_id_map",
+            "RoutingDecodeError",
+            "assignment_indices",
+            "final VM",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, runtime_docs)
         universe_source = (
             ROOT / "src" / "moeatlas" / "adapters" / "universe.py"
         ).read_text()
