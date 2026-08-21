@@ -153,6 +153,17 @@ formulas, sorted shard keys), scalar/tuple-only retention, AST forbidden-import
 guards, and package export reachability. The comparison performs no I/O and
 does not change MV-01 through MV-08 or ST-01 through ST-04.
 
+Feature 30 adds the model-free static HTML comparison renderer over an
+accepted Feature 29 value. Tests cover complete documents for all three
+metrics, exact signed bin math (`cold-8..delta-zero..heat-8`), byte-identical
+determinism, full provenance including both shard `<details>` universes,
+strict validation order (metric, budget, exact type, fresh reconstruction,
+cells), tamper rejection at render time, HTMLParser structural checks with an
+allowed class set, quote-aware escaping of hostile run keys, legend coverage
+of the full signed scale, AST forbidden-import guards, and package export
+reachability. The renderer performs no I/O and does not change MV-01 through
+MV-08 or ST-01 through ST-04.
+
 ## Deferred checks
 
 ### Required v1 family compatibility matrix

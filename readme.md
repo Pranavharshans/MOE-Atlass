@@ -112,6 +112,11 @@ deliberately deferred.
   returns only value-owned count/share/ratio delta matrices whose rows sum to
   zero; it performs no I/O, rendering, ranking, or specialization claim. See
   [analysis](docs/analysis.md).
+- `EXPERIMENTAL` dependency-free `render_routing_load_comparison()` output over
+  one accepted comparison, with exact metric/cell validation, signed
+  deterministic cold/zero/heat bins, both runs' shard provenance, complete
+  accessible tables, and no JavaScript, external resource, storage, or model
+  boundary. See [visualization](docs/visualization.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

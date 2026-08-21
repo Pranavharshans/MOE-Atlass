@@ -1,5 +1,9 @@
 """Bounded, read-only routing-load analysis over immutable routing shards."""
 
+from .compare_heatmap import (
+    ROUTING_COMPARE_HEATMAP_SCHEMA_VERSION,
+    render_routing_load_comparison,
+)
 from .routing_compare import (
     ROUTING_COMPARE_SCHEMA_VERSION,
     RoutingLoadComparison,
@@ -20,6 +24,8 @@ from .routing_load import (
 )
 
 __all__ = [
+    "ROUTING_COMPARE_HEATMAP_SCHEMA_VERSION",
+    "render_routing_load_comparison",
     "ROUTING_COMPARE_SCHEMA_VERSION",
     "RoutingLoadComparison",
     "compare_routing_load",

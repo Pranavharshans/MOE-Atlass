@@ -61,6 +61,40 @@ model-validation claim. Tokenization, generation, checkpoint execution, and
 MV-01 through MV-08 remain deferred. Feature 21 does not alter stored shard
 bytes or the Feature 20 matrix contract.
 
+## Comparison visualization
+
+Feature 30 adds the dependency-free, deterministic presentation boundary for
+Feature 29 values: `render_routing_load_comparison(comparison, *, metric,
+max_cells)`. It accepts only a freshly reconstructed `RoutingLoadComparison`
+and renders one complete standalone HTML5 document. The exact metrics are
+`count_deltas`, `share_deltas`, and `ratio_deltas`; the cell budget is strict
+and applies before rendering.
+
+The document preserves both run keys, both sorted shard-key tuples inside
+separate native `<details>` provenance sections, the shared model/adapter/
+inspection/layout identity, token and top-k counts, and both assignment
+counts. Visible values are signed: integer count deltas (`+1`, `-1`, `+0`),
+six-decimal percent share deltas, or six-decimal `×` ratio deltas.
+
+Delta classes are global, signed, and deterministic: zero cells use
+`delta-zero`; positive deltas use heat bins and negative deltas use cold bins,
+each via `1 + min(7, int((|v| / m) * 8))` where `m` is the maximum absolute
+cell in this artifact. The legend renders the full `cold-8..delta-zero..heat-8`
+scale and explains that warm colors mark experts the comparison run routes
+away from while cool-to-green colors mark experts it routes toward. The
+visible warning is `Routing-load deltas only. Differences in selection
+frequency are association evidence, not expert specialization or causal
+effect.`
+
+The renderer remains pure: it returns the string and does not save or open
+anything. The output has the same strict CSP, no-JavaScript, no-external-
+resource posture as the single-run heatmap, with quote-aware escaping on every
+interpolated key. It is an `EXPERIMENTAL` static artifact over an accepted
+Feature 29 value; a delta is association evidence only and is never a
+specialization, improvement, or causal claim. MV-01 through MV-08 remain
+deferred; Feature 30 does not alter stored shard bytes, the Feature 28 matrix
+contract, or Mixtral heatmap bytes.
+
 Feature 22 provides the bounded CLI composition for callers who already have
 an inspection JSON document and Feature 19 workspace:
 

@@ -184,6 +184,14 @@ count/share/ratio delta matrices whose rows provably sum to zero. It creates
 no I/O, rendering, ranking, catalog, or specialization claim; deltas are
 association evidence only.
 
+Feature 30 adds only the dependency-free static HTML presentation of one
+accepted Feature 29 comparison. `render_routing_load_comparison` preserves
+both runs' provenance and shard universes, renders signed deterministic
+`cold-8..delta-zero..heat-8` bins relative to the maximum absolute cell, and
+keeps the strict CSP/no-JavaScript/no-external-resource posture. It creates no
+UI, server, storage, model, ranking, or specialization claim; Mixtral heatmap
+bytes remain unchanged.
+
 The EXPERIMENTAL prompt-prefill seam accepts plain text, borrows the caller's
 validated model/tokenizer, and composes exactly one bounded Feature 18 forward;
 it is not a generation, storage, or CLI subsystem. Feature 24 intentionally
