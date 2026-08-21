@@ -363,3 +363,13 @@ propagation, and end-to-end composition with the execution core are covered
 by synthetic local tests. No tokenizer or model participates; real
 chat-template/tokenization equivalence remains deferred MV evidence, so
 MV-01 through MV-08 and ST-01 through ST-04 keep their deferred status.
+
+Headless run-engine service surface: Status: implemented at the model-free
+boundary. `execute_specification` lifecycle projection, per-batch
+`update_progress` records, cooperative cancellation, atomic canonical JSON
+checkpoints with validated `load_checkpoint`/`resume_from` continuation, and
+`publish_run_report` catalog publication are covered by synthetic fake-runtime
+tests over temporary fixtures. No tokenizer or model participates; real
+generation equivalence, checkpoint behavior under GPU execution, and
+filesystem durability at scale remain deferred evidence, so MV-01 through
+MV-08 and ST-01 through ST-04 keep their deferred status.

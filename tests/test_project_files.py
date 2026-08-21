@@ -41,6 +41,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "services" / "datasets.py",
             ROOT / "src" / "moeatlas" / "services" / "run_engine.py",
             ROOT / "src" / "moeatlas" / "services" / "run_inputs.py",
+            ROOT / "src" / "moeatlas" / "services" / "run_service.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
@@ -50,6 +51,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_services_datasets.py",
             ROOT / "tests" / "test_services_run_engine.py",
             ROOT / "tests" / "test_services_run_inputs.py",
+            ROOT / "tests" / "test_services_run_service.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1175,6 +1177,66 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
         self.assertTrue((ROOT / "tests" / "test_services_run_inputs.py").is_file())
+
+    def test_run_service_docs_and_surface_are_present(self) -> None:
+        runs_doc = (ROOT / "docs" / "runs.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                runs_doc,
+                (
+                    "Headless run service",
+                    "execute_specification",
+                    "RunExecutionReport",
+                    "run_checkpoint",
+                    "load_checkpoint",
+                    "resume_from",
+                    "publish_run_report",
+                    "never reads a clock",
+                ),
+            ),
+            (architecture, ("moeatlas.services.run_service",)),
+            (roadmap, ("execute_specification",)),
+            (ledger, ("Headless run-engine service surface",)),
+            (readme, ("execute_specification",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "services" / "run_service.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "services" / "__init__.py").read_text()
+        for term in (
+            "RUN_SERVICE_SCHEMA_VERSION",
+            "CHECKPOINT_SCHEMA_VERSION",
+            "RunServiceError",
+            "RunCheckpoint",
+            "build_initial_record",
+            "derive_run_failure",
+            "execute_specification",
+            "load_checkpoint",
+            "publish_run_report",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The service stays deterministic, family-blind, and network-free.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "urllib",
+            "requests",
+            "httpx",
+            "socket",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_services_run_service.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

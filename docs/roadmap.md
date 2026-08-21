@@ -44,7 +44,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | 3 | Application services and workspace/catalog | `model-free complete` | Shared CLI/server services, storage ports, migrations, bounded queries, reopen/repair, and v1 shard compatibility | PRD §10; ST-01–ST-04 remain separate |
 | 4 | Universal execution capabilities | `in progress` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
 | 5 | Raw evidence and open storage/export | `model-free complete` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
-| 6 | Prompt and dataset run engine | `in progress` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
+| 6 | Prompt and dataset run engine | `model-free complete` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
 | 7 | Task association and Evidence Cards | `planned` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests |
 | 8 | Plugins and complete headless CLI/API | `planned` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
 | 9 | FastAPI server and React UI | `planned` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14 |
@@ -162,9 +162,30 @@ third landed slice is input preparation: `prepare_input_rows` /
 dataset descriptors into the exact row-value mappings and deterministic
 schedules the core consumes — one bounded prompt row or reader-composed
 role-projected dataset rows with descriptor-driven schedules — so execution
-never branches on input kind. Remaining for this sequence:
-checkpoint/resume/reopen around the core, incremental event publication,
-and the shared run-engine service surface.
+never branches on input kind. Its fourth landed slice closes the sequence as
+the headless run service (see [runs](runs.md)):
+`execute_specification` in `moeatlas.services.run_service` composes
+preparation, planning, batch-by-batch execution, and lifecycle projection
+into one deterministic surface with caller-supplied timestamps, per-batch
+`update_progress` records streamed to an `on_record` observer, terminal
+transitions chosen only by the outcome's status, atomic canonical JSON
+checkpoints after every completed batch, validated `load_checkpoint` /
+`resume_from` continuation that never re-executes durable batches, and
+explicit `publish_run_report` catalog publication. Real token/routing event
+publication arrives with real executors in later sequences; every behavior
+this sequence promises is exercised over fake runtimes.
+
+Sequence 6 (prompt and dataset run engine) is complete only when:
+
+1. Prompt/chat and dataset inputs prepare deterministically under budgets
+   without branching on input kind.
+2. Execution is incremental and deterministic over fake runtimes, with
+   progress, cooperative cancellation, and per-row failure evidence.
+3. Checkpoints are atomic and resume skips durable batches; reopen of a
+   checkpoint is fully validated.
+4. The composed headless surface projects runs onto lifecycle records with
+   caller-supplied timestamps and explicit catalog publication.
+5. The full local gate is green and the feature commit is pushed.
 
 ## Validation lanes
 

@@ -130,6 +130,13 @@ deliberately deferred.
   exact row-value mappings and deterministic schedules the execution core
   consumes — one bounded prompt row or role-projected dataset rows under
   descriptor-driven schedules; see [runs](docs/runs.md).
+- `EXPERIMENTAL` headless run service: `execute_specification()` composes
+  preparation, planning, batch-by-batch execution, and lifecycle projection
+  with caller-supplied timestamps, per-batch progress records streamed to an
+  `on_record` observer, atomic canonical JSON checkpoints after every
+  completed batch, validated `load_checkpoint()`/`resume_from` continuation,
+  and explicit `publish_run_report()` catalog publication; fake-runtime tests
+  only; see [runs](docs/runs.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

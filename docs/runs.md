@@ -157,8 +157,45 @@ terminal lifecycle state: `cancelled` wins, then `failed` when no row
 succeeded, else `completed`. Schedules are validated exactly (non-empty
 batches, non-negative integer indices, no duplicate rows) and every input
 violation raises `RunEngineError` at stage `contract`. The core performs no
-clock reads, no randomness, no network access, and no publication;
-persistence stays a separate slice.
+clock reads, no randomness, no network access, and no publication; the
+headless service below is the composition and publication layer.
+
+## Headless run service
+
+`moeatlas.services.run_service` composes the whole model-neutral pipeline:
+`execute_specification(specification, *, executor, ...)` prepares rows with
+`prepare_input_rows`, plans the schedule with `plan_input_batches`, executes
+batch by batch through the core (via its additive `batch_offset`, so evidence
+keeps plan-level batch indices), and projects the outcome onto deterministic
+lifecycle records with `apply()` — planned → start → begin_execution → one
+`update_progress` per batch → a terminal transition chosen only by
+`ExecutionOutcome.status`: cancelled runs request cancellation then cancel,
+failed runs (no successful row) fail with `derive_run_failure`, everything
+else finalizes and completes. A run that finishes with mixed results and
+failures still completes; the per-row evidence stays in the outcome.
+Timestamps come solely from the caller's `at` string, so the service
+never reads a clock, and every produced record is emitted in order to an
+optional `on_record` callback, which is the hook CLI and server surfaces
+subscribe to.
+
+Checkpoints make durability batch-granular. With `checkpoint_directory` set,
+each completed batch atomically rewrites `<digest>.checkpoint.json` — a
+canonical JSON document (`manifest_type: run_checkpoint`) carrying the run
+key, `next_batch_index`, total batches, and all results and failures so far —
+written through staging plus rename so crashes never leave partial files.
+`load_checkpoint(path)` fully validates a document into a frozen
+`RunCheckpoint`; `resume_from=path` continues an interrupted run of the same
+run key without re-executing durable batches (work inside an incomplete batch
+is re-executed, because durability is batch-granular). Foreign or drifted
+checkpoints, malformed documents, and unwritable destinations raise
+`RunServiceError` at stages `checkpoint` or `lifecycle`. The merged report is
+a frozen `RunExecutionReport` carrying the combined outcome, the full record
+trail (`final_record` is terminal), the checkpoint path, and the resume
+cursor. Publication stays explicit: `publish_run_report(workspace, report)`
+records the terminal state into the workspace catalog, auto-registering
+unknown run keys. Like the layers beneath it, the service never branches on
+input kind or model family, and package tests exercise it exclusively over
+fake executors and temporary fixtures.
 
 ## Boundaries and deferred evidence
 
