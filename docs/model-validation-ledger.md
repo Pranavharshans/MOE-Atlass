@@ -453,3 +453,14 @@ third-party distribution participates; registry behavior against real
 published plugin distributions remains deferred release-engineering
 evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their
 deferred status.
+
+Headless CLI run/export flows: Status: implemented at the model-free
+boundary. Parser contracts, exactly-one input enforcement, executor-plugin
+resolution with fixed rejection messages, loading-plan provenance
+projection, checkpoint publication, workspace-catalog recording, canonical
+budget parsing, bundle export with manifest digest reporting, and fixed
+safe errors are covered by synthetic contract tests over fake executors and
+local fixtures. No model, tokenizer, network, or GPU participates; real
+model execution through a registered adapter plugin remains deferred VM/GPU
+evidence (MV-01 through MV-08), and ST-01 through ST-04 keep their deferred
+status.

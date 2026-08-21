@@ -255,8 +255,16 @@ slice surfaces the registry as the `moeatlas adapters list` command (see
 [cli](cli.md)) with composable trust policy flags (`--builtin-only`,
 `--enable`, `--disable`), `--family` capability filtering, `--json`
 canonical output, and stderr reporting of collisions and isolated plugin
-failures. The remaining PRD CLI flows (run, export, compare over shared
-services) are later slices in this sequence.
+failures. Its third landed slice completes the headless PRD flows (see
+[cli](cli.md)): `moeatlas run WORKSPACE` projects a validated loading plan
+plus exactly one input form into a content-addressed `RunSpecification`
+executed through the shared run service with an explicitly registered
+`moeatlas.executors` plugin (mandatory, never built in), batch-granular
+checkpoints, resume, caller-supplied timestamps, canonical decimal budgets,
+and catalog publication; `moeatlas export WORKSPACE RUN_KEY` publishes the
+storage layer's canonical tamper-evident evidence bundle with fixed safe
+errors. The scan, compare, doctor, and adapters-list commands complete the
+PRD command set over shared services.
 
 Sequence 8 (plugins and complete headless CLI/API) is complete only when:
 

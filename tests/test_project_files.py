@@ -71,6 +71,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_analysis_expert_similarity.py",
             ROOT / "tests" / "test_adapters_registry.py",
             ROOT / "tests" / "test_cli_adapters.py",
+            ROOT / "tests" / "test_cli_run.py",
+            ROOT / "tests" / "test_cli_export.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1714,7 +1716,14 @@ class ProjectFilesTests(unittest.TestCase):
             (readme, ("collect_adapter_registry()",)),
             (
                 (ROOT / "docs" / "cli.md").read_text(),
-                ("moeatlas adapters list", "moeatlas.adapter_registry"),
+                (
+                    "moeatlas adapters list",
+                    "moeatlas.adapter_registry",
+                    "moeatlas run WORKSPACE",
+                    "--executor NAME",
+                    "moeatlas export WORKSPACE RUN_KEY",
+                    "manifest sha256",
+                ),
             ),
         ):
             for term in terms:
@@ -1758,6 +1767,8 @@ class ProjectFilesTests(unittest.TestCase):
                 self.assertIn(term, cli_source)
         self.assertTrue((ROOT / "tests" / "test_adapters_registry.py").is_file())
         self.assertTrue((ROOT / "tests" / "test_cli_adapters.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_cli_run.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_cli_export.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

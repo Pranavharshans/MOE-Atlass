@@ -187,3 +187,50 @@ message `moeatlas adapters list: invalid adapter policy or family filter`.
 Suppressed collisions and isolated plugin failures print fixed lines on
 stderr while the listing itself still succeeds. `--json` emits the exact
 canonical `moeatlas.adapter_registry` document instead of text.
+
+## Headless run execution
+
+`moeatlas run WORKSPACE` builds one content-addressed `RunSpecification`
+from a validated loading plan plus exactly one input form and executes it
+through the shared run service (see [runs](runs.md)). The loading plan is
+the same strict document accepted by the scan command and must carry
+immutable model and tokenizer resolution evidence; the model provenance of
+the specification is projected from that resolution, never inferred.
+
+The input form is exactly one of `--prompt TEXT` or `--dataset
+DESCRIPTOR.json`; passing both or neither exits 2 with the fixed message
+`moeatlas run: exactly one of --prompt or --dataset is required`. Dataset
+descriptors are validated `DatasetInputSpec` documents whose locations
+resolve relative to the workspace directory. The executor is mandatory and
+never built in: `--executor NAME` resolves a callable plugin from the
+`moeatlas.executors` entry-point group, so real model execution belongs to
+explicitly installed adapter plugins and no command downloads a model
+implicitly. Unregistered executors, unloadable plugins, and non-callable
+objects exit 2 with fixed messages.
+
+Optional flags: `--at TIMESTAMP` supplies every lifecycle timestamp
+(the CLI never reads a clock), `--created-by LABEL`,
+`--checkpoint-directory DIR` for batch-granular crash-safe checkpoints,
+`--resume-from CHECKPOINT.json`, and canonical positive decimal budgets
+(`--max-input-bytes`, `--max-rows`, `--max-row-bytes`,
+`--max-result-bytes`). Success publishes the terminal lifecycle record to
+the workspace catalog and prints the run key, final state, unit counts,
+resumed batch, and checkpoint path when one exists. Failures collapse to
+fixed safe errors: known service stages print
+`run service failed at {checkpoint|lifecycle}` while anything else prints
+the generic `moeatlas run: run execution failed`.
+
+## Run evidence export
+
+`moeatlas export WORKSPACE RUN_KEY --output DEST_DIR` exports every
+committed shard of one routing run as the canonical tamper-evident evidence
+bundle from the storage layer (see [storage](storage.md)): staged sibling
+temporary directory, fsynced members, manifest written last, atomic rename.
+The destination must be nonexistent or an empty real directory; two exports
+of the same committed run state are byte-identical. `--format bundle` is
+the only format today because it is the only canonical evidence shape the
+storage layer publishes. Optional canonical positive decimal budgets are
+`--max-event-rows` and `--max-file-bytes`. Success prints the exported
+counts and the manifest sha256; failures reuse the fixed-stage vocabulary
+(`run bundle failed at {stage}`) or collapse to the generic
+`moeatlas export: run export failed` without echoing input details.
