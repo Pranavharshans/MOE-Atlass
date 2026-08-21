@@ -22,6 +22,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "cli.md",
             ROOT / "docs" / "loading.md",
             ROOT / "docs" / "runs.md",
+            ROOT / "docs" / "workspace.md",
             ROOT / "docs" / "runtime.md",
             ROOT / "docs" / "adapters.md",
             ROOT / "docs" / "storage.md",
@@ -31,6 +32,13 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "analysis" / "routing_load.py",
             ROOT / "src" / "moeatlas" / "store" / "__init__.py",
             ROOT / "src" / "moeatlas" / "store" / "routing_shards.py",
+            ROOT / "src" / "moeatlas" / "store" / "catalog.py",
+            ROOT / "src" / "moeatlas" / "store" / "ports.py",
+            ROOT / "src" / "moeatlas" / "services" / "__init__.py",
+            ROOT / "src" / "moeatlas" / "services" / "workspace.py",
+            ROOT / "tests" / "test_store_catalog.py",
+            ROOT / "tests" / "test_store_ports.py",
+            ROOT / "tests" / "test_services_workspace.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -88,6 +96,38 @@ class ProjectFilesTests(unittest.TestCase):
         ):
             with self.subTest(term=term):
                 self.assertIn(term, runs_doc)
+
+    def test_workspace_services_docs_preserve_catalog_and_port_anchors(self) -> None:
+        workspace = (ROOT / "docs" / "workspace.md").read_text()
+        for term in (
+            "WorkspaceCatalog",
+            "RunRegistryEntry",
+            "initialize_catalog",
+            "rebuild_catalog",
+            "CatalogRebuildReceipt",
+            "RoutingRunReader",
+            "DuckDBRoutingShardStore",
+            ".moeatlas/catalog.json",
+            "schema_version",
+            "not initialized",
+            "atomic",
+            "ST-01",
+            "model-validation-ledger.md",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, workspace)
+        services_source = (
+            ROOT / "src" / "moeatlas" / "services" / "workspace.py"
+        ).read_text()
+        for term in (
+            "initialize_workspace",
+            "open_workspace",
+            "register_run",
+            "record_run_record",
+            "sync_runs_from_shards",
+            "query_runs",
+        ):
+            self.assertIn(term, services_source)
 
     def test_qwen35_acceptance_anchors_are_present(self) -> None:
         adapter_docs = (ROOT / "docs" / "adapters.md").read_text()

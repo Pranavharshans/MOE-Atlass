@@ -41,9 +41,9 @@ tracks dependency order and exit criteria without redefining those documents.
 | ---: | --- | --- | --- | --- |
 | 1 | Neutral event validation and storage APIs | `model-free complete` | Runtime-independent collection validation; canonical and historical storage functions are exact aliases; persisted behavior unchanged; all local gates pass | Events, runtime, storage docs and tests |
 | 2 | Run identity, provenance, and lifecycle | `model-free complete` | Versioned immutable run specs/state/progress/cancellation/lineage with deterministic transition and serialization tests | PRD §9.3 and schema tests |
-| 3 | Application services and workspace/catalog | `planned` | Shared CLI/server services, storage ports, migrations, bounded queries, reopen/repair, and v1 shard compatibility | PRD §10; ST-01–ST-04 remain separate |
+| 3 | Application services and workspace/catalog | `model-free complete` | Shared CLI/server services, storage ports, migrations, bounded queries, reopen/repair, and v1 shard compatibility | PRD §10; ST-01–ST-04 remain separate |
 | 4 | Universal execution capabilities | `planned` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
-| 5 | Raw evidence and open storage/export | `planned` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests | PRD §§10 and 16 |
+| 5 | Raw evidence and open storage/export | `planned` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
 | 6 | Prompt and dataset run engine | `planned` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
 | 7 | Task association and Evidence Cards | `planned` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests |
 | 8 | Plugins and complete headless CLI/API | `planned` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
@@ -54,28 +54,30 @@ tracks dependency order and exit criteria without redefining those documents.
 
 ## Current slice exit criteria
 
-Sequences 1–2 are `model-free complete`. Sequence 1 delivered the neutral
+Sequences 1–3 are `model-free complete`. Sequence 1 delivered the neutral
 event-validation seam and canonical storage APIs (`append_routing_shard`,
 `list_routing_shards`, `list_routing_runs` with exact historical aliases);
 Sequence 2 delivered the content-addressed run specifications and deterministic
-lifecycle contracts in `moeatlas.runs` (see [runs](runs.md)).
+lifecycle contracts in `moeatlas.runs` (see [runs](runs.md)); Sequence 3
+delivered the versioned workspace catalog, model-neutral storage ports, and
+the shared application-service layer (see [workspace](workspace.md)).
 
-Sequence 3 (application services and workspace/catalog) is complete only when:
+Sequence 4 (universal execution capabilities) is complete only when:
 
-1. An application-service layer shared by CLI and the future server exists;
-   orchestration is not duplicated in presentation layers.
-2. Model-neutral storage ports/readers/writers wrap the existing DuckDB/Parquet
-   implementation, and analysis consumes reader/query contracts rather than
-   concrete storage internals.
-3. The workspace/catalog provides schema versioning/migrations, a run registry,
-   bounded queries, repair/reopen behavior, and atomic publication.
-4. Existing v1 shards remain readable under compatibility tests.
-5. Writes stay incremental, bounded, resumable, content-addressed where
-   appropriate, and safe under cancellation/failure.
-6. Catalog/query/migration/repair/concurrency tests use synthetic runs only;
-   ST-01–ST-04 VM/filesystem/scale checks remain deferred ledger evidence.
-7. The full local gate is green and the feature commit is pushed before
-   Sequence 4 starts.
+1. Family-neutral capability contracts cover inspection, routing-universe
+   publication, input preparation, invocation, decoding, and observation
+   without central family branching.
+2. Unknown-family and non-rectangular synthetic fixtures pass alongside the
+   Mixtral/Qwen regression suites, which remain compatible.
+3. Per-layer expert universes/top-k schedules and explicit
+   missing/dropped/shared/fallback semantics are contract-tested; rectangular
+   analysis becomes an explicit projection.
+4. Loading/input preparation follows provider/task capabilities with no
+   implicit network access and optional lazy model dependencies preserved.
+5. Real checkpoint/native equivalence stays deferred MV evidence; capability
+   tests are not certification.
+6. The full local gate is green and the feature commit is pushed before
+   Sequence 5 starts.
 
 A public structural result protocol, neutral inventory-class rename, or stored
 schema migration each changes observable compatibility and requires its own

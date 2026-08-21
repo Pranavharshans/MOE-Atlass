@@ -25,7 +25,8 @@ Planned internal areas:
 | `runs` | content-addressed run specifications, provenance groups, and the deterministic lifecycle state machine | Run engine foundation |
 | `runtime` | validated instance/custom execution plus lazy HF/local loading | Useful alpha / causal beta |
 | `analysis` | bounded routing-load aggregation and later association/behavior/causal metrics | Research beta |
-| `store` | bounded content-addressed routing shards (Feature 19) | Experimental prerequisite |
+| `store` | bounded content-addressed routing shards (Feature 19), versioned workspace catalog, and model-neutral storage ports | Experimental prerequisite |
+| `services` | shared workspace/run-registry orchestration over catalog and storage ports for CLI, Python API, and server | Application services |
 | `server` | local FastAPI API and run progress | Useful alpha |
 | `adapters` | explicit static semantic protocol, Mixtral/Qwen3-MoE structure adapters, and STRUCTURE-only inspection | Useful alpha |
 | `cli` | headless commands and diagnostics | Foundation / all phases |

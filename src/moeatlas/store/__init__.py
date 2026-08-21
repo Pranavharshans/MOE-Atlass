@@ -1,5 +1,24 @@
-"""Bounded persistent routing-shard storage."""
+"""Bounded persistent routing-shard storage, workspace catalog, and ports."""
 
+from .catalog import (
+    CATALOG_MAX_RUNS,
+    WORKSPACE_CATALOG_SCHEMA_VERSION,
+    CatalogRebuildReceipt,
+    RunRegistryEntry,
+    WorkspaceCatalog,
+    WorkspaceCatalogError,
+    catalog_path,
+    initialize_catalog,
+    read_catalog,
+    rebuild_catalog,
+    upsert_run_entry,
+)
+from .ports import (
+    DuckDBRoutingShardStore,
+    RoutingRunReader,
+    RoutingShardAppender,
+    reader_from_workspace,
+)
 from .routing_shards import (
     ROUTING_RUN_INVENTORY_SCHEMA_VERSION,
     STORE_SCHEMA_VERSION,
@@ -17,16 +36,31 @@ from .routing_shards import (
 )
 
 __all__ = [
-    "ROUTING_RUN_INVENTORY_SCHEMA_VERSION",
-    "STORE_SCHEMA_VERSION",
+    "CATALOG_MAX_RUNS",
+    "WORKSPACE_CATALOG_SCHEMA_VERSION",
+    "CatalogRebuildReceipt",
+    "DuckDBRoutingShardStore",
     "MixtralRoutingRunInventory",
     "MixtralRoutingRunSummary",
+    "ROUTING_RUN_INVENTORY_SCHEMA_VERSION",
     "RoutingRunInventoryError",
+    "RoutingRunReader",
+    "RoutingShardAppender",
     "RoutingShardError",
     "RoutingShardReceipt",
+    "STORE_SCHEMA_VERSION",
+    "RunRegistryEntry",
+    "WorkspaceCatalog",
+    "WorkspaceCatalogError",
     "append_routing_shard",
+    "catalog_path",
+    "initialize_catalog",
     "list_routing_runs",
     "list_routing_shards",
+    "read_catalog",
+    "reader_from_workspace",
+    "rebuild_catalog",
+    "upsert_run_entry",
     "append_mixtral_routing_shard",
     "list_mixtral_routing_runs",
     "list_mixtral_routing_shards",

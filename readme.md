@@ -148,6 +148,15 @@ deliberately deferred.
   with fail/cancel/retry paths) over pure serializable transitions. These
   contracts execute nothing; the run engine and workspace catalog arrive in
   later slices. See [runs](docs/runs.md).
+- `EXPERIMENTAL` versioned workspace catalog and shared application services:
+  a canonical `.moeatlas/catalog.json` run registry with atomic publication,
+  idempotent upserts, bounded rebuild-from-shards repair, and reopen/conflict
+  stage errors; model-neutral storage ports (`RoutingRunReader`,
+  `RoutingShardAppender`, `DuckDBRoutingShardStore`) over the shard
+  implementation; and the `moeatlas.services.workspace` orchestration layer
+  (initialize/open/register/record/sync/query) that the CLI, Python API, and
+  future server share. It is not yet a query engine, lock manager, or CLI
+  surface; see [workspace](docs/workspace.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
