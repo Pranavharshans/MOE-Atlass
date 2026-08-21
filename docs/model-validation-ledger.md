@@ -407,3 +407,11 @@ scale invariance, budget bounds, and canonical
 contract tests. No model or tokenizer participates; stability across real
 runs of a real checkpoint remains deferred VM/GPU evidence, so MV-01 through
 MV-08 and ST-01 through ST-04 keep their deferred status.
+
+Router margin: Status: implemented at the model-free boundary. Sample
+strictness (including non-finite score rejection), exact margin values,
+undefined-token accounting, budget bounds, and canonical
+`moeatlas.router_margin` round-trips are covered by synthetic contract
+tests. No model or tokenizer participates; margins over real router scores
+of a real checkpoint remain deferred VM/GPU evidence, so MV-01 through MV-08
+and ST-01 through ST-04 keep their deferred status.

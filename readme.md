@@ -161,6 +161,11 @@ deliberately deferred.
   base-2 Jensen-Shannon divergence, its bounded agreement complement, and
   per-layer means — deterministic, budget-bounded, canonically serializable;
   see [analysis](docs/analysis.md).
+- `EXPERIMENTAL` router margin: `analyze_router_margin()` summarizes
+  per-layer top1-minus-top2 selected-score differences over caller-supplied
+  ranked score samples, with explicit defined/total token counts and `null`
+  means where no token has two scored ranks; see
+  [analysis](docs/analysis.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

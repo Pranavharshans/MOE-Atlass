@@ -213,8 +213,14 @@ P(expert | task) distributions over one identical (layer, task, expert)
 topology with base-2 Jensen-Shannon divergence, its bounded agreement
 complement, and per-layer means, canonically serializable as
 `moeatlas.association_stability` artifacts — completing the §11.2 metric
-set. Per-token task-labeled evidence and the §11.3 behavior summaries are
-later slices in this sequence.
+set. Its fifth landed slice adds the router margin of PRD §11.1 (see
+[analysis](analysis.md)): `analyze_router_margin` in
+`moeatlas.analysis.router_margin` summarizes per-layer top1-minus-top2
+selected-score differences over caller-supplied ranked score samples, with
+explicit defined/total token counts and `null` means where no token has two
+scored ranks, canonically serializable as `moeatlas.router_margin` artifacts.
+Route churn, per-token task-labeled evidence, and the §11.3 behavior
+summaries are later slices in this sequence.
 
 Sequence 6 (prompt and dataset run engine) is complete only when:
 

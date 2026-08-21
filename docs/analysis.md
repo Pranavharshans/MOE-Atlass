@@ -242,6 +242,28 @@ positive phase totals are construction preconditions, so no cell is ever
 null. Agreement compares distributions only — consistency of routing across
 phases is never specialization or causality.
 
+## Router margin
+
+`moeatlas.analysis.router_margin` implements PRD §11.1's router margin —
+the difference between a token's two top selected-route scores at one layer,
+a routing-confidence lens. `RouterMarginSamples(layer_keys, token_scores)`
+holds, per layer, one inner tuple per token with that token's selected-route
+scores ordered best-first (logits or probabilities alike; any finite scores;
+negative values are legal). `analyze_router_margin(samples, *, max_tokens)`
+derives per layer:
+
+- `mean_margin_rows` — mean top1-minus-top2 margin over tokens with at
+  least two scored ranks; `null` when no token in the layer has a defined
+  margin.
+- `margin_token_rows` — the count of tokens that contributed a margin.
+- `token_rows` — the count of all supplied tokens.
+
+Tokens with fewer than two scored ranks contribute no margin — absence is
+evidence, never inferred. The result is a frozen `RouterMarginSummary` with
+`to_dict`/`to_json`/`from_json` round-trips under the
+`moeatlas.router_margin` artifact type. A margin describes routing
+confidence only — never specialization or causality.
+
 ## Cross-run association stability
 
 `moeatlas.analysis.association_stability` implements PRD §11.2's cross-run

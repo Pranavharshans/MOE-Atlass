@@ -27,6 +27,13 @@ from .evidence_cards import (
     StabilitySection,
     TaskAssociationSection,
 )
+from .router_margin import (
+    ROUTER_MARGIN_SCHEMA_VERSION,
+    RouterMarginError,
+    RouterMarginSamples,
+    RouterMarginSummary,
+    analyze_router_margin,
+)
 from .routing_agreement import (
     ROUTING_AGREEMENT_SCHEMA_VERSION,
     PromptRolloutCounts,
@@ -73,6 +80,11 @@ __all__ = [
     "EVIDENCE_CARD_SCHEMA_VERSION",
     "EVIDENCE_TIERS",
     "ROUTING_AGREEMENT_SCHEMA_VERSION",
+    "ROUTER_MARGIN_SCHEMA_VERSION",
+    "RouterMarginError",
+    "RouterMarginSamples",
+    "RouterMarginSummary",
+    "analyze_router_margin",
     "BehaviorSection",
     "CausalitySection",
     "EvidenceCard",

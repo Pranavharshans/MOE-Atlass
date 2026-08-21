@@ -378,4 +378,6 @@ complement, and total-variation distance between paired prompt-phase and
 rollout-phase selection distributions, and cross-run association stability
 (`moeatlas.analysis.association_stability`) compares two runs' P(expert |
 task) distributions over one identical topology with the same bounded
-agreement math plus per-layer means.
+agreement math plus per-layer means, and the router margin
+(`moeatlas.analysis.router_margin`) summarizes per-layer top1-minus-top2
+score differences with explicit defined/total token counts.
