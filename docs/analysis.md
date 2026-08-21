@@ -182,3 +182,67 @@ expected topology and keeps analysis honest about which structure it
 consumes. Adapter-declared layout tags pass publication freely but remain
 subject to routing-load's decodable-layout contract (`legacy_indexed`,
 `packed`) on both paths.
+
+## Task association metrics
+
+`moeatlas.analysis.task_association` implements the model-neutral core of
+PRD §11.2 over a strict frozen contingency table:
+`TaskExpertCounts(layer_keys, task_keys, expert_keys, counts)` holds
+selected-route counts per (layer, task, expert) with sorted unique keys,
+exact rectangularity, non-negative integers, and a positive total for every
+task so all conditionals are defined. `analyze_task_association(counts, *,
+max_cells)` computes, per layer and in canonical order:
+
+- `enrichment_rows` — `P(expert | task) / P(expert)`; a cell is `null`
+  exactly when the expert is unused in the layer (no denominator), and `0.0`
+  is a defined answer when the task never selects a used expert.
+- `pmi_rows` — `log2` of the same ratio; additionally `null` when the
+  conditional probability is zero, since pointwise information would be
+  negative infinity.
+- `mutual_information_rows` — per-layer MI(task; expert) in bits;
+  `specific_mi_rows` hold each task's contribution, and task-share-weighted
+  specific MI sums to the layer's MI exactly.
+- `separability_rows` — mean pairwise base-2 Jensen-Shannon divergence
+  between the tasks' routing distributions, bounded in `[0, 1]`; `null` with
+  fewer than two tasks.
+- `exclusivity_rows` — `max_t P(task | expert)` plus the count of tasks the
+  expert actually receives: 1.0 means fully exclusive, uniform means general.
+
+The result is a frozen `TaskAssociationMatrix` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.task_association` artifact type;
+`null` replaces `NaN` everywhere and documents absence as evidence. Every
+metric says "routes here more/less often than baseline" — association is
+never specialization or causality. Per-token task-labeled evidence arrives
+with task-labeled executors in later sequences, so the contract is exercised
+over synthetic tables; prompt-vs-rollout agreement and cross-run stability
+of association are later slices in this sequence.
+
+## Evidence Cards
+
+`moeatlas.analysis.evidence_cards` implements the structured alternative to a
+single specialization score (PRD §11.5). An `EvidenceCard` binds one expert
+to a model fingerprint (`sha256:<64 hex>`), its layer and expert keys, and an
+explicit `expert_kind` of `routed` or `shared` — shared-expert keys are legal
+only on shared cards. Every evidence tier is a separate optional section, and
+`null` always means "not measured", never inferred:
+
+- `routing` — usage share, normalized load, mean rank/margin/entropy
+  (tier A, routing usage).
+- `task_association` — per-task enrichment/PMI/exclusivity rows aligned with
+  `task_keys`, plus the `example_count` standing behind the numbers.
+- `behavior` — bounded input/output/contribution summaries (tier B,
+  internal behavior).
+- `causality` — intervention deltas with an optional recipe fingerprint
+  (tier C); the card records results and never claims causality from
+  association.
+- `stability` — replicated/total seeds and datasets (tier D, replication).
+
+Cards carry str-only `limitations` and `warnings`, `capability_labels` as
+`(tier, label)` pairs over the fixed `EVIDENCE_TIERS` vocabulary with labels
+`full`/`partial`/`unsupported` (one label per tier), and optional provenance
+(`probe_version`, `adapter_name`, `adapter_version`, `capture_source`). The
+frozen value round-trips through canonical JSON as a
+`moeatlas.evidence_card` artifact; contract violations raise `TypeError` for
+wrong types and `ValueError` for bad values, and `EvidenceCardError` reports
+fixed `contract`/`serialization` stages. Cards are exercised over synthetic
+values; real-model evidence remains deferred MV work.

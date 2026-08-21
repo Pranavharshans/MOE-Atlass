@@ -215,6 +215,7 @@ def execute_row_schedule(
     row_values: Mapping[int, Mapping[str, Any]],
     should_cancel: Callable[[], bool] | None = None,
     max_result_bytes: int = 65_536,
+    batch_offset: int = 0,
 ) -> ExecutionOutcome:
     """Drive one planned schedule through ``executor`` deterministically.
 
@@ -223,7 +224,10 @@ def execute_row_schedule(
     cumulatively after every batch through ``advance_progress`` so unit
     counts stay monotonic within the ``executing`` stage. Cancellation is
     checked before each row and freezes the outcome with everything already
-    executed.
+    executed. ``batch_offset`` shifts every recorded batch index by a fixed
+    amount so a driver may run one batch at a time (batch-per-call with
+    ``batch_offset=batch_index``) while evidence keeps its plan-level
+    numbering; it never changes execution order.
     """
 
     if not callable(executor):
@@ -236,6 +240,8 @@ def execute_row_schedule(
         or max_result_bytes <= 0
     ):
         raise TypeError("max_result_bytes must be a strict positive integer")
+    if type(batch_offset) is not int or isinstance(batch_offset, bool) or batch_offset < 0:
+        raise TypeError("batch_offset must be a non-negative integer")
     if not isinstance(row_values, Mapping):
         raise TypeError("row_values must be a mapping keyed by row index")
     total_rows = _validated_schedule(schedule)
@@ -248,7 +254,8 @@ def execute_row_schedule(
     cancelled = False
     cancelled_before_row: int | None = None
 
-    for batch_index, batch in enumerate(schedule):
+    for position, batch in enumerate(schedule):
+        batch_index = batch_offset + position
         broke = False
         for row_index in batch:
             if should_cancel is not None and should_cancel():

@@ -340,3 +340,35 @@ model-dependent behavior. Input preparation (`moeatlas.services.run_inputs`)
 completes the seam: prompt specs and dataset descriptors become the exact
 row-value mappings and deterministic schedules the core consumes, so no
 execution code branches on input kind.
+
+The services layer closes Sequence 6 with the headless composition surface
+(`moeatlas.services.run_service`): `execute_specification` runs one
+specification end to end — prepare, plan, execute batch by batch through the
+core's additive `batch_offset`, and project each step onto lifecycle records
+via `apply()` with caller-supplied timestamps. Durability is batch-granular:
+each completed batch atomically rewrites a canonical JSON checkpoint
+(`run_checkpoint`) that `load_checkpoint` validates and `resume_from`
+continues without re-executing durable batches. Terminal transitions follow
+only `ExecutionOutcome.status`, per-row failures stay evidence in the merged
+outcome, and every record streams to an optional `on_record` observer.
+Publication is explicit — `publish_run_report` records the terminal state
+through the existing workspace catalog seam — keeping the service itself free
+of storage side effects unless a checkpoint directory is requested. The
+surface remains family-blind: it composes contracts, never model knowledge.
+
+Analysis opens Sequence 7 with the association math of PRD §11.2
+(`moeatlas.analysis.task_association`): a strict frozen
+`TaskExpertCounts` contingency table per (layer, task, expert) becomes a
+frozen, canonically serializable `TaskAssociationMatrix` carrying enrichment,
+PMI/MI (with task-share-consistent specific MI), mean pairwise
+Jensen-Shannon separability, and exclusivity/generality — every metric with
+documented denominators and `null`-not-`NaN` undefined cells. The layer is
+pure and deterministic: no storage reads, no clocks, no randomness, and no
+claim that association is specialization or causality. Per-token task-labeled
+evidence arrives with later executors; until then synthetic tables are the
+contract's exercise surface. Evidence Cards (`moeatlas.analysis.evidence_cards`)
+continue the sequence with PRD §11.5's structured record: one expert's
+identity, routing/task-association/behavior/causality/stability sections kept
+separate and optional (`null` means not measured), capability labels over a
+fixed tier vocabulary, and honest limitations/warnings — canonically
+serializable as `moeatlas.evidence_card` artifacts, still family-blind.

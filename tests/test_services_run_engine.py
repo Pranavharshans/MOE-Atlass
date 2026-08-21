@@ -349,6 +349,25 @@ def test_empty_schedule_is_vacuously_complete() -> None:
 # Determinism and composition with batch planning
 
 
+def test_batch_offset_shifts_evidence_without_changing_order() -> None:
+    outcome = execute_row_schedule(
+        ((0, 1),),
+        executor=_echo_executor,
+        row_values=_values(2),
+        batch_offset=4,
+    )
+    assert [r.batch_index for r in outcome.results] == [4, 4]
+    assert [r.row_index for r in outcome.results] == [0, 1]
+    assert outcome.total_rows == 2
+    assert outcome.progress[-1].completed_units == 2
+    with pytest.raises(TypeError):
+        execute_row_schedule(((0,),), executor=_echo_executor, row_values=_values(1),
+                             batch_offset=-1)
+    with pytest.raises(TypeError):
+        execute_row_schedule(((0,),), executor=_echo_executor, row_values=_values(1),
+                             batch_offset=True)
+
+
 def test_execution_is_deterministic_across_runs() -> None:
     schedule = plan_dataset_batches(20, batch_size=6, sample_cap=9, shuffle=True, seed=4)
     first = execute_row_schedule(schedule, executor=_echo_executor, row_values=_values(20))

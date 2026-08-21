@@ -10,6 +10,17 @@ from .compare_heatmap import (
     ROUTING_COMPARE_HEATMAP_SCHEMA_VERSION,
     render_routing_load_comparison,
 )
+from .evidence_cards import (
+    EVIDENCE_CARD_SCHEMA_VERSION,
+    EVIDENCE_TIERS,
+    BehaviorSection,
+    CausalitySection,
+    EvidenceCard,
+    EvidenceCardError,
+    RoutingSection,
+    StabilitySection,
+    TaskAssociationSection,
+)
 from .routing_compare import (
     ROUTING_COMPARE_SCHEMA_VERSION,
     RoutingLoadComparison,
@@ -33,8 +44,29 @@ from .routing_summary import (
     RoutingLoadSummary,
     summarize_routing_load,
 )
+from .task_association import (
+    TASK_ASSOCIATION_SCHEMA_VERSION,
+    TaskAssociationError,
+    TaskAssociationMatrix,
+    TaskExpertCounts,
+    analyze_task_association,
+)
 
 __all__ = [
+    "EVIDENCE_CARD_SCHEMA_VERSION",
+    "EVIDENCE_TIERS",
+    "BehaviorSection",
+    "CausalitySection",
+    "EvidenceCard",
+    "EvidenceCardError",
+    "RoutingSection",
+    "StabilitySection",
+    "TaskAssociationSection",
+    "TASK_ASSOCIATION_SCHEMA_VERSION",
+    "TaskAssociationError",
+    "TaskAssociationMatrix",
+    "TaskExpertCounts",
+    "analyze_task_association",
     "ANALYSIS_BUNDLE_SCHEMA_VERSION",
     "AnalysisBundleEntry",
     "AnalysisBundleReceipt",
