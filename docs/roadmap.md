@@ -149,10 +149,17 @@ deterministic frozen `DatasetRow` tuples for JSONL/CSV/Parquet/text and
 local HF-style snapshots under strict row/byte/file budgets, validates
 task-role column mappings, plans SHA-256-keyed deterministic
 `plan_dataset_batches` schedules (sample caps, shuffles, batches), resolves
-DuckDB lazily for Parquet only, and never touches the network. Remaining for
-this sequence: prompt/chat input preparation, the execution loop over fake
-runtimes with progress/cancellation/per-row failures/checkpoints/resume,
-incremental event publication, and the shared run-engine service surface.
+DuckDB lazily for Parquet only, and never touches the network. Its second
+landed slice is the deterministic execution core:
+`execute_row_schedule` in `moeatlas.services.run_engine` drives a planned
+schedule through a caller-supplied row executor with per-row failure
+evidence (fixed vocabulary matching lifecycle error kinds), budgeted
+canonical results, cumulative lifecycle-compatible progress, cooperative
+cancellation that preserves executed work, and a strict frozen
+`ExecutionOutcome` whose status suggests the terminal lifecycle state.
+Remaining for this sequence: prompt/chat input preparation,
+checkpoint/resume/reopen around the core, incremental event publication,
+and the shared run-engine service surface.
 
 ## Validation lanes
 

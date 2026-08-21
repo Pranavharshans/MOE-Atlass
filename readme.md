@@ -119,6 +119,12 @@ deliberately deferred.
   with task-role column mappings and SHA-256-keyed deterministic
   `plan_dataset_batches()` schedules; descriptors never fetch data and no
   path reaches the network; see [runs](docs/runs.md).
+- `EXPERIMENTAL` deterministic run-engine execution core:
+  `execute_row_schedule()` drives a planned batch schedule through a
+  caller-supplied row executor with per-row failure evidence, budgeted
+  canonical results, lifecycle-compatible progress, cooperative
+  cancellation, and a strict frozen `ExecutionOutcome`; no clocks, no
+  randomness, no network, no model dependencies; see [runs](docs/runs.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

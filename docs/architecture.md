@@ -328,3 +328,12 @@ locations resolve against an explicit local base directory, HF-style format
 means an existing local snapshot directory read in sorted order, and no code
 path reaches the network. The step is family-blind — it knows rows, roles,
 budgets, and schedules, never model families.
+
+The same layer gains the execution core that consumes those schedules:
+`moeatlas.services.run_engine` drives a planned batch schedule through a
+caller-supplied row executor with per-row failure evidence (fixed vocabulary
+matching the lifecycle's error kinds), budgeted canonical results,
+lifecycle-compatible cumulative progress, and cooperative cancellation that
+preserves executed work. The core is deterministic and family-blind: it
+knows rows, batches, budgets, and outcomes — executors own every
+model-dependent behavior.
