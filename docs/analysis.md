@@ -358,3 +358,29 @@ frozen value round-trips through canonical JSON as a
 wrong types and `ValueError` for bad values, and `EvidenceCardError` reports
 fixed `contract`/`serialization` stages. Cards are exercised over synthetic
 values; real-model evidence remains deferred MV work.
+
+## Expert similarity
+
+`moeatlas.analysis.expert_similarity` implements PRD §11.3's expert weight
+and representation similarity. `ExpertVectors(layer_keys, expert_keys,
+vectors)` holds, per layer, exactly one finite vector per expert key; every
+vector within one layer shares its length, and zero vectors are legal input.
+The contract is agnostic to provenance: callers supply expert weight
+summaries or representation summaries alike, because token keys are content
+digests and vector extraction is adapter territory.
+`analyze_expert_similarity(vectors, *, max_cells)` derives, per layer, the
+symmetric cosine-similarity matrix over that layer's experts:
+
+- `similarity_rows[layer][i][j]` — cosine similarity between experts i and
+  j, clamped to `[-1, 1]`; diagonals of nonzero vectors are exactly `1.0`.
+- cells touching a zero-norm expert are `null` — undefined geometry is
+  evidence, never inferred;
+- `undefined_expert_rows` counts zero-norm experts per layer.
+
+Similarity describes geometry only:
+it never implies specialization or causality.
+The result is a frozen `ExpertSimilarity` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.expert_similarity` artifact type;
+`ExpertSimilarityError` reports fixed `contract`/`budget` stages. Vectors are
+exercised over synthetic values; real weight/activation capture remains
+deferred MV work.

@@ -34,6 +34,13 @@ from .evidence_cards import (
     StabilitySection,
     TaskAssociationSection,
 )
+from .expert_similarity import (
+    EXPERT_SIMILARITY_SCHEMA_VERSION,
+    ExpertSimilarity,
+    ExpertSimilarityError,
+    ExpertVectors,
+    analyze_expert_similarity,
+)
 from .route_churn import (
     ROUTE_CHURN_SCHEMA_VERSION,
     RouteChurnError,
@@ -93,6 +100,11 @@ __all__ = [
     "analyze_association_stability",
     "EVIDENCE_CARD_SCHEMA_VERSION",
     "EVIDENCE_TIERS",
+    "EXPERT_SIMILARITY_SCHEMA_VERSION",
+    "ExpertSimilarity",
+    "ExpertSimilarityError",
+    "ExpertVectors",
+    "analyze_expert_similarity",
     "COROUTING_SCHEMA_VERSION",
     "CoRoutingError",
     "CoRoutingGraph",

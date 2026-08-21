@@ -174,6 +174,11 @@ deliberately deferred.
   symmetric per-layer expert co-selection matrices into total mass,
   coupled-expert counts, and deterministically ranked top pairs with
   normalized shares; see [analysis](docs/analysis.md).
+- `EXPERIMENTAL` expert similarity: `analyze_expert_similarity()` derives
+  per-layer cosine-similarity matrices over caller-supplied expert vectors,
+  with exact `1.0` diagonals, explicit `null` cells wherever a zero-norm
+  expert is touched, and per-layer undefined-expert counts; see
+  [analysis](docs/analysis.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

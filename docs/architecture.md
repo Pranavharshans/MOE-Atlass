@@ -385,4 +385,7 @@ score differences with explicit defined/total token counts, route churn
 across caller-ordered adjacent steps with churn rates and Jaccard distances,
 and co-routing graphs (`moeatlas.analysis.corouting`) summarize symmetric
 pairwise co-selection matrices into deterministic top-pair rankings with
-normalized shares.
+normalized shares, while expert similarity
+(`moeatlas.analysis.expert_similarity`) derives per-layer cosine-similarity
+matrices over caller-supplied expert vectors with explicit `null` cells for
+zero-norm experts.

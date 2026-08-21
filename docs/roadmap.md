@@ -45,7 +45,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | 4 | Universal execution capabilities | `in progress` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
 | 5 | Raw evidence and open storage/export | `model-free complete` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
 | 6 | Prompt and dataset run engine | `model-free complete` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
-| 7 | Task association and Evidence Cards | `in progress` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests |
+| 7 | Task association and Evidence Cards | `model-free complete` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests; real-evidence capture stays in Sequence 12 |
 | 8 | Plugins and complete headless CLI/API | `planned` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
 | 9 | FastAPI server and React UI | `planned` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14 |
 | 10 | Intervention and causal evidence | `planned` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
@@ -184,7 +184,8 @@ explicit `publish_run_report` catalog publication. Real token/routing event
 publication arrives with real executors in later sequences; every behavior
 this sequence promises is exercised over fake runtimes.
 
-Sequence 7 is `in progress`. Its first landed slice is the association
+Sequence 7 is `model-free complete`: every §11 metric surface constructible
+without a live model exists with contract tests. Its first landed slice is the association
 math of PRD §11.2 (see [analysis](analysis.md)):
 `TaskExpertCounts` in `moeatlas.analysis.task_association` is a strict frozen
 contingency table of selected-route counts per (layer, task, expert), and
@@ -228,9 +229,18 @@ opens §11.3 with co-routing graphs (see [analysis](analysis.md)):
 `summarize_co_routing` in `moeatlas.analysis.corouting` reduces symmetric
 per-layer co-selection matrices into total mass, coupled-expert counts, and
 deterministically ranked top pairs with normalized shares, canonically
-serializable as `moeatlas.corouting` artifacts. Per-token task-labeled
-evidence and the remaining §11.3 behavior summaries are later slices in this
-sequence.
+serializable as `moeatlas.corouting` artifacts. Its eighth landed slice adds
+expert weight/representation similarity (see [analysis](analysis.md)):
+`analyze_expert_similarity` in `moeatlas.analysis.expert_similarity`
+derives per-layer cosine-similarity matrices over caller-supplied expert
+vectors with exact `1.0` diagonals, explicit `null` cells wherever a
+zero-norm expert is touched, and per-layer undefined-expert counts,
+canonically serializable as `moeatlas.expert_similarity` artifacts. What
+remains deferred to Sequence 12 is real evidence, not contracts: per-token
+task-labeled routing from live runs, activation/contribution summaries and
+gradient attribution over real tensors, shared-vs-routed comparison on a
+real checkpoint, and intervention causality (Sequence 10 supplies the
+recipe mechanics first).
 
 Sequence 6 (prompt and dataset run engine) is complete only when:
 
