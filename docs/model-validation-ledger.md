@@ -423,3 +423,11 @@ values, empty-step conventions, budget bounds, and canonical
 No model or tokenizer participates; churn across real generated tokens of a
 real checkpoint remains deferred VM/GPU evidence, so MV-01 through MV-08 and
 ST-01 through ST-04 keep their deferred status.
+
+Co-routing graphs: Status: implemented at the model-free boundary. Matrix
+strictness (square, symmetric, zero-diagonal), exact ranking/share values,
+deterministic top-pair bounding, budget bounds, and canonical
+`moeatlas.corouting` round-trips are covered by synthetic contract tests. No
+model or tokenizer participates; co-routing over real activations of a real
+checkpoint remains deferred VM/GPU evidence, so MV-01 through MV-08 and
+ST-01 through ST-04 keep their deferred status.

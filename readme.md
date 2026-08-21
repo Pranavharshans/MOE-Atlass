@@ -170,6 +170,10 @@ deliberately deferred.
   selected-expert sets change across caller-ordered adjacent steps with
   churn rates, mean Jaccard distances, and explicit pair counts; see
   [analysis](docs/analysis.md).
+- `EXPERIMENTAL` co-routing graphs: `summarize_co_routing()` reduces
+  symmetric per-layer expert co-selection matrices into total mass,
+  coupled-expert counts, and deterministically ranked top pairs with
+  normalized shares; see [analysis](docs/analysis.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

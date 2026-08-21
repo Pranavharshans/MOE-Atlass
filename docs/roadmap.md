@@ -223,8 +223,14 @@ Its sixth landed slice adds route churn (see [analysis](analysis.md)):
 `analyze_route_churn` in `moeatlas.analysis.route_churn` measures how
 selected-expert sets change across caller-ordered adjacent steps with churn
 rates, mean Jaccard distances, and explicit pair counts — canonically
-serializable as `moeatlas.route_churn` artifacts. Per-token task-labeled
-evidence and the §11.3 behavior summaries are later slices in this sequence.
+serializable as `moeatlas.route_churn` artifacts. Its seventh landed slice
+opens §11.3 with co-routing graphs (see [analysis](analysis.md)):
+`summarize_co_routing` in `moeatlas.analysis.corouting` reduces symmetric
+per-layer co-selection matrices into total mass, coupled-expert counts, and
+deterministically ranked top pairs with normalized shares, canonically
+serializable as `moeatlas.corouting` artifacts. Per-token task-labeled
+evidence and the remaining §11.3 behavior summaries are later slices in this
+sequence.
 
 Sequence 6 (prompt and dataset run engine) is complete only when:
 

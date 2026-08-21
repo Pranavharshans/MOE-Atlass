@@ -286,6 +286,27 @@ The result is a frozen `RouteChurnSummary` with `to_dict`/`to_json`/
 `from_json` round-trips under the `moeatlas.route_churn` artifact type.
 Churn describes routing stability only — never specialization or causality.
 
+## Co-routing graphs
+
+`moeatlas.analysis.corouting` implements the model-neutral core of PRD
+§11.3's expert co-activation and conditional co-routing graphs.
+`ExpertCoRoutingCounts(layer_keys, expert_keys, pair_counts)` holds, per
+layer, a symmetric square matrix of co-selection counts over that layer's
+experts (zero diagonal — an expert is never paired with itself).
+`summarize_co_routing(counts, *, max_cells, max_pairs)` derives per layer:
+
+- `total_pair_selections` — the layer's total co-selection mass.
+- `coupled_expert_rows` — how many experts appear in at least one
+  co-selection (uncoupled experts stay explicit, never inferred away).
+- `top_pairs` — `(expert_a, expert_b, count, share)` tuples sorted by
+  descending count then ascending keys and bounded by `max_pairs`, with
+  `share` normalizing each pair by the layer's total mass.
+
+The result is a frozen `CoRoutingGraph` with `to_dict`/`to_json`/
+`from_json` round-trips under the `moeatlas.corouting` artifact type.
+Co-routing is association evidence only:
+it never implies specialization or causality.
+
 ## Cross-run association stability
 
 `moeatlas.analysis.association_stability` implements PRD §11.2's cross-run

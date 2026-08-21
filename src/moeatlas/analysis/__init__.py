@@ -16,6 +16,13 @@ from .compare_heatmap import (
     ROUTING_COMPARE_HEATMAP_SCHEMA_VERSION,
     render_routing_load_comparison,
 )
+from .corouting import (
+    COROUTING_SCHEMA_VERSION,
+    CoRoutingError,
+    CoRoutingGraph,
+    ExpertCoRoutingCounts,
+    summarize_co_routing,
+)
 from .evidence_cards import (
     EVIDENCE_CARD_SCHEMA_VERSION,
     EVIDENCE_TIERS,
@@ -86,6 +93,11 @@ __all__ = [
     "analyze_association_stability",
     "EVIDENCE_CARD_SCHEMA_VERSION",
     "EVIDENCE_TIERS",
+    "COROUTING_SCHEMA_VERSION",
+    "CoRoutingError",
+    "CoRoutingGraph",
+    "ExpertCoRoutingCounts",
+    "summarize_co_routing",
     "ROUTING_AGREEMENT_SCHEMA_VERSION",
     "ROUTER_MARGIN_SCHEMA_VERSION",
     "ROUTE_CHURN_SCHEMA_VERSION",

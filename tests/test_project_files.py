@@ -48,6 +48,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "analysis" / "association_stability.py",
             ROOT / "src" / "moeatlas" / "analysis" / "router_margin.py",
             ROOT / "src" / "moeatlas" / "analysis" / "route_churn.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "corouting.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
@@ -64,6 +65,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_analysis_association_stability.py",
             ROOT / "tests" / "test_analysis_router_margin.py",
             ROOT / "tests" / "test_analysis_route_churn.py",
+            ROOT / "tests" / "test_analysis_corouting.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1574,6 +1576,60 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
         self.assertTrue((ROOT / "tests" / "test_analysis_route_churn.py").is_file())
+
+    def test_corouting_docs_and_surface_are_present(self) -> None:
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                (
+                    "Co-routing graphs",
+                    "ExpertCoRoutingCounts",
+                    "summarize_co_routing",
+                    "CoRoutingGraph",
+                    "moeatlas.corouting",
+                    "never implies specialization or causality",
+                ),
+            ),
+            (architecture, ("moeatlas.analysis.corouting",)),
+            (roadmap, ("summarize_co_routing",)),
+            (ledger, ("Co-routing graphs",)),
+            (readme, ("summarize_co_routing()",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "corouting.py"
+        ).read_text()
+        exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
+        for term in (
+            "COROUTING_SCHEMA_VERSION",
+            "CoRoutingError",
+            "CoRoutingGraph",
+            "ExpertCoRoutingCounts",
+            "summarize_co_routing",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The co-routing layer stays pure: no storage, clocks, or randomness.
+        for forbidden in (
+            "import time",
+            "import random",
+            "datetime",
+            "duckdb",
+            "urllib",
+            "torch",
+            "transformers",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_analysis_corouting.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()
