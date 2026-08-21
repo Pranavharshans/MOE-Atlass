@@ -215,3 +215,30 @@ causes stay chained but out of public text. Receipts (`RunBundleReceipt`,
 bounded interchange format, not an analysis export, migration tool, or
 compaction path; they make no model-dependent claims, and ST-04 and MV-01
 through MV-08 remain unchanged.
+
+## Routing-run assignment query
+
+`query_routing_run_assignments(workspace, *, run_key, layer_keys, expert_keys,
+routed_top_k, max_routing_rows, max_source_bytes, duckdb, connection)` is the
+public reader/query seam over committed shards. For one run it discovers every
+committed shard in canonical order, revalidates each completely (manifest
+identity, file metadata and digests, row identities, universe membership,
+token/routing links), detects cross-shard identity conflicts, and returns one
+`RoutingShardAssignmentQuery` per shard: `shard_key`, `token_count`,
+`routing_count`, the validated `token_keys`/`routing_links` identity sets, and
+grouped `assignment_counts` sorted by layer and expert key.
+
+The caller owns the engine handle and the bounded in-memory query connection —
+including closing it exactly once — so dependency resolution stays lazy and
+connection lifecycles stay explicit at every call site; the
+`DuckDBRoutingShardStore.query_assignments` port method wraps that lifecycle
+for protocol consumers. Budget exhaustion raises `RoutingRunInventoryError`
+with stage `budget`; storage-owned failures raise `RoutingShardError`
+(`workspace`, `reopen`, `conflict`); query-engine failures raise
+`RoutingRunQueryError`; absent or malformed sources raise plain
+`TypeError`/`ValueError`/`OSError`. Analysis consumes exactly this seam:
+`aggregate_routing_load` opens its connection, delegates discovery, budgets,
+validation, conflicts, and grouped reads to the seam, then folds the returned
+summaries into the same matrix as before. Results are unchanged on all
+previously passing inputs, multi-shard grouped counts are now provably per
+shard, and no analysis code touches concrete shard internals any more.

@@ -622,60 +622,6 @@ class RoutingLoadMatrix:
             raise ValueError("routing load matrix document is not usable") from exc
 
 
-def _validate_sources(
-    workspace: str | Path,
-    run_key: str,
-    duckdb: Any,
-    max_routing_rows: int,
-    max_source_bytes: int,
-) -> tuple[Path, tuple[tuple[Path, dict[str, object], str], ...]]:
-    path = _storage._validate_workspace(workspace)
-    stable_run_key = _storage._validate_run_key(run_key)
-    run_parent = _storage._existing_run_parent(path, stable_run_key)
-    if run_parent is None:
-        raise _error("source", ValueError("run has no committed routing shards"))
-    try:
-        children = tuple(run_parent.iterdir())
-    except Exception as exc:
-        raise _error("source", exc)
-    shard_paths: list[Path] = []
-    for child in children:
-        if _storage._STAGING_NAME.fullmatch(child.name):
-            if child.is_symlink() or not child.is_dir():
-                raise _storage.RoutingShardError("reopen")
-            continue
-        if child.name.startswith(".staging-"):
-            raise _storage.RoutingShardError("reopen")
-        if not child.name.startswith(_storage._SHARD_PREFIX):
-            raise _storage.RoutingShardError("reopen")
-        shard_paths.append(child)
-    if not shard_paths:
-        raise _error("source", ValueError("run has no committed routing shards"))
-    sources: list[tuple[Path, dict[str, object], str]] = []
-    source_bytes = 0
-    declared_routing_rows = 0
-    for shard in sorted(shard_paths, key=lambda item: item.name):
-        manifest, shard_key = _storage._read_shard_manifest(
-            shard, stable_run_key, duckdb, validate_files=False
-        )
-        declared_routing_rows += manifest["routing_count"]
-        if declared_routing_rows > max_routing_rows:
-            raise _error("budget", ValueError("routing rows exceed the source budget"))
-        try:
-            sizes = [
-                (shard / _storage._MANIFEST_FILE).stat().st_size,
-                (shard / _storage._TOKENS_FILE).stat().st_size,
-                (shard / _storage._ROUTING_FILE).stat().st_size,
-            ]
-        except Exception as exc:
-            raise _error("source", exc)
-        source_bytes += sum(sizes)
-        if source_bytes > max_source_bytes:
-            raise _error("budget", ValueError("source bytes exceed the source budget"))
-        sources.append((shard, manifest, shard_key))
-    return path, tuple(sources)
-
-
 def aggregate_routing_load(
     workspace: str | Path,
     inspection: AdapterInspection,
@@ -715,110 +661,39 @@ def aggregate_routing_load(
     if cells > max_matrix_cells:
         raise _error("budget", ValueError("matrix cells exceed the matrix budget"))
 
-    # Validate the managed workspace/run boundary before importing the optional
-    # store dependency, so absent or malformed source is deterministic offline.
-    workspace_path = _storage._validate_workspace(workspace)
-    _storage._validate_run_key(run_key)
-    if _storage._existing_run_parent(workspace_path, run_key) is None:
-        raise _error("source", ValueError("run has no committed routing shards"))
-    duckdb = _storage._load_duckdb()
-    _, sources = _validate_sources(
-        workspace_path,
-        run_key,
-        duckdb,
-        max_routing_rows,
-        max_source_bytes,
-    )
-    connection: Any | None = None
+    # Read the run through the public storage query seam instead of concrete
+    # shard internals; the seam owns source discovery, budgets, validation,
+    # conflict detection, and the bounded grouped-count queries.  Analysis
+    # owns the bounded in-memory connection lifecycle: open once, close once.
     primary: BaseException | None = None
-    token_count = 0
-    assignment_count = 0
-    shard_keys: list[str] = []
-    counts = [[0 for _ in range(universe.expert_count)] for _ in universe.layer_keys]
-    seen_tokens: set[str] = set()
-    seen_links: set[tuple[str, str, int]] = set()
-    actual_counts: dict[Path, tuple[int, int]] = {}
-    actual_routing_rows = 0
+    records: tuple[_storage.RoutingShardAssignmentQuery, ...] | None = None
+    connection: Any | None = None
     try:
+        duckdb = _storage._load_duckdb()
         connection = duckdb.connect(database=":memory:")
-        for shard, manifest, shard_key in sources:
-            try:
-                _storage._validate_file_metadata(shard, manifest)
-            except _storage.RoutingShardError:
-                raise
-            except Exception as exc:
-                raise _storage.RoutingShardError("reopen") from exc
-            token_path = shard / _storage._TOKENS_FILE
-            routing_path = shard / _storage._ROUTING_FILE
-            try:
-                actual_token_count = connection.execute(
-                    "SELECT COUNT(*) FROM read_parquet(?)", [str(token_path)]
-                ).fetchone()[0]
-                actual_routing_count = connection.execute(
-                    "SELECT COUNT(*) FROM read_parquet(?)", [str(routing_path)]
-                ).fetchone()[0]
-            except _storage.RoutingShardError:
-                raise
-            except (KeyboardInterrupt, SystemExit):
-                raise
-            except BaseException as exc:
-                raise _storage.RoutingShardError("reopen") from exc
-            actual_routing_rows += int(actual_routing_count)
-            if actual_routing_rows > max_routing_rows:
-                raise _error("budget", ValueError("actual routing rows exceed the row budget"))
-            if (
-                actual_token_count != manifest["token_count"]
-                or actual_routing_count != manifest["routing_count"]
-            ):
-                raise _storage.RoutingShardError("reopen") from ValueError(
-                    "parquet row counts do not match manifest"
-                )
-            actual_counts[shard] = (int(actual_token_count), int(actual_routing_count))
-        for shard, manifest, shard_key in sources:
-            actual_token_count, actual_routing_count = actual_counts[shard]
-            try:
-                token_keys, routing_links = _storage._validate_routing_load_source(
-                    shard,
-                    run_key,
-                    duckdb,
-                    connection,
-                    universe.layer_keys,
-                    universe.expert_keys,
-                    universe.routed_top_k,
-                )
-            except _storage.RoutingShardError:
-                raise
-            except OSError as exc:
-                raise _error("query", exc)
-            except Exception as exc:
-                raise _error("source", exc)
-            if seen_tokens.intersection(token_keys) or seen_links.intersection(routing_links):
-                raise _storage.RoutingShardError("conflict")
-            seen_tokens.update(token_keys)
-            seen_links.update(routing_links)
-            rows = connection.execute(
-                "SELECT layer_key, expert_key, COUNT(*) AS assignment_count "
-                "FROM read_parquet(?) GROUP BY layer_key, expert_key "
-                "ORDER BY layer_key, expert_key",
-                [str(routing_path)],
-            ).fetchall()
-            token_count += int(actual_token_count)
-            assignment_count += int(actual_routing_count)
-            shard_keys.append(shard_key)
-            for layer_key, expert_key, count in rows:
-                if layer_key not in universe.layer_keys:
-                    raise _error("source", ValueError("source layer is outside inspection"))
-                layer_position = universe.layer_keys.index(layer_key)
-                if expert_key not in universe.expert_keys[layer_position]:
-                    raise _error("source", ValueError("source expert is outside inspection"))
-                expert_position = universe.expert_keys[layer_position].index(expert_key)
-                counts[layer_position][expert_position] += int(count)
+        records = _storage.query_routing_run_assignments(
+            workspace,
+            run_key=run_key,
+            layer_keys=universe.layer_keys,
+            expert_keys=universe.expert_keys,
+            routed_top_k=universe.routed_top_k,
+            max_routing_rows=max_routing_rows,
+            max_source_bytes=max_source_bytes,
+            duckdb=duckdb,
+            connection=connection,
+        )
     except BaseException as exc:
         if isinstance(
             exc,
             _storage.RoutingShardError | RoutingLoadError | KeyboardInterrupt | SystemExit,
         ):
             primary = exc
+        elif isinstance(exc, _storage.RoutingRunQueryError):
+            primary = _error("query", exc)
+        elif isinstance(exc, _storage.RoutingRunInventoryError):
+            primary = _error("budget", exc)
+        elif isinstance(exc, TypeError | ValueError | OSError):
+            primary = _error("source", exc)
         else:
             primary = _error("query", exc)
     finally:
@@ -840,6 +715,24 @@ def aggregate_routing_load(
                     )
     if primary is not None:
         raise primary
+    assert records is not None
+
+    token_count = 0
+    assignment_count = 0
+    shard_keys: list[str] = []
+    counts = [[0 for _ in range(universe.expert_count)] for _ in universe.layer_keys]
+    for record in records:
+        for layer_key, expert_key, count in record.assignment_counts:
+            if layer_key not in universe.layer_keys:
+                raise _error("source", ValueError("source layer is outside inspection"))
+            layer_position = universe.layer_keys.index(layer_key)
+            if expert_key not in universe.expert_keys[layer_position]:
+                raise _error("source", ValueError("source expert is outside inspection"))
+            expert_position = universe.expert_keys[layer_position].index(expert_key)
+            counts[layer_position][expert_position] += int(count)
+        token_count += record.token_count
+        assignment_count += record.routing_count
+        shard_keys.append(record.shard_key)
 
     expected_assignments = token_count * len(universe.layer_keys) * universe.routed_top_k
     if assignment_count != expected_assignments:

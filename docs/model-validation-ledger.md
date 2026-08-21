@@ -318,3 +318,11 @@ budgets, crash-safe publication cleanup, symlink refusal, idempotent
 re-import, and duckdb-free verification are covered by synthetic local tests.
 Bundles carry no model-dependent claims; this feature does not change MV-01/MV-08
 or ST-01 through ST-04 status.
+Routing-run assignment query seam: Status: implemented at the model-free
+boundary. `aggregate_routing_load` now reads runs exclusively through the
+public `query_routing_run_assignments` seam; equivalence with prior analysis
+results, per-shard multi-shard grouped counts, budgets, conflicts,
+corruption-as-reopen, and typed error carriers are covered by synthetic local
+tests. The refactor is behavior-preserving for every previously passing input;
+no real-model or filesystem-scale claim changes, so MV-01 through MV-08 and
+ST-01 through ST-04 keep their deferred status.

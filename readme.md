@@ -102,6 +102,11 @@ deliberately deferred.
   content-addressed identity recomputation), redaction-faithful, atomic,
   symlink-safe, and relocatable across workspaces with idempotent re-import;
   see [storage](docs/storage.md).
+- `EXPERIMENTAL` routing-run assignment query seam:
+  `query_routing_run_assignments()` returns validated per-shard summaries —
+  identity sets plus grouped assignment counts — under strict budgets with
+  typed error carriers, and `aggregate_routing_load()` consumes exactly that
+  seam instead of concrete shard internals; see [storage](docs/storage.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

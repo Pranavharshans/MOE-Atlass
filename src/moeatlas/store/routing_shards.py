@@ -1690,6 +1690,242 @@ def list_routing_runs(
     )
 
 
+class RoutingRunQueryError(RuntimeError):
+    """Safe fixed failure for bounded routing-run assignment queries."""
+
+    def __init__(self) -> None:
+        super().__init__("routing run query failed")
+
+
+@dataclass(frozen=True, slots=True)
+class RoutingShardAssignmentQuery:
+    """Validated per-shard assignment summary from one bounded run query."""
+
+    shard_key: str
+    token_count: int
+    routing_count: int
+    token_keys: frozenset[str]
+    routing_links: frozenset[tuple[str, str, int]]
+    assignment_counts: tuple[tuple[str, str, int], ...]
+
+    def __post_init__(self) -> None:
+        if type(self.shard_key) is not str or _SHARD_KEY.fullmatch(self.shard_key) is None:
+            raise ValueError("shard_key must be a canonical shard digest")
+        for name in ("token_count", "routing_count"):
+            value = getattr(self, name)
+            if type(value) is not int or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{name} must be a strict positive integer")
+        if type(self.token_keys) is not frozenset or not self.token_keys:
+            raise ValueError("token_keys must be a non-empty frozenset")
+        if type(self.routing_links) is not frozenset or not self.routing_links:
+            raise ValueError("routing_links must be a non-empty frozenset")
+        if type(self.assignment_counts) is not tuple or not self.assignment_counts:
+            raise ValueError("assignment_counts must be a non-empty tuple")
+        for entry in self.assignment_counts:
+            if type(entry) is not tuple or len(entry) != 3:
+                raise ValueError("assignment_counts entries must be (layer, expert, count)")
+            layer_key, expert_key, count = entry
+            if type(layer_key) is not str or type(expert_key) is not str:
+                raise TypeError("assignment keys must be exact strings")
+            if type(count) is not int or isinstance(count, bool) or count <= 0:
+                raise ValueError("assignment counts must be strict positive integers")
+        keys = [entry[:2] for entry in self.assignment_counts]
+        if keys != sorted(keys):
+            raise ValueError("assignment_counts must be sorted by layer and expert key")
+
+
+def _strict_positive_query_budget(value: object, name: str) -> int:
+    if type(value) is not int or isinstance(value, bool):
+        raise TypeError(f"{name} must be a strict positive integer")
+    if value <= 0:
+        raise ValueError(f"{name} must be a strict positive integer")
+    return value
+
+
+def query_routing_run_assignments(
+    workspace: str | Path,
+    *,
+    run_key: str,
+    layer_keys: tuple[str, ...],
+    expert_keys: tuple[tuple[str, ...], ...],
+    routed_top_k: int,
+    max_routing_rows: int,
+    max_source_bytes: int,
+    duckdb: Any,
+    connection: Any,
+) -> tuple[RoutingShardAssignmentQuery, ...]:
+    """Return validated per-shard assignment summaries for one committed run.
+
+    This is the public reader/query seam over committed shards: every shard is
+    reopened and fully validated (manifest identity, file metadata and digests,
+    row identities, universe membership, links) before its grouped assignment
+    counts are returned in canonical shard order.  The caller owns the lazily
+    imported store engine and the bounded in-memory query connection, including
+    closing it exactly once.  Failures are carried by typed errors:
+    :class:`RoutingShardError` for storage-owned stages (``workspace``,
+    ``reopen``, ``conflict``), :class:`RoutingRunInventoryError` with stage
+    ``budget`` for exhausted row or byte budgets,
+    :class:`RoutingRunQueryError` for query-engine failures, and plain
+    ``ValueError``/``TypeError``/``OSError`` for absent or malformed sources.
+    """
+
+    for value, name in (
+        (max_routing_rows, "max_routing_rows"),
+        (max_source_bytes, "max_source_bytes"),
+    ):
+        _strict_positive_query_budget(value, name)
+    _strict_positive_query_budget(routed_top_k, "routed_top_k")
+    if type(layer_keys) is not tuple or not layer_keys:
+        raise TypeError("layer_keys must be a non-empty tuple of strings")
+    if type(expert_keys) is not tuple or len(expert_keys) != len(layer_keys):
+        raise TypeError("expert_keys must match layer_keys exactly")
+
+    # Validate the managed workspace/run boundary before touching any source,
+    # so absent or malformed source is deterministic without reading shards.
+    path = _validate_workspace(workspace)
+    stable_run_key = _validate_run_key(run_key)
+    run_parent = _existing_run_parent(path, stable_run_key)
+    if run_parent is None:
+        raise ValueError("run has no committed routing shards")
+    try:
+        children = tuple(run_parent.iterdir())
+    except Exception as exc:
+        raise ValueError("managed run directory is unreadable") from exc
+    shard_paths: list[Path] = []
+    for child in children:
+        if _STAGING_NAME.fullmatch(child.name):
+            if child.is_symlink() or not child.is_dir():
+                raise RoutingShardError("reopen")
+            continue
+        if child.name.startswith(".staging-"):
+            raise RoutingShardError("reopen")
+        if not child.name.startswith(_SHARD_PREFIX):
+            raise RoutingShardError("reopen")
+        shard_paths.append(child)
+    if not shard_paths:
+        raise ValueError("run has no committed routing shards")
+    sources: list[tuple[Path, dict[str, object], str]] = []
+    source_bytes = 0
+    declared_routing_rows = 0
+    for shard in sorted(shard_paths, key=lambda item: item.name):
+        manifest, shard_key = _read_shard_manifest(
+            shard, stable_run_key, duckdb, validate_files=False
+        )
+        declared_routing_rows += manifest["routing_count"]
+        if declared_routing_rows > max_routing_rows:
+            raise RoutingRunInventoryError("budget") from ValueError(
+                "routing rows exceed the source budget"
+            )
+        try:
+            sizes = [
+                (shard / _MANIFEST_FILE).stat().st_size,
+                (shard / _TOKENS_FILE).stat().st_size,
+                (shard / _ROUTING_FILE).stat().st_size,
+            ]
+        except Exception as exc:
+            raise ValueError("managed shard metadata is unreadable") from exc
+        source_bytes += sum(sizes)
+        if source_bytes > max_source_bytes:
+            raise RoutingRunInventoryError("budget") from ValueError(
+                "source bytes exceed the source budget"
+            )
+        sources.append((shard, manifest, shard_key))
+
+    records: list[RoutingShardAssignmentQuery] = []
+    seen_tokens: set[str] = set()
+    seen_links: set[tuple[str, str, int]] = set()
+    actual_counts: dict[Path, tuple[int, int]] = {}
+    actual_routing_rows = 0
+    try:
+        for shard, manifest, shard_key in sources:
+            try:
+                _validate_file_metadata(shard, manifest)
+            except RoutingShardError:
+                raise
+            except Exception as exc:
+                raise RoutingShardError("reopen") from exc
+            token_path = shard / _TOKENS_FILE
+            routing_path = shard / _ROUTING_FILE
+            try:
+                actual_token_count = connection.execute(
+                    "SELECT COUNT(*) FROM read_parquet(?)", [str(token_path)]
+                ).fetchone()[0]
+                actual_routing_count = connection.execute(
+                    "SELECT COUNT(*) FROM read_parquet(?)", [str(routing_path)]
+                ).fetchone()[0]
+            except RoutingShardError:
+                raise
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except BaseException as exc:
+                raise RoutingShardError("reopen") from exc
+            actual_routing_rows += int(actual_routing_count)
+            if actual_routing_rows > max_routing_rows:
+                raise RoutingRunInventoryError("budget") from ValueError(
+                    "actual routing rows exceed the row budget"
+                )
+            if (
+                actual_token_count != manifest["token_count"]
+                or actual_routing_count != manifest["routing_count"]
+            ):
+                raise RoutingShardError("reopen") from ValueError(
+                    "parquet row counts do not match manifest"
+                )
+            actual_counts[shard] = (int(actual_token_count), int(actual_routing_count))
+        for shard, manifest, shard_key in sources:
+            actual_token_count, actual_routing_count = actual_counts[shard]
+            try:
+                token_keys, routing_links = _validate_routing_load_source(
+                    shard,
+                    stable_run_key,
+                    duckdb,
+                    connection,
+                    layer_keys,
+                    expert_keys,
+                    routed_top_k,
+                )
+            except RoutingShardError:
+                raise
+            except OSError as exc:
+                raise RoutingRunQueryError() from exc
+            except Exception as exc:
+                raise ValueError("shard source validation failed") from exc
+            if seen_tokens.intersection(token_keys) or seen_links.intersection(routing_links):
+                raise RoutingShardError("conflict")
+            seen_tokens.update(token_keys)
+            seen_links.update(routing_links)
+            rows = connection.execute(
+                "SELECT layer_key, expert_key, COUNT(*) AS assignment_count "
+                "FROM read_parquet(?) GROUP BY layer_key, expert_key "
+                "ORDER BY layer_key, expert_key",
+                [str(shard / _ROUTING_FILE)],
+            ).fetchall()
+            records.append(
+                RoutingShardAssignmentQuery(
+                    shard_key=shard_key,
+                    token_count=actual_token_count,
+                    routing_count=actual_routing_count,
+                    token_keys=frozenset(token_keys),
+                    routing_links=frozenset(routing_links),
+                    assignment_counts=tuple(
+                        (str(layer), str(expert), int(count)) for layer, expert, count in rows
+                    ),
+                )
+            )
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except (
+        RoutingShardError,
+        RoutingRunInventoryError,
+        RoutingRunQueryError,
+        ValueError,
+    ):
+        raise
+    except BaseException as exc:
+        raise RoutingRunQueryError() from exc
+    return tuple(records)
+
+
 append_mixtral_routing_shard = append_routing_shard
 list_mixtral_routing_shards = list_routing_shards
 list_mixtral_routing_runs = list_routing_runs
@@ -1701,11 +1937,14 @@ __all__ = [
     "RoutingShardError",
     "RoutingShardReceipt",
     "RoutingRunInventoryError",
+    "RoutingRunQueryError",
+    "RoutingShardAssignmentQuery",
     "MixtralRoutingRunSummary",
     "MixtralRoutingRunInventory",
     "append_routing_shard",
     "list_routing_shards",
     "list_routing_runs",
+    "query_routing_run_assignments",
     "append_mixtral_routing_shard",
     "list_mixtral_routing_shards",
     "list_mixtral_routing_runs",

@@ -39,6 +39,7 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "services" / "workspace.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
+            ROOT / "tests" / "test_store_assignment_queries.py",
             ROOT / "tests" / "test_store_run_export.py",
             ROOT / "tests" / "test_services_workspace.py",
             ROOT / "tests" / "test_store_routing_shards.py",
@@ -904,6 +905,62 @@ class ProjectFilesTests(unittest.TestCase):
             self.assertIn(term, source)
             self.assertIn(term, exports)
         self.assertTrue((ROOT / "tests" / "test_store_run_export.py").is_file())
+
+    def test_assignment_query_seam_docs_and_surface_are_present(self) -> None:
+        storage = (ROOT / "docs" / "storage.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        workspace_doc = (ROOT / "docs" / "workspace.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                storage,
+                (
+                    "query_routing_run_assignments",
+                    "RoutingShardAssignmentQuery",
+                    "RoutingRunQueryError",
+                    "RoutingRunInventoryError",
+                    "query_assignments",
+                    "canonical order",
+                    "conflicts",
+                ),
+            ),
+            (architecture, ("assignment-query seam",)),
+            (workspace_doc, ("query_assignments",)),
+            (roadmap, ("query_routing_run_assignments",)),
+            (ledger, ("Routing-run assignment query seam",)),
+            (readme, ("query_routing_run_assignments",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "store" / "routing_shards.py").read_text()
+        ports_source = (ROOT / "src" / "moeatlas" / "store" / "ports.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "store" / "__init__.py").read_text()
+        analysis = (ROOT / "src" / "moeatlas" / "analysis" / "routing_load.py").read_text()
+        for term in ("RoutingShardAssignmentQuery", "RoutingRunQueryError"):
+            self.assertIn(term, source)
+            self.assertIn(term, exports)
+        for term in (
+            "RoutingShardAssignmentQuery",
+            "query_assignments",
+            "query_routing_run_assignments",
+        ):
+            self.assertIn(term, ports_source)
+        self.assertIn("_storage.query_routing_run_assignments(", analysis)
+        # Analysis must not reach into concrete shard internals any more.
+        for private in (
+            "_validate_sources",
+            "_validate_routing_load_source",
+            "_validate_file_metadata",
+            "_read_shard_manifest",
+            "_existing_run_parent",
+            "_validate_workspace",
+        ):
+            with self.subTest(private=private):
+                self.assertNotIn(f"_storage.{private}", analysis)
+        self.assertTrue((ROOT / "tests" / "test_store_assignment_queries.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

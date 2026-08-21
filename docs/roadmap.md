@@ -111,9 +111,14 @@ bundle (see [storage](storage.md)): `export_run_bundle` /
 evidence as canonical JSONL under a digest-bearing manifest with per-shard
 redaction fidelity, strict row/byte budgets, byte-deterministic output,
 tamper/forged-digest rejection, atomic crash-safe publication, symlink safety,
-idempotent source re-import, and duckdb-free verification. Remaining for this
-sequence: analysis consuming reader/query contracts instead of storage
-internals, and CSV/Parquet export surfaces.
+idempotent source re-import, and duckdb-free verification. Its second landed
+slice routes analysis through storage: `aggregate_routing_load` now consumes
+the public `query_routing_run_assignments` seam (and the
+`RoutingRunReader.query_assignments` port) for source discovery, budgets,
+validation, conflict detection, and grouped reads, reaching into no concrete
+shard internals; analysis results are unchanged on all previously passing
+inputs and multi-shard grouped counts are provably per shard. Remaining for
+this sequence: CSV/Parquet export surfaces.
 
 Sequence 5 (raw evidence and open storage/export) is complete only when:
 

@@ -10,12 +10,15 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from ..runtime.routing_forward import RoutingForwardResult
+from . import routing_shards as _routing_shards
 from .routing_shards import (
     MixtralRoutingRunInventory,
+    RoutingShardAssignmentQuery,
     RoutingShardReceipt,
     append_routing_shard,
     list_routing_runs,
     list_routing_shards,
+    query_routing_run_assignments,
 )
 
 
@@ -36,6 +39,19 @@ class RoutingRunReader(Protocol):
 
     def list_shards(self, *, run_key: str) -> tuple[RoutingShardReceipt, ...]:
         """List all validated immutable routing shards for one run."""
+        ...
+
+    def query_assignments(
+        self,
+        *,
+        run_key: str,
+        layer_keys: tuple[str, ...],
+        expert_keys: tuple[tuple[str, ...], ...],
+        routed_top_k: int,
+        max_routing_rows: int,
+        max_source_bytes: int,
+    ) -> tuple[RoutingShardAssignmentQuery, ...]:
+        """Return validated per-shard assignment summaries for one run."""
         ...
 
 
@@ -109,6 +125,38 @@ class DuckDBRoutingShardStore:
         Delegates to :func:`list_routing_shards`.
         """
         return list_routing_shards(self.workspace, run_key=run_key)
+
+    def query_assignments(
+        self,
+        *,
+        run_key: str,
+        layer_keys: tuple[str, ...],
+        expert_keys: tuple[tuple[str, ...], ...],
+        routed_top_k: int,
+        max_routing_rows: int,
+        max_source_bytes: int,
+    ) -> tuple[RoutingShardAssignmentQuery, ...]:
+        """Return validated per-shard assignment summaries for one run.
+
+        Opens and closes the bounded in-memory query connection around one
+        delegated :func:`query_routing_run_assignments` call.
+        """
+        duckdb = _routing_shards._load_duckdb()
+        connection = duckdb.connect(database=":memory:")
+        try:
+            return query_routing_run_assignments(
+                self.workspace,
+                run_key=run_key,
+                layer_keys=layer_keys,
+                expert_keys=expert_keys,
+                routed_top_k=routed_top_k,
+                max_routing_rows=max_routing_rows,
+                max_source_bytes=max_source_bytes,
+                duckdb=duckdb,
+                connection=connection,
+            )
+        finally:
+            connection.close()
 
     def append(
         self,

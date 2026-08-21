@@ -295,3 +295,13 @@ shards through the standard appender, making source-workspace re-import
 idempotent and cross-workspace import identity-preserving. The bundle is
 byte-deterministic, budget-bounded, atomic on publication, symlink-safe, and
 family-blind; it adds no analysis, migration, or model-dependent claim.
+
+The same layer publishes the bounded assignment-query seam
+(`query_routing_run_assignments` plus the `RoutingRunReader.query_assignments`
+port): per-shard validated summaries with typed error carriers, canonical
+ordering, strict budgets, and cross-shard conflict detection behind one public
+function. Analysis is now a consumer of that seam — `aggregate_routing_load`
+owns only inspection validation, universe reconciliation, matrix folding, and
+its connection lifecycle, and reaches into no concrete shard internals. The
+seam, like the bundle format, is family-blind: it knows shards, manifests,
+budgets, and identities, never model families.

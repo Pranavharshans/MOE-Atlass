@@ -63,7 +63,9 @@ leave no partial file behind.
 `moeatlas.store.ports` defines the model-neutral seams over shard storage so
 callers depend on protocols rather than the concrete module:
 
-- `RoutingRunReader`: bounded `list_runs(...)` and per-run `list_shards(...)`.
+- `RoutingRunReader`: bounded `list_runs(...)`, per-run `list_shards(...)`,
+  and validated per-shard assignment summaries via `query_assignments(...)` —
+  the same seam analysis consumes.
 - `RoutingShardAppender`: `append(result, *, store_token_text=False)`.
 - `DuckDBRoutingShardStore.bind(workspace)`: the current adapter implementing
   both protocols by delegating to the canonical shard functions; duckdb is
@@ -103,8 +105,9 @@ appender, so catalog state can be rebuilt afterwards with
 
 - The catalog is not a query engine, scheduler, or lock manager; concurrent
   writers are out of scope until the durability work below lands.
-- Analysis still reads shard storage directly; routing analysis through these
-  reader/query contracts is the next storage slice.
+- Routing-load analysis consumes the storage query seam
+  (`query_routing_run_assignments`) rather than concrete shard internals;
+  richer catalog-level queries remain future work.
 - No CLI or server command exposes the catalog yet; those surfaces arrive
   with the headless product slices.
 - Catalog/query/reopen/repair tests use synthetic runs only. Filesystem
