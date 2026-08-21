@@ -42,15 +42,15 @@ tracks dependency order and exit criteria without redefining those documents.
 | 1 | Neutral event validation and storage APIs | `model-free complete` | Runtime-independent collection validation; canonical and historical storage functions are exact aliases; persisted behavior unchanged; all local gates pass | Events, runtime, storage docs and tests |
 | 2 | Run identity, provenance, and lifecycle | `model-free complete` | Versioned immutable run specs/state/progress/cancellation/lineage with deterministic transition and serialization tests | PRD §9.3 and schema tests |
 | 3 | Application services and workspace/catalog | `model-free complete` | Shared CLI/server services, storage ports, migrations, bounded queries, reopen/repair, and v1 shard compatibility | PRD §10; ST-01–ST-04 remain separate |
-| 4 | Universal execution capabilities | `in progress` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
+| 4 | Universal execution capabilities | `model-free complete` | Family-neutral inspection/input/execution/decoder/universe contracts with unknown-family and non-rectangular synthetic fixtures | PRD §§7–8 and adapter/runtime tests |
 | 5 | Raw evidence and open storage/export | `model-free complete` | Bounded versioned event/manifest/metric export and import with redaction, migration, tamper, and atomicity tests; analysis consumes reader/query contracts rather than storage internals | PRD §§10 and 16 |
 | 6 | Prompt and dataset run engine | `model-free complete` | Incremental deterministic prompt/dataset execution, progress, cancellation, resume, and per-row errors over fake runtimes | PRD §9 |
 | 7 | Task association and Evidence Cards | `model-free complete` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests; real-evidence capture stays in Sequence 12 |
-| 8 | Plugins and complete headless CLI/API | `in progress` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
-| 9 | FastAPI server and React UI | `in progress` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14; React SPA and browser E2E stay deferred release work |
+| 8 | Plugins and complete headless CLI/API | `model-free complete` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
+| 9 | FastAPI server and React UI | `VM/GPU deferred` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14; React SPA and browser E2E stay deferred release work |
 | 10 | Intervention and causal evidence | `model-free complete` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
 | 11 | Privacy, reliability, benchmarks, and release | `model-free complete` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19; clean-install/Docker/screenshots stay deferred release work |
-| 12 | Final VM/GPU certification and PRD audit | `VM/GPU deferred` | MV-01–MV-08 and ST-01–ST-04 have recorded evidence; every v1 acceptance row traces to passing implementation and validation | PRD §20 and validation ledger |
+| 12 | Final VM/GPU certification and PRD audit | `VM/GPU deferred` | MV-01–MV-08 and ST-01–ST-04 have recorded evidence; every v1 acceptance row traces to passing implementation and validation. The model-free audit is complete (see [prd-audit](prd-audit.md)); certification stays blocked on VM access | PRD §20 and validation ledger |
 
 ## Current slice exit criteria
 
@@ -62,7 +62,7 @@ lifecycle contracts in `moeatlas.runs` (see [runs](runs.md)); Sequence 3
 delivered the versioned workspace catalog, model-neutral storage ports, and
 the shared application-service layer (see [workspace](workspace.md)).
 
-Sequence 4 is `in progress`. Its landed slices cover the adapter-published
+Sequence 4 is `model-free complete`: every capability contract, unknown-family fixture, and non-rectangular projection is landed and tested. Its landed slices cover the adapter-published
 `RoutingUniverse` contract (see [adapters](adapters.md)) — per-layer expert
 universes, parallel native expert indices, variable top-k schedules,
 adapter-declared layout tags, explicit shared-expert semantics — the named
@@ -242,7 +242,7 @@ gradient attribution over real tensors, shared-vs-routed comparison on a
 real checkpoint, and intervention causality (Sequence 10 supplies the
 recipe mechanics first).
 
-Sequence 8 is `in progress`. Its first landed slice is the adapter plugin
+Sequence 8 is `model-free complete`: the registry and every PRD CLI flow are landed, contract-tested, and pushed. Its first landed slice is the adapter plugin
 registry (see [adapters](adapters.md)): `collect_adapter_registry()` in
 `moeatlas.adapters.registry` unifies shipped adapters and
 `moeatlas.adapters` entry-point plugins behind one deterministic listing
@@ -266,7 +266,7 @@ storage layer's canonical tamper-evident evidence bundle with fixed safe
 errors. The scan, compare, doctor, and adapters-list commands complete the
 PRD command set over shared services.
 
-Sequence 9 is `in progress`. Its first landed slice is the local read-only
+Sequence 9 is model-free complete at the wire boundary with the React/TypeScript SPA and browser E2E recorded as deferred release evidence (status `VM/GPU deferred`). Its first landed slice is the local read-only
 server (see [server](server.md)): `create_app()` in
 `moeatlas.server.app` binds one workspace behind strict construction
 budgets and exposes `/healthz`, `/api/workspace`, bounded `/api/runs` with
@@ -348,6 +348,16 @@ release-time evidence, not contracts: clean-install checks in pristine
 environments, NOTICE/screenshot/demo assets, optional Docker paths, the
 evidence-generated compatibility matrix (Sequence 12), and concurrent
 reader/writer durability (ST-01 through ST-04).
+
+Sequence 12 is `VM/GPU deferred`. Its model-free half is done: the final
+audit ([prd-audit](prd-audit.md)) traces every PRD v1 acceptance area to
+its implementation surface, local test evidence, and honest status, and
+enumerates the complete deferred/blocked row list (MV-01 through MV-08,
+ST-01 through ST-04) that no local test promotes. Its other half —
+executing those rows on the final VM, the release-time review of official
+immutable revisions, and the evidence-generated compatibility matrix —
+stays blocked until VM/GPU access is provisioned; missing access records
+as `blocked`, never as `passed`.
 
 Sequence 8 (plugins and complete headless CLI/API) is complete only when:
 

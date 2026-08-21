@@ -527,3 +527,13 @@ covered by synthetic contract tests. No model, tokenizer, download, or GPU
 participates. Real performance measurements on provisioned infrastructure
 remain deferred VM/GPU evidence; developer-machine timing is never
 promoted to release evidence by this API.
+
+Final model-free PRD audit: Status: complete. `docs/prd-audit.md` traces
+every PRD v1 acceptance area to its implementation surface, local
+synthetic-test evidence, and honest status, and enumerates MV-01 through
+MV-08 and ST-01 through ST-04 as the complete list of infrastructure-bound
+claims this repository does not make. No model, tokenizer, download, or GPU
+participated in the audit. The VM/GPU half of Sequence 12 — executing those
+rows on provisioned hardware and the release-time review of official
+revisions — remains blocked until access exists; it is recorded as blocked,
+never passed.

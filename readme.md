@@ -304,7 +304,10 @@ deliberately deferred.
 - No model files are downloaded by the repository tests or setup.
 
 Check the [model-validation ledger](docs/model-validation-ledger.md) before
-interpreting a local test result as model compatibility evidence.
+interpreting a local test result as model compatibility evidence. The final
+[PRD acceptance audit](docs/prd-audit.md) traces every v1 acceptance area to
+its implementation and evidence, and lists exactly which claims stay
+deferred or blocked until the VM phase runs.
 
 The experimental `MixtralRoutingDecoder` consumes an exact fresh
 `AdapterInspection` and non-empty ordered `TokenEvent` tuple. It binds each

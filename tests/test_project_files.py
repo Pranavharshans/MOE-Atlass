@@ -2044,6 +2044,42 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(term=term):
                 self.assertIn(term, example_source)
 
+    def test_final_prd_audit_is_present_and_honest(self) -> None:
+        required = (
+            ROOT / "docs" / "prd-audit.md",
+            ROOT / "docs" / "specification" / "MoEAtlas_PRD_v1.docx",
+        )
+        for path in required:
+            with self.subTest(path=path):
+                self.assertTrue(path.is_file(), path)
+        audit = (ROOT / "docs" / "prd-audit.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                audit,
+                (
+                    "Acceptance-area traceability",
+                    "MV-01",
+                    "ST-04",
+                    "blocked: requires provisioned VM/GPU access that does not exist",
+                    "model-free complete, certification blocked on infrastructure",
+                ),
+            ),
+            (roadmap, ("prd-audit",)),
+            (ledger, ("Final model-free PRD audit",)),
+            (readme, ("prd-audit",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        # The audit must not quietly upgrade deferred rows: every
+        # infrastructure claim stays listed as deferred or blocked.
+        for row_id in ("MV-01", "MV-05", "MV-08", "ST-01", "ST-03"):
+            with self.subTest(row_id=row_id):
+                self.assertIn(row_id, audit)
+
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()
         storage = (ROOT / "docs" / "storage.md").read_text()
