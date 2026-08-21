@@ -47,7 +47,13 @@ except ImportError:  # pragma: no cover - exercised without the store extra
     duckdb = None
 
 
-def _aggregate(workspace: Path, inspection: object, run_key: str = "run-1", **limits: int):
+def _aggregate(
+    workspace: Path,
+    inspection: object,
+    run_key: str = "run-1",
+    universe: object | None = None,
+    **limits: int,
+):
     return aggregate_mixtral_routing_load(
         workspace,
         inspection,
@@ -55,6 +61,7 @@ def _aggregate(workspace: Path, inspection: object, run_key: str = "run-1", **li
         max_routing_rows=limits.get("max_routing_rows", 10_000),
         max_source_bytes=limits.get("max_source_bytes", 10_000_000),
         max_matrix_cells=limits.get("max_matrix_cells", 10_000),
+        declared_universe=universe,
     )
 
 
@@ -321,10 +328,12 @@ def test_public_surface_and_matrix_field_order() -> None:
         "max_routing_rows",
         "max_source_bytes",
         "max_matrix_cells",
+        "declared_universe",
     )
     signature = inspect.signature(aggregate_mixtral_routing_load)
     assert signature.parameters["run_key"].kind is inspect.Parameter.KEYWORD_ONLY
     assert signature.parameters["max_routing_rows"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert signature.parameters["declared_universe"].default is None
 
 
 def test_matrix_constructor_revalidates_formula_and_axes() -> None:
@@ -1206,3 +1215,103 @@ def test_future_descriptor_is_accepted_only_by_structural_routing_contract(
     )
     assert matrix.adapter_name == "future-moe-static"
     assert matrix.adapter_version == "2.0"
+
+
+def test_declared_universe_path_matches_legacy_aggregation(tmp_path: Path) -> None:
+    if duckdb is None:
+        pytest.skip("duckdb store extra is unavailable")
+    from moeatlas.adapters import publish_routing_universe
+
+    workspace = _workspace(tmp_path)
+    result, _, inspection = _run_result("legacy", token_count=1)
+    receipt = append_mixtral_routing_shard(workspace, result)
+    declared = publish_routing_universe(inspection)
+    assert _aggregate(
+        workspace, inspection, receipt.run_key, universe=declared
+    ) == _aggregate(workspace, inspection, receipt.run_key)
+    assert aggregate_routing_load(
+        workspace,
+        inspection,
+        run_key=receipt.run_key,
+        max_routing_rows=10_000,
+        max_source_bytes=10_000_000,
+        max_matrix_cells=10_000,
+        declared_universe=declared,
+    ) == _aggregate(workspace, inspection, receipt.run_key)
+
+
+def test_tampered_declared_universe_is_rejected_at_inspection_stage(
+    tmp_path: Path,
+) -> None:
+    if duckdb is None:
+        pytest.skip("duckdb store extra is unavailable")
+    import json
+
+    from moeatlas.adapters import RoutingUniverse, publish_routing_universe
+
+    workspace = _workspace(tmp_path)
+    result, _, inspection = _run_result("legacy", token_count=1)
+    receipt = append_mixtral_routing_shard(workspace, result)
+
+    payload = json.loads(publish_routing_universe(inspection).to_json())
+    payload["layers"][0]["routed_top_k"] = 3
+    tampered = RoutingUniverse.model_validate(payload)
+    with pytest.raises(RoutingLoadError) as exc:
+        _aggregate(workspace, inspection, receipt.run_key, universe=tampered)
+    assert exc.value.stage == "inspection"
+
+    with pytest.raises(RoutingLoadError) as exc:
+        _aggregate(
+            workspace,
+            inspection,
+            receipt.run_key,
+            universe={"layout": "legacy_indexed"},
+        )
+    assert exc.value.stage == "inspection"
+
+
+def test_adapter_declared_layout_stays_gated_in_analysis(tmp_path: Path) -> None:
+    if duckdb is None:
+        pytest.skip("duckdb store extra is unavailable")
+    from moeatlas.adapters import publish_routing_universe
+
+    from .test_adapters_universe import _rebuild_inspection
+
+    inspection = _rebuild_inspection(
+        _inspection("legacy"),
+        router_metadata={0: {"layout": "custom_sparse"}, 1: {"layout": "custom_sparse"}},
+    )
+    # Publication is family-neutral and accepts the adapter-declared tag...
+    published = publish_routing_universe(inspection)
+    assert published.layout == "custom_sparse"
+    workspace = _workspace(tmp_path)
+    result, _, _ = _run_result("legacy", token_count=1)
+    append_mixtral_routing_shard(workspace, result)
+    # ...while routing-load analysis keeps its decodable-layout contract on
+    # both the legacy and declared-universe paths.
+    with pytest.raises(RoutingLoadError) as exc:
+        _aggregate(workspace, inspection)
+    assert exc.value.stage == "inspection"
+    with pytest.raises(RoutingLoadError):
+        _aggregate(workspace, inspection, universe=published)
+
+
+def test_declared_universe_rejection_precedes_source_work(tmp_path: Path) -> None:
+    """A mismatching universe fails at the inspection stage, before shards."""
+
+    if duckdb is None:
+        pytest.skip("duckdb store extra is unavailable")
+    import json
+
+    from moeatlas.adapters import RoutingUniverse, publish_routing_universe
+
+    inspection = _inspection("legacy")
+    payload = json.loads(publish_routing_universe(inspection).to_json())
+    payload["layers"][0]["routed_top_k"] = 3
+    tampered = RoutingUniverse.model_validate(payload)
+    workspace = _workspace(tmp_path)
+    with pytest.raises(RoutingLoadError) as exc:
+        _aggregate(workspace, inspection, universe=tampered)
+    assert exc.value.stage == "inspection"
+    # The run directory was never opened: rejection precedes source work.
+    assert list(workspace.iterdir()) == []

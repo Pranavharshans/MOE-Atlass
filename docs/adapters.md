@@ -255,6 +255,9 @@ consumers: it succeeds only when every layer shares one expert count and
 top-k, layer indices run contiguously from zero, and native indices are
 contiguous per layer. Non-rectangular universes fail the projection instead
 of being silently reshaped, which replaces the hidden rectangular
-assumption of earlier routing-load analysis with a checked, named step.
+assumption of earlier routing-load analysis with a checked, named step:
+`aggregate_routing_load(declared_universe=...)` verifies a declared universe
+against its inspection publication and through that projection before any
+shard work (see [analysis](analysis.md)).
 Real-checkpoint equivalence for non-rectangular families remains deferred
 to the final VM phase.

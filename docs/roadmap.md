@@ -62,15 +62,16 @@ lifecycle contracts in `moeatlas.runs` (see [runs](runs.md)); Sequence 3
 delivered the versioned workspace catalog, model-neutral storage ports, and
 the shared application-service layer (see [workspace](workspace.md)).
 
-Sequence 4 is `in progress`. Its first slice landed the adapter-published
-`RoutingUniverse` contract (see [adapters](adapters.md)): per-layer expert
+Sequence 4 is `in progress`. Its landed slices cover the adapter-published
+`RoutingUniverse` contract (see [adapters](adapters.md)) — per-layer expert
 universes, parallel native expert indices, variable top-k schedules,
-adapter-declared layout tags, explicit shared-expert semantics, and the named
-`project_rectangular_universe()` reduction that replaces routing-load's
-hidden rectangular assumptions. Unknown-family publication and
-non-rectangular shapes are contract-tested; wiring analysis to consume the
-universe plus input-preparation/invocation/decoding/observation capability
-protocols remain for later slices in this sequence.
+adapter-declared layout tags, explicit shared-expert semantics — and the
+named `project_rectangular_universe()` reduction now consumed by
+`aggregate_routing_load(declared_universe=...)` so routing-load gates
+rectangularity explicitly at its API boundary (see [analysis](analysis.md)).
+Unknown-family publication and non-rectangular shapes are contract-tested.
+Input-preparation/invocation/decoding/observation capability protocols with
+fake unknown-family runtimes remain for later slices in this sequence.
 
 Sequence 4 (universal execution capabilities) is complete only when:
 

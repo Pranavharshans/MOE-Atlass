@@ -451,6 +451,7 @@ def _derive_universe(inspection: AdapterInspection) -> RoutingUniverse:
     if len(layouts) != 1:
         raise ValueError("inspection layouts are inconsistent")
     layer_records.sort(key=lambda record: record[0])
+    covered_layers = {record[0] for record in layer_records}
 
     routed_experts = {
         component.component_key
@@ -461,6 +462,12 @@ def _derive_universe(inspection: AdapterInspection) -> RoutingUniverse:
     }
     if routed_experts != {key for record in layer_records for key in record[3]}:
         raise ValueError("inspection does not publish the full routed expert universe")
+    if any(
+        component.kind is ComponentKind.SHARED_EXPERT
+        and component.layer_index not in covered_layers
+        for component in components
+    ):
+        raise ValueError("shared expert is bound outside the router universe")
     # An EXPERT kind is a routed target in the canonical structural schema;
     # shared-expert components are validated above but are intentionally
     # absent from the routed universe.  Unlike the rectangular analysis path,

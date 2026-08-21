@@ -162,9 +162,10 @@ deliberately deferred.
   expert indices, variable top-k schedules, shared experts, adapter-declared
   layout tags) with `publish_routing_universe()` from any conforming
   inspection and `project_rectangular_universe()` as the explicit rectangular
-  reduction for legacy analysis. Non-rectangular and unknown-family shapes
-  are first-class; analysis does not yet consume the universe.
-  See [adapters](docs/adapters.md).
+  reduction for legacy analysis; `aggregate_routing_load()` accepts a declared
+  universe that must match the publication and pass the projection before any
+  shard work. Non-rectangular and unknown-family shapes are first-class.
+  See [adapters](docs/adapters.md) and [analysis](docs/analysis.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

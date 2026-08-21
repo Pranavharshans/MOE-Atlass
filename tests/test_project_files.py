@@ -143,10 +143,19 @@ class ProjectFilesTests(unittest.TestCase):
             "legacy_indexed",
             "family-blind",
             "non-rectangular",
+            "declared_universe",
             "final VM",
         ):
             with self.subTest(term=term):
                 self.assertIn(term, adapters_docs)
+        analysis_docs = (ROOT / "docs" / "analysis.md").read_text()
+        for term in (
+            "declared_universe",
+            "RoutingUniverse",
+            "project_rectangular_universe",
+            "checked, named gate",
+        ):
+            self.assertIn(term, analysis_docs)
         universe_source = (
             ROOT / "src" / "moeatlas" / "adapters" / "universe.py"
         ).read_text()
