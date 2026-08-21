@@ -192,9 +192,16 @@ contingency table of selected-route counts per (layer, task, expert), and
 PMI/MI in bits (with task-share-consistent specific MI), mean pairwise
 Jensen-Shannon separability, and exclusivity/generality per expert — all
 deterministic, budget-bounded, `null`-for-undefined, and canonically
-serializable as `moeatlas.task_association` artifacts. Per-token task-labeled
-evidence, prompt-vs-rollout agreement, cross-run association stability, and
-the Evidence Cards themselves are later slices in this sequence.
+serializable as `moeatlas.task_association` artifacts. Its second landed
+slice is the Evidence Cards of PRD §11.5 (see [analysis](analysis.md)):
+`EvidenceCard` in `moeatlas.analysis.evidence_cards` keeps one expert's
+routing, task-association, behavior, causality, and stability evidence in
+separate optional sections (`null` means not measured), with capability
+labels over a fixed tier vocabulary, str-only limitations/warnings, and
+canonical `moeatlas.evidence_card` round-trips — never collapsing tiers into
+one score and never claiming specialization or causality from association.
+Per-token task-labeled evidence, prompt-vs-rollout agreement, and cross-run
+association stability are later slices in this sequence.
 
 Sequence 6 (prompt and dataset run engine) is complete only when:
 

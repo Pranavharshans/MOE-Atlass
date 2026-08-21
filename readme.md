@@ -143,6 +143,12 @@ deliberately deferred.
   separability, and exclusivity/generality — deterministic, budget-bounded,
   `null`-for-undefined, canonically serializable; association is never
   specialization or causality; see [analysis](docs/analysis.md).
+- `EXPERIMENTAL` Evidence Cards: `EvidenceCard()` keeps one expert's routing,
+  task-association, behavior, causality, and stability evidence in separate
+  optional sections (`null` means not measured) with capability labels over a
+  fixed tier vocabulary and honest limitations/warnings — canonically
+  serializable as `moeatlas.evidence_card` artifacts; see
+  [analysis](docs/analysis.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

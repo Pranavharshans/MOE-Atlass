@@ -366,4 +366,9 @@ documented denominators and `null`-not-`NaN` undefined cells. The layer is
 pure and deterministic: no storage reads, no clocks, no randomness, and no
 claim that association is specialization or causality. Per-token task-labeled
 evidence arrives with later executors; until then synthetic tables are the
-contract's exercise surface.
+contract's exercise surface. Evidence Cards (`moeatlas.analysis.evidence_cards`)
+continue the sequence with PRD §11.5's structured record: one expert's
+identity, routing/task-association/behavior/causality/stability sections kept
+separate and optional (`null` means not measured), capability labels over a
+fixed tier vocabulary, and honest limitations/warnings — canonically
+serializable as `moeatlas.evidence_card` artifacts, still family-blind.

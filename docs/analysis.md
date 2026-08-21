@@ -216,3 +216,33 @@ never specialization or causality. Per-token task-labeled evidence arrives
 with task-labeled executors in later sequences, so the contract is exercised
 over synthetic tables; prompt-vs-rollout agreement and cross-run stability
 of association are later slices in this sequence.
+
+## Evidence Cards
+
+`moeatlas.analysis.evidence_cards` implements the structured alternative to a
+single specialization score (PRD §11.5). An `EvidenceCard` binds one expert
+to a model fingerprint (`sha256:<64 hex>`), its layer and expert keys, and an
+explicit `expert_kind` of `routed` or `shared` — shared-expert keys are legal
+only on shared cards. Every evidence tier is a separate optional section, and
+`null` always means "not measured", never inferred:
+
+- `routing` — usage share, normalized load, mean rank/margin/entropy
+  (tier A, routing usage).
+- `task_association` — per-task enrichment/PMI/exclusivity rows aligned with
+  `task_keys`, plus the `example_count` standing behind the numbers.
+- `behavior` — bounded input/output/contribution summaries (tier B,
+  internal behavior).
+- `causality` — intervention deltas with an optional recipe fingerprint
+  (tier C); the card records results and never claims causality from
+  association.
+- `stability` — replicated/total seeds and datasets (tier D, replication).
+
+Cards carry str-only `limitations` and `warnings`, `capability_labels` as
+`(tier, label)` pairs over the fixed `EVIDENCE_TIERS` vocabulary with labels
+`full`/`partial`/`unsupported` (one label per tier), and optional provenance
+(`probe_version`, `adapter_name`, `adapter_version`, `capture_source`). The
+frozen value round-trips through canonical JSON as a
+`moeatlas.evidence_card` artifact; contract violations raise `TypeError` for
+wrong types and `ValueError` for bad values, and `EvidenceCardError` reports
+fixed `contract`/`serialization` stages. Cards are exercised over synthetic
+values; real-model evidence remains deferred MV work.

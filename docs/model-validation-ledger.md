@@ -381,3 +381,12 @@ tests with exact expected values. No model or tokenizer participates;
 association over real per-token task-labeled routing evidence remains
 deferred until task-labeled executors land, so MV-01 through MV-08 and
 ST-01 through ST-04 keep their deferred status.
+
+Evidence Cards: Status: implemented at the model-free boundary. Identity
+strictness, optional tiered sections (routing, task association, behavior,
+causality, stability), capability-label vocabulary, limitations/warnings,
+and canonical `moeatlas.evidence_card` round-trips are covered by synthetic
+contract tests. No model or tokenizer participates; populating cards with
+real routing, behavior, causal, and replication evidence remains deferred to
+the VM/GPU lane, so MV-01 through MV-08 and ST-01 through ST-04 keep their
+deferred status.
