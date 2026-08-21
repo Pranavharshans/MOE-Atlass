@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 
-from .routing_load import MixtralRoutingLoadMatrix
+from .routing_load import RoutingLoadMatrix
 
 ROUTING_HEATMAP_SCHEMA_VERSION = "1.0"
 
@@ -43,8 +43,8 @@ def _strict_positive_cells(value: object) -> int:
     return value
 
 
-def _fresh_matrix(matrix: MixtralRoutingLoadMatrix) -> MixtralRoutingLoadMatrix:
-    return MixtralRoutingLoadMatrix(
+def _fresh_matrix(matrix: RoutingLoadMatrix) -> RoutingLoadMatrix:
+    return RoutingLoadMatrix(
         schema_version=matrix.schema_version,
         store_schema_version=matrix.store_schema_version,
         event_schema_version=matrix.event_schema_version,
@@ -81,8 +81,8 @@ def _format_value(metric: str, value: int | float) -> str:
     return f"{value:.6f}×"
 
 
-def render_mixtral_routing_load_heatmap(
-    matrix: MixtralRoutingLoadMatrix,
+def render_routing_load_heatmap(
+    matrix: RoutingLoadMatrix,
     *,
     metric: str,
     max_cells: int,
@@ -94,8 +94,8 @@ def render_mixtral_routing_load_heatmap(
     if metric not in _METRICS:
         raise ValueError("metric must be assignment_counts, assignment_shares, or load_ratios")
     _strict_positive_cells(max_cells)
-    if type(matrix) is not MixtralRoutingLoadMatrix:
-        raise TypeError("matrix must be an exact MixtralRoutingLoadMatrix")
+    if type(matrix) is not RoutingLoadMatrix:
+        raise TypeError("matrix must be an exact RoutingLoadMatrix")
     fresh = _fresh_matrix(matrix)
     expert_count = len(fresh.expert_keys[0])
     cells = len(fresh.layer_keys) * expert_count
@@ -244,4 +244,13 @@ def render_mixtral_routing_load_heatmap(
     return "\n".join(lines) + "\n"
 
 
-__all__ = ["ROUTING_HEATMAP_SCHEMA_VERSION", "render_mixtral_routing_load_heatmap"]
+# Preserve the historical spelling as an identity alias.  It is deliberately
+# not a family-specific renderer, so all families share one byte-stable HTML
+# contract.
+render_mixtral_routing_load_heatmap = render_routing_load_heatmap
+
+__all__ = [
+    "ROUTING_HEATMAP_SCHEMA_VERSION",
+    "render_routing_load_heatmap",
+    "render_mixtral_routing_load_heatmap",
+]

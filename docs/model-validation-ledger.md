@@ -240,9 +240,10 @@ equivalence, GPU validation, and immutable revision pinning remain final-VM and
 release-review work. No model files are downloaded.
 Feature 27 Qwen3.5 forward: Status: implemented at the model-free boundary;
 the decoder/session composition, neutral result, cleanup evidence, and
-append/reopen/inventory storage compatibility are covered. Feature 27 ends
-before aggregate or visualization: those existing downstream functions remain
-Mixtral-specific pending Feature 28 model-neutral analysis neutralization.
+append/reopen/inventory storage compatibility, neutral aggregate, and neutral
+visualization are covered by Feature 28. The analysis contract validates
+complete routed structural universes and excludes shared experts from routed
+denominators.
 Official checkpoint/runtime equivalence and GPU certification status remain
 deferred to the final VM and release-time revision review. No model files are
 downloaded.

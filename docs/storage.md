@@ -8,10 +8,10 @@ backward-compatible and accepts Qwen3.5 or future-family results without
 changing the persisted schema. The result is freshly revalidated before any managed
 directory is created; the opaque model output is never serialized, inspected,
 or retained by storage.
-Feature 27 validates Qwen3.5 through append, reopen, and the read-only run
-inventory only. Aggregate and visualization remain Mixtral-specific until the
-Feature 28 model-neutral analysis work; storage compatibility is not an
-analysis or visualization certification claim.
+Feature 27 and Feature 28 validate Qwen3.5 through append, reopen, the
+read-only run inventory, neutral aggregation, and neutral visualization. The
+stored schema remains unchanged; this model-free path is not checkpoint/GPU
+certification.
 
 The workspace must already be a real, non-symlink directory. One immutable
 content-addressed shard is written under:

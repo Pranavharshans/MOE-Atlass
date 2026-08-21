@@ -82,17 +82,21 @@ deliberately deferred.
   checks, and non-mutating reopen/list validation. This is a shard prerequisite,
   not a full workspace/catalog, query, CLI, server, UI, heatmap, prompt, or
   expert-metric subsystem; see [storage](docs/storage.md).
-- `EXPERIMENTAL` bounded `aggregate_mixtral_routing_load()` analysis over one
-  run's complete Feature 19 shards, using the exact inspection-published
-  Mixtral layer/expert universe and strict source/row/cell budgets. It returns
-  only value-owned count/share/load-ratio matrices; it does not infer axes,
-  write analysis output, expose raw rows, or claim specialization. See
+- `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
+  complete Feature 19 shards, using the exact inspection-published routed
+  layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict
+  source/row/cell budgets. Shared experts are validated as structural metadata
+  and excluded from routed axes. The historical
+  `aggregate_mixtral_routing_load()` name is an identity alias. It returns only
+  value-owned count/share/load-ratio matrices; it does not infer axes, write
+  analysis output, expose raw rows, or claim specialization. See
   [analysis](docs/analysis.md).
-- `EXPERIMENTAL` dependency-free `render_mixtral_routing_load_heatmap()` output
+- `EXPERIMENTAL` dependency-free `render_routing_load_heatmap()` output
   over one accepted routing-load matrix, with exact metric/cell validation,
   complete accessible zero-inclusive HTML tables, deterministic global heat
   bins, frozen provenance, and no JavaScript, external resource, storage, or
-  model boundary. See [visualization](docs/visualization.md).
+  model boundary. The historical `render_mixtral_routing_load_heatmap()` name
+  is an identity alias. See [visualization](docs/visualization.md).
 - `EXPERIMENTAL` Feature 22 bounded `moeatlas heatmap WORKSPACE` CLI composition over a
   caller-supplied inspection document and stored run. It preflights output,
   enforces canonical decimal byte/row/source/cell budgets, delegates aggregate
@@ -234,12 +238,13 @@ wrapper. It borrows a validated `LoadedModel`, enforces caller budgets, and
 delegates exactly one passive routing forward; tokenizer and checkpoint fidelity
 remain deferred to the final VM.
 
-The reference Mixtral model-free composition is explicit and manual: call
+The model-free composition is explicit and manual: call
 prefill once, append its returned model-neutral `RoutingForwardResult` with
 `append_mixtral_routing_shard(...)`, rebuild the read-only run inventory with
 `list_mixtral_routing_runs(...)`, aggregate a selected run with
-`aggregate_mixtral_routing_load(...)`, and finally pass that matrix to
-`render_mixtral_routing_load_heatmap(...)`. Prefill does not append, inventory,
+`aggregate_routing_load(...)`, and finally pass that matrix to
+`render_routing_load_heatmap(...)`. The historical Mixtral analysis names are
+identity aliases. Prefill does not append, inventory,
 aggregate, render, or expose a server/wire/progress surface on the caller's
 behalf; each later action remains independently bounded and auditable.
 An explicit Qwen3.5-MoE static adapter covers the current
@@ -254,6 +259,7 @@ does not certify checkpoint or GPU runtime behavior; that remains a final-VM
 and release-time revision-review task.
 An EXPERIMENTAL Qwen3.5 one-forward boundary captures complete routing evidence
 through the neutral runtime result and existing storage-compatible event schema.
-Feature 27 downstream stops at append, reopen, and run inventory; aggregate and
-visualization remain Mixtral-specific pending Feature 28 model-neutral analysis
-neutralization.
+Feature 27 downstream now composes through append, reopen, run inventory,
+neutral aggregation, and neutral visualization for any inspection whose
+complete routed universe passes structural validation. Feature 28 does not
+change the stored schema or the Mixtral HTML bytes.

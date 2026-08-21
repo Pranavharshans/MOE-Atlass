@@ -1,8 +1,9 @@
 # Routing-load visualization
 
-Feature 21 adds one dependency-free, deterministic presentation boundary:
-`render_mixtral_routing_load_heatmap(matrix, *, metric, max_cells)`. It accepts
-only a freshly reconstructed `MixtralRoutingLoadMatrix` and renders a complete
+Feature 28 provides one dependency-free, deterministic model-neutral
+presentation boundary:
+`render_routing_load_heatmap(matrix, *, metric, max_cells)`. It accepts only a
+freshly reconstructed `RoutingLoadMatrix` and renders a complete
 standalone HTML5 document. The exact metrics are `assignment_counts`,
 `assignment_shares`, and `load_ratios`; the cell budget is strict and applies
 before rendering.
@@ -13,13 +14,13 @@ The portable static HTML export is caller-owned and permanent:
 from pathlib import Path
 import webbrowser
 
-from moeatlas.analysis import render_mixtral_routing_load_heatmap
+from moeatlas.analysis import render_routing_load_heatmap
 
 # `inspection` is an existing AdapterInspection and `matrix` is an existing
-# MixtralRoutingLoadMatrix from Feature 20.
+# RoutingLoadMatrix from Feature 28.
 inspection_path = Path("inspection.json")
 inspection_path.write_text(inspection.to_json(), encoding="utf-8")
-html = render_mixtral_routing_load_heatmap(
+html = render_routing_load_heatmap(
     matrix,
     metric="load_ratios",
     max_cells=10_000,
@@ -29,7 +30,8 @@ artifact.write_text(html, encoding="utf-8")
 webbrowser.open(artifact.resolve().as_uri())
 ```
 
-The renderer itself remains pure: it returns the string and does not save or
+The historical `render_mixtral_routing_load_heatmap` name is an identity alias
+of the neutral renderer. The renderer itself remains pure: it returns the string and does not save or
 open anything. A future React UI is a separate presentation surface, not a replacement
 for this portable static HTML export path.
 

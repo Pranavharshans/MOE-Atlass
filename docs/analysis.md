@@ -1,13 +1,23 @@
 # Routing-load analysis
 
-Feature 20 adds one bounded, read-only aggregation seam:
-`aggregate_mixtral_routing_load(workspace, inspection, *, run_key,
-max_routing_rows, max_source_bytes, max_matrix_cells)`. It accepts an exact,
-fresh Mixtral `AdapterInspection` and reads every committed Feature 19 shard
-for one run. It does not infer an expert or layer universe from observations:
-the inspection must publish every routed, non-shared expert in contiguous
-index order for every router layer, together with an exact `legacy_indexed` or
-`packed` layout.
+Feature 28 provides one bounded, read-only model-neutral aggregation seam:
+`aggregate_routing_load(workspace, inspection, *, run_key, max_routing_rows,
+max_source_bytes, max_matrix_cells)`. It accepts an exact, fresh
+`AdapterInspection` and reads every committed Feature 19 shard for one run. It
+does not infer an expert or layer universe from observations: the inspection
+must publish every routed, non-shared expert in contiguous index order for
+every router layer, together with an exact `legacy_indexed` or `packed` layout.
+Mixtral and Qwen3.5 both use this path; a future adapter with the same complete
+structural contract is accepted without an analysis-family branch.
+This neutralizes and supersedes the Feature 20 Mixtral-only analysis boundary;
+the Feature 20 contract remains byte-compatible through the historical aliases.
+
+The historical `MixtralRoutingLoadMatrix` and
+`aggregate_mixtral_routing_load` names are identity aliases of
+`RoutingLoadMatrix` and `aggregate_routing_load`. Adapter name, version, and
+architecture family are provenance, not an allowlist. Shared-expert components
+must be explicitly marked `shared=True, routed=False`; they are checked for
+per-layer completeness but never enter the routed expert axis or denominator.
 
 The function validates strict positive budgets before filesystem traversal or
 the lazy DuckDB import. It budgets the matrix cell universe, manifest and
@@ -16,10 +26,10 @@ It uses one in-memory DuckDB connection, parameterized fixed-path queries, and
 closes that connection on every ordinary or control-flow exit. It publishes no
 partial matrix. Existing `RoutingShardError` values retain their storage
 stage; analysis failures use the fixed text
-`mixtral routing load aggregation failed at <stage>` for `inspection`,
-`budget`, `source`, or `query`.
+`routing load aggregation failed at <stage>` for `inspection`, `budget`,
+`source`, or `query`.
 
-The value result is `MixtralRoutingLoadMatrix` with schema version `1.0` and
+The value result is `RoutingLoadMatrix` with schema version `1.0` and
 exact provenance: store/event versions, run/model/adapter identity, the
 fresh-inspection digest, layout, sorted shard keys, token and assignment
 counts, top-k, and explicit layer/expert axes. Its matrices are rectangular

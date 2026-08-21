@@ -16,14 +16,24 @@ from moeatlas.analysis import (
     ROUTING_LOAD_SCHEMA_VERSION,
     MixtralRoutingLoadMatrix,
     RoutingLoadError,
+    RoutingLoadMatrix,
     aggregate_mixtral_routing_load,
+    aggregate_routing_load,
 )
 from moeatlas.core import make_component_key, make_model_key, stable_digest
 from moeatlas.events import EVENT_SCHEMA_VERSION, RoutingEvent, TokenEvent, TokenPhase
-from moeatlas.store import STORE_SCHEMA_VERSION, RoutingShardError, append_mixtral_routing_shard
+from moeatlas.store import (
+    STORE_SCHEMA_VERSION,
+    RoutingShardError,
+    append_mixtral_routing_shard,
+    list_mixtral_routing_runs,
+)
 
 from .test_mixtral_routing_decoder import _inspection, _qwen_inspection
+from .test_qwen3_5_routing_decoder import _inspection as _qwen35_inspection
+from .test_qwen3_5_routing_forward import _run_qwen
 from .test_store_routing_shards import (
+    _qwen_result,
     _refresh_manifest_file,
     _rewrite_parquet,
     _run_result,
@@ -951,7 +961,7 @@ def test_query_failures_are_safe_and_connection_is_closed(tmp_path: Path, monkey
     with pytest.raises(RoutingLoadError) as caught:
         _aggregate(workspace, inspection, receipt.run_key)
     assert caught.value.stage == "query"
-    assert str(caught.value) == "mixtral routing load aggregation failed at query"
+    assert str(caught.value) == "routing load aggregation failed at query"
     monkeypatch.setattr(storage, "_validate_routing_load_source", original)
 
 
@@ -1090,3 +1100,109 @@ def test_ast_and_forbidden_import_guards() -> None:
     assert "CREATE TABLE" not in source
     assert "INSERT INTO" not in source
     assert "write_parquet" not in source
+
+
+def test_neutral_public_surface_and_historical_mixtral_names_are_identity_aliases() -> None:
+    assert MixtralRoutingLoadMatrix is RoutingLoadMatrix
+    assert aggregate_mixtral_routing_load is aggregate_routing_load
+
+
+def test_qwen35_shared_expert_is_validated_but_excluded_from_neutral_matrix(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path)
+    inspection = _qwen35_inspection()
+    result = _qwen_result()
+    receipt = append_mixtral_routing_shard(workspace, result)
+    matrix = aggregate_routing_load(
+        workspace,
+        inspection,
+        run_key=receipt.run_key,
+        max_routing_rows=1000,
+        max_source_bytes=10_000_000,
+        max_matrix_cells=1000,
+    )
+    assert type(matrix) is RoutingLoadMatrix
+    assert matrix.adapter_name == inspection.descriptor.name
+    assert len(matrix.expert_keys[0]) == inspection.report.facts.expert_count
+    assert all(
+        shared.component_key not in matrix.expert_keys[layer]
+        for shared in inspection.report.components
+        if shared.kind.value == "shared_expert"
+        for layer in range(len(matrix.expert_keys))
+    )
+    assert matrix.assignment_count == (
+        matrix.token_count * len(matrix.layer_keys) * matrix.routed_top_k
+    )
+
+
+@pytest.mark.parametrize("surface", ["conditional", "text"])
+def test_qwen35_both_roots_cross_the_full_forward_store_inventory_and_analysis_path(
+    surface: str, tmp_path: Path
+) -> None:
+    workspace = _workspace(tmp_path)
+    result, _, inspection, _ = _run_qwen(surface)
+    receipt = append_mixtral_routing_shard(workspace, result)
+    inventory = list_mixtral_routing_runs(
+        workspace,
+        max_runs=10,
+        max_shards=10,
+        max_event_rows=1000,
+        max_source_bytes=10_000_000,
+    )
+    matrix = aggregate_routing_load(
+        workspace,
+        inspection,
+        run_key=receipt.run_key,
+        max_routing_rows=1000,
+        max_source_bytes=10_000_000,
+        max_matrix_cells=1000,
+    )
+    assert inventory.run_count == 1
+    assert inventory.routing_count == receipt.routing_count
+    assert matrix.model_key == inspection.report.model_key
+    assert matrix.assignment_count == receipt.routing_count
+
+
+def test_future_descriptor_is_accepted_only_by_structural_routing_contract(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path)
+    original = _qwen35_inspection()
+    descriptor = original.descriptor.model_copy(
+        update={
+            "name": "future-moe-static",
+            "version": "2.0",
+            "architecture_families": ("future_moe",),
+        }
+    )
+    components = [
+        component.model_copy(
+            update={
+                "capture": component.capture.model_copy(
+                    update={"adapter": descriptor.name, "adapter_version": descriptor.version}
+                )
+                if component.capture is not None
+                else None
+            }
+        )
+        for component in original.report.components
+    ]
+    inspection = original.model_copy(
+        update={
+            "descriptor": descriptor,
+            "report": original.report.model_copy(update={"components": components}),
+        }
+    )
+    result = _qwen_result()
+    receipt = append_mixtral_routing_shard(workspace, result)
+    matrix = aggregate_routing_load(
+        workspace,
+        inspection,
+        run_key=receipt.run_key,
+        max_routing_rows=1000,
+        max_source_bytes=10_000_000,
+        max_matrix_cells=1000,
+    )
+    assert matrix.adapter_name == "future-moe-static"
+    assert matrix.adapter_version == "2.0"

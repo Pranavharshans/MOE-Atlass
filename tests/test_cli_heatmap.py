@@ -21,6 +21,7 @@ from moeatlas.scan import ScanOutputError
 from moeatlas.store import RoutingShardError, append_mixtral_routing_shard
 
 from .test_mixtral_routing_decoder import _inspection
+from .test_qwen3_5_routing_forward import _run_qwen
 from .test_runtime_routing_forward import _run
 
 
@@ -518,8 +519,8 @@ def test_aggregate_and_render_are_each_called_once_with_identity_and_exact_argum
         calls.append((received_matrix, kwargs))
         return "<!doctype html>\n"
 
-    monkeypatch.setattr(analysis_module, "aggregate_mixtral_routing_load", aggregate)
-    monkeypatch.setattr(analysis_module, "render_mixtral_routing_load_heatmap", render)
+    monkeypatch.setattr(analysis_module, "aggregate_routing_load", aggregate)
+    monkeypatch.setattr(analysis_module, "render_routing_load_heatmap", render)
     argv = _command(
         workspace,
         inspection,
@@ -563,7 +564,7 @@ def test_analysis_failure_is_generic_and_never_publishes_or_echoes_details(
     def fail(*_args: object, **_kwargs: object) -> object:
         raise ValueError("SECRET_DETAIL")
 
-    monkeypatch.setattr(analysis_module, "aggregate_mixtral_routing_load", fail)
+    monkeypatch.setattr(analysis_module, "aggregate_routing_load", fail)
     assert main(_command(workspace, inspection, output)) == 2
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -575,7 +576,7 @@ def test_analysis_failure_is_generic_and_never_publishes_or_echoes_details(
 @pytest.mark.parametrize(
     ("error", "message"),
     [
-        (RoutingLoadError("source"), "mixtral routing load aggregation failed at source"),
+        (RoutingLoadError("source"), "routing load aggregation failed at source"),
         (RoutingShardError("reopen"), "routing shard failed at reopen"),
     ],
 )
@@ -617,7 +618,7 @@ def test_control_flow_exceptions_propagate_without_publication(
     def fail(*_args: object, **_kwargs: object) -> object:
         raise error_type("control-flow")
 
-    monkeypatch.setattr(analysis_module, "aggregate_mixtral_routing_load", fail)
+    monkeypatch.setattr(analysis_module, "aggregate_routing_load", fail)
     with pytest.raises(error_type):
         main(_command(workspace, inspection, output))
     assert not output.exists()
@@ -646,17 +647,15 @@ def test_control_flow_exceptions_are_exact_at_every_heatmap_phase(
         monkeypatch.setattr(cli_module, "_read_heatmap_inspection", lambda *_: object())
         monkeypatch.setattr(
             analysis_module,
-            "aggregate_mixtral_routing_load",
+            "aggregate_routing_load",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(error_type("aggregate")),
         )
     elif phase == "render":
         monkeypatch.setattr(cli_module, "_read_heatmap_inspection", lambda *_: object())
-        monkeypatch.setattr(
-            analysis_module, "aggregate_mixtral_routing_load", lambda *_a, **_k: object()
-        )
+        monkeypatch.setattr(analysis_module, "aggregate_routing_load", lambda *_a, **_k: object())
         monkeypatch.setattr(
             analysis_module,
-            "render_mixtral_routing_load_heatmap",
+            "render_routing_load_heatmap",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(error_type("render")),
         )
     else:
@@ -729,6 +728,24 @@ def test_cli_actual_path_does_not_touch_network_cache_or_browser(
     assert not list(tmp_path.glob("**/*.tmp"))
 
 
+@pytest.mark.parametrize("surface", ["conditional", "text"])
+def test_cli_neutral_heatmap_accepts_both_qwen35_roots(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], surface: str
+) -> None:
+    workspace = tmp_path / f"workspace-{surface}"
+    workspace.mkdir()
+    result, _, inspection, _ = _run_qwen(surface)
+    receipt = append_mixtral_routing_shard(workspace, result)
+    inspection_path = tmp_path / f"inspection-{surface}.json"
+    inspection_path.write_text(inspection.to_json(), encoding="utf-8")
+    output = tmp_path / f"{surface}.html"
+    assert main(_command(workspace, inspection_path, output, run_key=receipt.run_key)) == 0
+    capsys.readouterr()
+    html = output.read_text(encoding="utf-8")
+    assert "Qwen3.5" not in html
+    assert "routing-load" in html
+
+
 def test_missing_duckdb_is_a_safe_dependency_stage_failure(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -790,19 +807,18 @@ def test_cli_source_keeps_heatmap_boundary_model_free_and_non_networked() -> Non
     for term in ("webbrowser", "urlopen", "create_connection", "torch", "transformers"):
         assert term not in lowered
     assert "write_report_atomic" in source
-    assert "from .analysis import aggregate_mixtral_routing_load" in source
+    assert "from .analysis import aggregate_routing_load" in source
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
     assert (
         sum(
-            isinstance(node.func, ast.Name) and node.func.id == "aggregate_mixtral_routing_load"
+            isinstance(node.func, ast.Name) and node.func.id == "aggregate_routing_load"
             for node in calls
         )
         == 1
     )
     assert (
         sum(
-            isinstance(node.func, ast.Name)
-            and node.func.id == "render_mixtral_routing_load_heatmap"
+            isinstance(node.func, ast.Name) and node.func.id == "render_routing_load_heatmap"
             for node in calls
         )
         == 1

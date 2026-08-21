@@ -16,7 +16,9 @@ import moeatlas.analysis.routing_heatmap as heatmap
 from moeatlas.analysis import (
     ROUTING_HEATMAP_SCHEMA_VERSION,
     MixtralRoutingLoadMatrix,
+    RoutingLoadMatrix,
     render_mixtral_routing_load_heatmap,
+    render_routing_load_heatmap,
 )
 from moeatlas.events import EVENT_SCHEMA_VERSION
 from moeatlas.store import STORE_SCHEMA_VERSION
@@ -476,3 +478,12 @@ def test_ast_has_no_runtime_or_external_surface() -> None:
                     "stat",
                 }
                 assert not node.func.attr.lower().startswith("on")
+
+
+def test_neutral_renderer_and_historical_mixtral_name_are_identity_aliases() -> None:
+    assert MixtralRoutingLoadMatrix is RoutingLoadMatrix
+    assert render_mixtral_routing_load_heatmap is render_routing_load_heatmap
+    matrix = _matrix()
+    assert render_routing_load_heatmap(
+        matrix, metric="load_ratios", max_cells=100
+    ) == render_mixtral_routing_load_heatmap(matrix, metric="load_ratios", max_cells=100)

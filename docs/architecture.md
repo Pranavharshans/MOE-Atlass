@@ -222,4 +222,10 @@ Feature 27 composes Qwen3.5 capture with the existing session lifecycle while
 keeping model-family decoding isolated. It adds no server, UI, CLI, loader, or
 schema surface. Its downstream evidence boundary ends at append, reopen, and
 run inventory; aggregate and visualization remain Mixtral-specific pending
-Feature 28 model-neutral analysis neutralization.
+Feature 28 neutralizes the analysis and visualization seams. The shared
+`RoutingLoadMatrix`, `aggregate_routing_load`, and
+`render_routing_load_heatmap` surfaces consume only the inspection-published
+structural routing universe. Historical Mixtral names remain identity aliases;
+there is no family allowlist or family-specific adapter import in analysis. Shared experts are
+validated and excluded from routed axes and denominators. Mixtral output bytes
+remain unchanged.

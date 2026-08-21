@@ -59,7 +59,10 @@ model-free diagnostics.
 ## Bounded routing heatmap
 
 Feature 22 adds one explicit publication command over an existing Feature 19
-workspace and a caller-supplied Feature 20 inspection document:
+workspace and a caller-supplied inspection document. Feature 28 makes the
+aggregation and rendering delegates model-neutral: complete Mixtral, Qwen3.5,
+and future-family structural inspections use the same command, while the
+historical Mixtral Python names remain identity aliases.
 
 ```bash
 moeatlas heatmap WORKSPACE \

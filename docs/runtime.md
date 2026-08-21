@@ -247,8 +247,8 @@ action):
 from pathlib import Path
 
 from moeatlas.analysis import (
-    aggregate_mixtral_routing_load,
-    render_mixtral_routing_load_heatmap,
+    aggregate_routing_load,
+    render_routing_load_heatmap,
 )
 from moeatlas.runtime import run_mixtral_prompt_prefill
 from moeatlas.store import append_mixtral_routing_shard, list_mixtral_routing_runs
@@ -273,7 +273,7 @@ inventory = list_mixtral_routing_runs(
     max_source_bytes=1_000_000_000,
 )
 assert inventory.runs[0].run_key == run_key
-matrix = aggregate_mixtral_routing_load(
+matrix = aggregate_routing_load(
     workspace,
     inspection,
     run_key=run_key,
@@ -281,10 +281,13 @@ matrix = aggregate_mixtral_routing_load(
     max_source_bytes=1_000_000_000,
     max_matrix_cells=max_matrix_cells,
 )
-html = render_mixtral_routing_load_heatmap(
+html = render_routing_load_heatmap(
     matrix, metric="load_ratios", max_cells=max_matrix_cells
 )
 ```
+
+The historical Mixtral analysis names are identity aliases of these neutral
+functions and preserve the same matrix and HTML bytes.
 
 The tokenizer call is exactly `tokenizer(prompt, add_special_tokens=..., padding=False,
 truncation=False, return_attention_mask=True, return_token_type_ids=False,
@@ -346,7 +349,7 @@ persistent callback failure is exposed as the caller-owned
 `pending_runtime_cleanup`/`pending_cleanup` handle. The neutral
 `RoutingForwardResult` is identity-compatible with the historical Mixtral
 result alias; storage consumes the same event schema without migration. Feature
-27 downstream ends at append, reopen, and the read-only run inventory. The
-existing aggregate and visualization functions remain Mixtral-specific until
-Feature 28 neutralizes that analysis surface; this boundary does not claim
-Qwen analysis or visualization certification.
+27 downstream composes through the model-neutral append, reopen, run inventory,
+aggregate, and visualization boundaries. Feature 28 accepts Qwen3.5 and
+future-family inspections through the complete structural routing-universe
+contract; checkpoint/GPU certification remains deferred to the final VM.

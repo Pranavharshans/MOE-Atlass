@@ -1,4 +1,4 @@
-"""Bounded Mixtral routing-load aggregation over immutable Feature 19 shards."""
+"""Bounded model-neutral routing-load aggregation over immutable shards."""
 
 from __future__ import annotations
 
@@ -23,9 +23,10 @@ from ..store import routing_shards as _storage
 
 ROUTING_LOAD_SCHEMA_VERSION = "1.0"
 
-_ADAPTER_NAME = "huggingface-mixtral-static"
-_ADAPTER_VERSION = "1.0"
 _LAYOUTS = frozenset({"legacy_indexed", "packed"})
+_EXPERT_COUNT_SOURCES = frozenset({"config.num_local_experts", "config.num_experts"})
+_TOP_K_SOURCE = "config.num_experts_per_tok"
+_SHARED_EXPERT_SOURCE = "topology.shared_expert"
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SHARD = re.compile(r"^shard:[0-9a-f]{64}$")
 _ERROR_STAGES = frozenset({"inspection", "budget", "source", "query"})
@@ -38,7 +39,7 @@ class RoutingLoadError(RuntimeError):
         if stage not in _ERROR_STAGES:
             raise ValueError("routing load error stage is not supported")
         self.stage = stage
-        super().__init__(f"mixtral routing load aggregation failed at {stage}")
+        super().__init__(f"routing load aggregation failed at {stage}")
 
 
 def _error(stage: str, cause: BaseException | None = None) -> RoutingLoadError:
@@ -78,12 +79,18 @@ def _fresh_universe(value: object) -> _InspectionUniverse:
         if type(fresh) is not AdapterInspection or fresh is value:
             raise TypeError("inspection revalidation returned an unexpected type")
         descriptor = fresh.descriptor
+        # The analysis boundary deliberately does not maintain a family
+        # allowlist.  Adapter identity is provenance carried by the inspection;
+        # the routing universe below is accepted only after the complete,
+        # model-neutral structural invariants have been checked.
         if (
-            descriptor.name != _ADAPTER_NAME
-            or descriptor.version != _ADAPTER_VERSION
-            or descriptor.architecture_families != ("mixtral",)
+            type(descriptor.name) is not str
+            or type(descriptor.version) is not str
+            or not descriptor.name
+            or not descriptor.version
+            or not descriptor.architecture_families
         ):
-            raise ValueError("inspection descriptor is not the exact Mixtral identity")
+            raise ValueError("inspection descriptor identity is not complete")
         parse_model_key(fresh.report.model_key)
         model_key = fresh.report.model_key
         facts = fresh.report.facts
@@ -97,10 +104,10 @@ def _fresh_universe(value: object) -> _InspectionUniverse:
             or expert_count <= 0
             or routed_top_k <= 0
             or routed_top_k > expert_count
-            or facts.expert_count_source != "config.num_local_experts"
-            or facts.routed_top_k_source != "config.num_experts_per_tok"
+            or facts.expert_count_source not in _EXPERT_COUNT_SOURCES
+            or facts.routed_top_k_source != _TOP_K_SOURCE
         ):
-            raise ValueError("inspection facts are not exact Mixtral routing facts")
+            raise ValueError("inspection facts are not complete routing facts")
         components = tuple(fresh.report.components)
         routers = [component for component in components if component.kind is ComponentKind.ROUTER]
         if not routers:
@@ -110,6 +117,21 @@ def _fresh_universe(value: object) -> _InspectionUniverse:
         ]
         if len(moe_layers) != len(routers):
             raise ValueError("inspection MoE layers do not exactly match routers")
+        # Every structural routing component must be bound to one layer.  The
+        # check is intentionally based on semantic kinds and flags rather than
+        # adapter names or module-path conventions.
+        structural_kinds = {
+            ComponentKind.MOE_LAYER,
+            ComponentKind.ROUTER,
+            ComponentKind.EXPERT,
+            ComponentKind.SHARED_EXPERT,
+        }
+        for component in components:
+            if component.kind in structural_kinds:
+                if component.layer_index is None or type(component.layer_index) is not int:
+                    raise ValueError("routing component layer index is not exact")
+                parse_component_key(component.component_key)
+
         layer_records: list[tuple[int, str, tuple[str, ...]]] = []
         seen_layer_indices: set[int] = set()
         layouts: set[str] = set()
@@ -128,12 +150,11 @@ def _fresh_universe(value: object) -> _InspectionUniverse:
                 raise ValueError("router layout provenance is not exact")
             if (
                 capture.source is not CaptureSource.STATIC_STRUCTURE
-                or capture.method != "mixtral-static-structure-v1"
-                or capture.adapter != _ADAPTER_NAME
-                or capture.adapter_version != _ADAPTER_VERSION
+                or capture.adapter != descriptor.name
+                or capture.adapter_version != descriptor.version
                 or capture.verified is not False
             ):
-                raise ValueError("router provenance is not exact Mixtral evidence")
+                raise ValueError("router provenance is not exact static structure evidence")
             layout = capture.metadata.get("layout")
             if type(layout) is not str or layout not in _LAYOUTS:
                 raise ValueError("router layout is not legacy_indexed or packed")
@@ -147,7 +168,8 @@ def _fresh_universe(value: object) -> _InspectionUniverse:
             if len(same_layers) != 1:
                 raise ValueError("router must bind one exact MoE layer")
             layer = same_layers[0]
-            parse_component_key(layer.component_key)
+            if layer.routed is not None or layer.shared is not None:
+                raise ValueError("MoE layer routing flags are not neutral")
             experts = [
                 component
                 for component in components
@@ -171,6 +193,20 @@ def _fresh_universe(value: object) -> _InspectionUniverse:
                 raise ValueError("layer expert keys are not unique")
             for key in expert_keys:
                 parse_component_key(key)
+
+            shared = [
+                component
+                for component in components
+                if component.kind is ComponentKind.SHARED_EXPERT
+                and component.layer_index == router.layer_index
+            ]
+            if any(
+                component.routed is not False
+                or component.shared is not True
+                or component.expert_index is not None
+                for component in shared
+            ):
+                raise ValueError("shared expert structure is not exact")
             layer_records.append((router.layer_index, layer.component_key, expert_keys))
         if len(layouts) != 1:
             raise ValueError("inspection layouts are inconsistent")
@@ -194,11 +230,43 @@ def _fresh_universe(value: object) -> _InspectionUniverse:
         }
         if routed_experts != {key for row in expert_keys for key in row}:
             raise ValueError("inspection does not publish the full routed expert universe")
+        # An EXPERT kind is a routed target in the canonical structural schema;
+        # accepting an unflagged or shared EXPERT would make the denominator
+        # ambiguous.  Shared-expert components are validated above but are
+        # intentionally absent from the routed universe and matrix axes.
+        if any(
+            component.kind is ComponentKind.EXPERT
+            and (component.routed is not True or component.shared is True)
+            for component in components
+        ):
+            raise ValueError("inspection contains a non-routed EXPERT component")
+        shared_components = [
+            component for component in components if component.kind is ComponentKind.SHARED_EXPERT
+        ]
+        known_layers = set(layer_indices)
+        if any(component.layer_index not in known_layers for component in shared_components):
+            raise ValueError("shared expert is bound outside the router universe")
+        if facts.shared_expert_count is None:
+            if shared_components:
+                raise ValueError("shared expert components require shared-expert facts")
+        elif (
+            type(facts.shared_expert_count) is not int
+            or isinstance(facts.shared_expert_count, bool)
+            or facts.shared_expert_count <= 0
+            or facts.shared_expert_count_source != _SHARED_EXPERT_SOURCE
+            or len(shared_components) != facts.shared_expert_count * len(layer_indices)
+            or any(
+                sum(component.layer_index == layer for component in shared_components)
+                != facts.shared_expert_count
+                for layer in layer_indices
+            )
+        ):
+            raise ValueError("shared-expert facts do not match the structure")
         inspection_digest = "sha256:" + stable_digest(fresh.model_dump(mode="json"))
         return _InspectionUniverse(
             model_key=model_key,
-            adapter_name=_ADAPTER_NAME,
-            adapter_version=_ADAPTER_VERSION,
+            adapter_name=descriptor.name,
+            adapter_version=descriptor.version,
             inspection_digest=inspection_digest,
             layout=next(iter(layouts)),
             layer_keys=layer_keys,
@@ -227,7 +295,7 @@ def _canonical_component(value: object, field_name: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class MixtralRoutingLoadMatrix:
+class RoutingLoadMatrix:
     schema_version: str
     store_schema_version: str
     event_schema_version: str
@@ -267,10 +335,12 @@ class MixtralRoutingLoadMatrix:
         if (
             type(self.adapter_name) is not str
             or type(self.adapter_version) is not str
-            or self.adapter_name != _ADAPTER_NAME
-            or self.adapter_version != _ADAPTER_VERSION
+            or not self.adapter_name
+            or not self.adapter_version
+            or self.adapter_name != self.adapter_name.strip()
+            or self.adapter_version != self.adapter_version.strip()
         ):
-            raise ValueError("adapter identity is not the exact Mixtral identity")
+            raise ValueError("adapter identity is not complete")
         if type(self.run_key) is not str:
             raise TypeError("run_key must be an exact string")
         validate_stable_identifier(self.run_key, field_name="run_key")
@@ -437,7 +507,7 @@ def _validate_sources(
     return path, tuple(sources)
 
 
-def aggregate_mixtral_routing_load(
+def aggregate_routing_load(
     workspace: str | Path,
     inspection: AdapterInspection,
     *,
@@ -445,7 +515,7 @@ def aggregate_mixtral_routing_load(
     max_routing_rows: int,
     max_source_bytes: int,
     max_matrix_cells: int,
-) -> MixtralRoutingLoadMatrix:
+) -> RoutingLoadMatrix:
     """Aggregate complete selected routing assignments over one run's shards."""
 
     if not isinstance(workspace, str | Path):
@@ -600,7 +670,7 @@ def aggregate_mixtral_routing_load(
     shares = tuple(tuple(float(count) / layer_total for count in row) for row in counts)
     ratios = tuple(tuple(share * universe.expert_count for share in row) for row in shares)
     try:
-        return MixtralRoutingLoadMatrix(
+        return RoutingLoadMatrix(
             schema_version=ROUTING_LOAD_SCHEMA_VERSION,
             store_schema_version=STORE_SCHEMA_VERSION,
             event_schema_version=EVENT_SCHEMA_VERSION,
@@ -625,9 +695,17 @@ def aggregate_mixtral_routing_load(
         raise _error("source", exc)
 
 
+# Compatibility names are identity aliases, not family-specific wrappers.  A
+# caller using the historical Mixtral spelling therefore gets exactly the
+# neutral value/function and the same serialized behaviour.
+MixtralRoutingLoadMatrix = RoutingLoadMatrix
+aggregate_mixtral_routing_load = aggregate_routing_load
+
 __all__ = [
     "ROUTING_LOAD_SCHEMA_VERSION",
+    "RoutingLoadMatrix",
     "MixtralRoutingLoadMatrix",
     "RoutingLoadError",
+    "aggregate_routing_load",
     "aggregate_mixtral_routing_load",
 ]

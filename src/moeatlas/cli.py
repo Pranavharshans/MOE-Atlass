@@ -107,9 +107,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     heatmap = subparsers.add_parser(
         "heatmap",
-        help="aggregate one stored Mixtral run and write a static HTML heatmap",
+        help="aggregate one stored routing run and write a static HTML heatmap",
         description=(
-            "Aggregate one complete, inspection-bound Mixtral routing run and "
+            "Aggregate one complete, inspection-bound routing run and "
             "write a deterministic static HTML heatmap. All budgets are required "
             "canonical positive decimal integers."
         ),
@@ -144,9 +144,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     routing_runs = subparsers.add_parser(
         "routing-runs",
-        help="inventory committed Mixtral routing runs",
+        help="inventory committed routing runs",
         description=(
-            "Inventory immutable, inspection-free Mixtral routing shards. All four "
+            "Inventory immutable, inspection-free routing shards. All four "
             "budgets are required canonical positive decimal integers."
         ),
         epilog=(
@@ -366,9 +366,9 @@ def _run_heatmap_analysis(
 ) -> str:
     """Lazy, exactly-once aggregation and rendering for the heatmap command."""
 
-    from .analysis import aggregate_mixtral_routing_load, render_mixtral_routing_load_heatmap
+    from .analysis import aggregate_routing_load, render_routing_load_heatmap
 
-    matrix = aggregate_mixtral_routing_load(
+    matrix = aggregate_routing_load(
         workspace,
         inspection,
         run_key=run_key,
@@ -376,7 +376,7 @@ def _run_heatmap_analysis(
         max_source_bytes=max_source_bytes,
         max_matrix_cells=max_matrix_cells,
     )
-    return render_mixtral_routing_load_heatmap(
+    return render_routing_load_heatmap(
         matrix,
         metric=metric,
         max_cells=max_matrix_cells,
@@ -390,7 +390,7 @@ def _safe_heatmap_failure(exc: Exception) -> str:
     from .store import RoutingShardError
 
     if type(exc) is RoutingLoadError and exc.stage in _HEATMAP_LOAD_STAGES:
-        message = f"mixtral routing load aggregation failed at {exc.stage}"
+        message = f"routing load aggregation failed at {exc.stage}"
         if str(exc) == message:
             return message
     if type(exc) is RoutingShardError and exc.stage in _HEATMAP_SHARD_STAGES:
