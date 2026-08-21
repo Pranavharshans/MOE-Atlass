@@ -107,6 +107,11 @@ deliberately deferred.
   ordering, counts, source bytes, and redacted/stored/mixed token-text policy;
   no latest-run selector, catalog, raw-row export, model, cache, or inference
   path is created. See [storage](docs/storage.md) and [CLI](docs/cli.md).
+- `EXPERIMENTAL` Feature 29 bounded `compare_routing_load()` over two accepted
+  routing-load matrices with one identical universe and distinct run keys. It
+  returns only value-owned count/share/ratio delta matrices whose rows sum to
+  zero; it performs no I/O, rendering, ranking, or specialization claim. See
+  [analysis](docs/analysis.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.

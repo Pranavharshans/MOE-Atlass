@@ -142,6 +142,17 @@ not a catalog, latest-run selector, metadata synthesizer, raw-row export,
 model/inference path, or persistent database. It remains EXPERIMENTAL and does
 not change MV-01 through MV-08; ST-04 remains deferred.
 
+Feature 29 adds the model-free bounded cross-run routing-load comparison.
+Tests cover exact delta formulas for all three metrics, zero-delta identity
+across distinct runs, determinism and value freezing, strict type/budget
+rejection, universe-identity mismatch rejection (model key, adapter identity,
+inspection digest, layout, top-k, token count, layer/expert axes), distinct
+run-key enforcement, cell budgets, tamper-proof value invariants (zero-sum
+rows, unit-interval shares, finite floats, ratio ranges, assignment-count
+formulas, sorted shard keys), scalar/tuple-only retention, AST forbidden-import
+guards, and package export reachability. The comparison performs no I/O and
+does not change MV-01 through MV-08 or ST-01 through ST-04.
+
 ## Deferred checks
 
 ### Required v1 family compatibility matrix

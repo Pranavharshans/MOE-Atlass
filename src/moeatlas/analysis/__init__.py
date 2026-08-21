@@ -1,5 +1,10 @@
-"""Bounded, model-free analysis surfaces."""
+"""Bounded, read-only routing-load analysis over immutable routing shards."""
 
+from .routing_compare import (
+    ROUTING_COMPARE_SCHEMA_VERSION,
+    RoutingLoadComparison,
+    compare_routing_load,
+)
 from .routing_heatmap import (
     ROUTING_HEATMAP_SCHEMA_VERSION,
     render_mixtral_routing_load_heatmap,
@@ -15,6 +20,9 @@ from .routing_load import (
 )
 
 __all__ = [
+    "ROUTING_COMPARE_SCHEMA_VERSION",
+    "RoutingLoadComparison",
+    "compare_routing_load",
     "ROUTING_LOAD_SCHEMA_VERSION",
     "RoutingLoadMatrix",
     "MixtralRoutingLoadMatrix",

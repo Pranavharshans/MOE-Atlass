@@ -176,6 +176,14 @@ Feature 20/21, and no latest-run or catalog state is owned here. The CLI
 publishes JSON through the existing atomic writer only after the inventory is
 complete, and inventory cleanup remains internal with no partial value.
 
+Feature 29 adds only a bounded, read-only, in-memory comparison of two
+accepted `RoutingLoadMatrix` values over one identical universe.
+`compare_routing_load` requires exact schema/model/adapter/inspection/layout/
+top-k/token-count/axis equality and distinct run keys, then publishes frozen
+count/share/ratio delta matrices whose rows provably sum to zero. It creates
+no I/O, rendering, ranking, catalog, or specialization claim; deltas are
+association evidence only.
+
 The EXPERIMENTAL prompt-prefill seam accepts plain text, borrows the caller's
 validated model/tokenizer, and composes exactly one bounded Feature 18 forward;
 it is not a generation, storage, or CLI subsystem. Feature 24 intentionally

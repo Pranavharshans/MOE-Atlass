@@ -54,3 +54,35 @@ probability/entropy/specialization metrics, or provide CLI/server/UI/query
 surfaces. Tokenization, prompts, padding, generation, and model execution are
 caller responsibilities. ST-04 scale/query/catalog work and MV-01 through MV-08
 remain deferred; no model files are downloaded by this feature.
+
+## Cross-run routing-load comparison
+
+Feature 29 adds one bounded, read-only, dependency-free comparison seam:
+`compare_routing_load(baseline, comparison, *, max_cells)`. It accepts two
+exact, fresh `RoutingLoadMatrix` values and requires one identical universe:
+schema/store/event versions, model key, adapter identity, inspection digest,
+layout, routed top-k, token count, and the complete layer/expert axes must
+match exactly; the two run keys must differ. The function performs no I/O and
+raises plain `TypeError`/`ValueError` failures like the renderer.
+
+The value result is `RoutingLoadComparison` with schema version `1.0`. It
+preserves both run keys, both sorted shard-key tuples, both assignment
+counts, and the shared frozen provenance, and publishes three rectangular
+delta matrices over the shared axes:
+
+* `count_deltas[layer, expert] = comparison count − baseline count`;
+* `share_deltas[layer, expert] = comparison share − baseline share`;
+* `ratio_deltas[layer, expert] = comparison ratio − baseline ratio`.
+
+Because equal token counts and top-k are required, every count-delta row sums
+to zero, every share-delta row sums to zero within `1e-12`, and every
+ratio-delta row has mean zero. Share deltas stay inside the unit interval and
+ratio deltas inside `±expert_count`; non-finite values are rejected. The
+comparison retains only scalars and tuples—no matrix objects, paths,
+connections, raw rows, or token text.
+
+This is an `EXPERIMENTAL` primitive for later compare workflows. It does not
+write files, render HTML, query storage, rank experts, or claim that a delta
+is specialization, causality, or improvement; interpretation remains a caller
+responsibility. MV-01 through MV-08 remain deferred; no model files are
+downloaded by this feature.
