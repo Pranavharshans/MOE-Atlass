@@ -86,3 +86,38 @@ write files, render HTML, query storage, rank experts, or claim that a delta
 is specialization, causality, or improvement; interpretation remains a caller
 responsibility. MV-01 through MV-08 remain deferred; no model files are
 downloaded by this feature.
+
+## Routing-load summary metrics
+
+Feature 32 adds one bounded, read-only, dependency-free summary seam:
+`summarize_routing_load(matrix, *, max_cells)`. It accepts one exact, fresh
+`RoutingLoadMatrix` and computes the PRD §11.1 metrics that are derivable from
+aggregate load alone, per layer and globally:
+
+* `layer_entropies` — Shannon entropy of assignment shares in nats; zero
+  shares contribute exactly zero;
+* `normalized_layer_entropies` — entropy ÷ ln(expert count), so uniform load
+  is exactly 1;
+* `effective_expert_counts` — exp(entropy), the entropy-derived effective
+  expert count;
+* `normalized_diversities` — effective count ÷ expert count;
+* `layer_gini_coefficients` — exact ascending-rank Gini over integer counts;
+* `layer_cv_counts` — population coefficient of variation of counts;
+* `top_expert_shares` — the largest per-layer share;
+* `dead_expert_count` / `dead_expert_fraction` — zero-assignment cells over
+  the complete layer × expert universe.
+
+The value result is `RoutingLoadSummary` with schema version `1.0`, frozen
+matrix provenance (run/model/adapter identity, inspection digest, layout,
+counts, shard keys, axes), and range-checked finite floats: entropies within
+`[0, ln E]`, normalized/diversity/Gini/top-share within `[0, 1]`, effective
+counts within `[0, E]`, nonnegative coefficients of variation, and an exact
+dead-fraction identity. Router margin and route churn are deliberately absent:
+they require score distributions and adjacent-token sequences that aggregate
+load shards do not carry.
+
+This is an `EXPERIMENTAL` descriptive statistic over association evidence. It
+performs no I/O, writes nothing, ranks nothing across runs, and never claims
+specialization or causal effect; a low Gini or high entropy is load balance
+evidence only. MV-01 through MV-08 remain deferred; no model files are
+downloaded by this feature.

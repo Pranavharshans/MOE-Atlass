@@ -22,6 +22,11 @@ from .routing_load import (
     aggregate_mixtral_routing_load,
     aggregate_routing_load,
 )
+from .routing_summary import (
+    ROUTING_SUMMARY_SCHEMA_VERSION,
+    RoutingLoadSummary,
+    summarize_routing_load,
+)
 
 __all__ = [
     "ROUTING_COMPARE_HEATMAP_SCHEMA_VERSION",
@@ -29,6 +34,9 @@ __all__ = [
     "ROUTING_COMPARE_SCHEMA_VERSION",
     "RoutingLoadComparison",
     "compare_routing_load",
+    "ROUTING_SUMMARY_SCHEMA_VERSION",
+    "RoutingLoadSummary",
+    "summarize_routing_load",
     "ROUTING_LOAD_SCHEMA_VERSION",
     "RoutingLoadMatrix",
     "MixtralRoutingLoadMatrix",

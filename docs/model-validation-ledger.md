@@ -176,6 +176,16 @@ phase, missing-DuckDB dependency-stage behavior, absence of network/cache/
 browser paths, laziness of unrelated commands, and AST boundary guards on the
 CLI source. It does not change MV-01 through MV-08 or ST-01 through ST-04.
 
+Feature 32 adds the model-free bounded routing-load summary. Tests cover the
+default-fixture happy path field by field, closed-form uniform and
+concentrated distributions (entropy ln E / 0, normalized 1 / 0, effective E /
+1, Gini 0 / (E-1)/E, population CV 0 / √(E-1)·mean-normalized), exact Gini
+anchors, dead-expert universe accounting, determinism and freezing, strict
+type/budget/validation-order rejection, eleven tamper rejections including
+range checks and the dead-fraction identity, scalar/tuple-only retention, AST
+forbidden-import guards, and package export reachability. The summary performs
+no I/O and does not change MV-01 through MV-08 or ST-01 through ST-04.
+
 ## Deferred checks
 
 ### Required v1 family compatibility matrix

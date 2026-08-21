@@ -201,6 +201,15 @@ model, tokenizer, browser, network, cache, ranking, or alternate storage path;
 incomparable universes fail with a fixed generic message. The command is
 EXPERIMENTAL and MV-01 through MV-08 remain deferred.
 
+Feature 32 adds only bounded descriptive load statistics over one accepted
+routing-load matrix. `summarize_routing_load` publishes per-layer entropy,
+normalized entropy, effective expert counts, normalized diversity, exact
+integer-rank Gini, population coefficients of variation, top-expert shares,
+and dead-expert counts/fractions as a frozen value with range-checked floats.
+Router margin and route churn stay out because aggregate load shards do not
+carry score distributions or token sequences. It creates no I/O, ranking,
+comparison, or specialization claim; MV-01 through MV-08 remain deferred.
+
 The EXPERIMENTAL prompt-prefill seam accepts plain text, borrows the caller's
 validated model/tokenizer, and composes exactly one bounded Feature 18 forward;
 it is not a generation, storage, or CLI subsystem. Feature 24 intentionally

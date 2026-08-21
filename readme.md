@@ -122,6 +122,12 @@ deliberately deferred.
   It rejects equal run keys first, enforces canonical decimal byte/row/source/
   cell budgets, delegates aggregate/compare/render exactly once per seam, and
   reuses the existing atomic writer. See [CLI](docs/cli.md).
+- `EXPERIMENTAL` Feature 32 bounded `summarize_routing_load()` descriptive
+  statistics over one accepted matrix: per-layer Shannon entropy, normalized
+  entropy, effective expert counts, normalized diversity, exact integer-rank
+  Gini, population CV, top-expert shares, and dead-expert counts/fractions as
+  a frozen range-checked value; no margin/churn/specialization claim. See
+  [analysis](docs/analysis.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
