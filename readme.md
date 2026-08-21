@@ -125,6 +125,11 @@ deliberately deferred.
   canonical results, lifecycle-compatible progress, cooperative
   cancellation, and a strict frozen `ExecutionOutcome`; no clocks, no
   randomness, no network, no model dependencies; see [runs](docs/runs.md).
+- `EXPERIMENTAL` run input preparation: `prepare_input_rows()` and
+  `plan_input_batches()` turn prompt specs and dataset descriptors into the
+  exact row-value mappings and deterministic schedules the execution core
+  consumes — one bounded prompt row or role-projected dataset rows under
+  descriptor-driven schedules; see [runs](docs/runs.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

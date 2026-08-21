@@ -113,6 +113,23 @@ seed, and an unseeded sample cap keeps the deterministic first-cap prefix.
 `iterable` descriptors carry no file location and are rejected at the reader
 boundary; the run engine consumes iterables directly.
 
+## Input preparation
+
+`moeatlas.services.run_inputs` closes the input-preparation half of the
+engine: `prepare_input_rows(spec, ...)` turns either input descriptor into
+the exact `{row_index: values}` mapping `execute_row_schedule` consumes, and
+`plan_input_batches(spec, total_rows)` derives the schedule the descriptor
+implies — so the execution core never branches on input kind. Prompt specs
+become exactly one row: raw text as `{"prompt": text}`, chat messages as
+`{"messages": [{"role", "content"}, ...]}` in declared order, canonically
+encodable within `max_input_bytes` (`RunInputError`, stages `spec`,
+`format`, `budget`). Dataset descriptors compose the bounded reader with
+task-role projection when a column mapping is declared, preserving
+read-order indices; their schedules apply the descriptor's own
+sample/batch/shuffle/seed settings through the SHA-256-keyed planner.
+Preparation is deterministic and touches no clock, no randomness, no
+network, and no model dependency.
+
 ## Deterministic execution core
 
 `moeatlas.services.run_engine` is the model-neutral execution heart:

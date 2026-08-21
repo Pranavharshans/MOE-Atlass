@@ -24,6 +24,13 @@ from .run_engine import (
     RunEngineError,
     execute_row_schedule,
 )
+from .run_inputs import (
+    RUN_INPUTS_SCHEMA_VERSION,
+    RunInputError,
+    plan_input_batches,
+    prepare_input_rows,
+    prepare_prompt_rows,
+)
 from .workspace import (
     WorkspaceSnapshot,
     initialize_workspace,
@@ -40,6 +47,7 @@ __all__ = [
     "EXECUTION_PROGRESS_STAGE",
     "ROW_FAILURE_KINDS",
     "RUN_ENGINE_SCHEMA_VERSION",
+    "RUN_INPUTS_SCHEMA_VERSION",
     "DatasetReadError",
     "DatasetRow",
     "ExecutionOutcome",
@@ -47,11 +55,15 @@ __all__ = [
     "RowRecord",
     "RowResult",
     "RunEngineError",
+    "RunInputError",
     "WorkspaceSnapshot",
     "execute_row_schedule",
     "initialize_workspace",
     "open_workspace",
     "plan_dataset_batches",
+    "plan_input_batches",
+    "prepare_input_rows",
+    "prepare_prompt_rows",
     "project_dataset_rows",
     "query_runs",
     "read_dataset_rows",

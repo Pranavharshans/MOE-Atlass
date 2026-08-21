@@ -156,8 +156,13 @@ schedule through a caller-supplied row executor with per-row failure
 evidence (fixed vocabulary matching lifecycle error kinds), budgeted
 canonical results, cumulative lifecycle-compatible progress, cooperative
 cancellation that preserves executed work, and a strict frozen
-`ExecutionOutcome` whose status suggests the terminal lifecycle state.
-Remaining for this sequence: prompt/chat input preparation,
+`ExecutionOutcome` whose status suggests the terminal lifecycle state. Its
+third landed slice is input preparation: `prepare_input_rows` /
+`plan_input_batches` in `moeatlas.services.run_inputs` turn prompt specs and
+dataset descriptors into the exact row-value mappings and deterministic
+schedules the core consumes — one bounded prompt row or reader-composed
+role-projected dataset rows with descriptor-driven schedules — so execution
+never branches on input kind. Remaining for this sequence:
 checkpoint/resume/reopen around the core, incremental event publication,
 and the shared run-engine service surface.
 

@@ -336,4 +336,7 @@ matching the lifecycle's error kinds), budgeted canonical results,
 lifecycle-compatible cumulative progress, and cooperative cancellation that
 preserves executed work. The core is deterministic and family-blind: it
 knows rows, batches, budgets, and outcomes — executors own every
-model-dependent behavior.
+model-dependent behavior. Input preparation (`moeatlas.services.run_inputs`)
+completes the seam: prompt specs and dataset descriptors become the exact
+row-value mappings and deterministic schedules the core consumes, so no
+execution code branches on input kind.
