@@ -1,5 +1,11 @@
 """Bounded, read-only routing-load analysis over immutable routing shards."""
 
+from .bundle import (
+    ANALYSIS_BUNDLE_SCHEMA_VERSION,
+    AnalysisBundleEntry,
+    AnalysisBundleReceipt,
+    write_analysis_bundle,
+)
 from .compare_heatmap import (
     ROUTING_COMPARE_HEATMAP_SCHEMA_VERSION,
     render_routing_load_comparison,
@@ -29,6 +35,10 @@ from .routing_summary import (
 )
 
 __all__ = [
+    "ANALYSIS_BUNDLE_SCHEMA_VERSION",
+    "AnalysisBundleEntry",
+    "AnalysisBundleReceipt",
+    "write_analysis_bundle",
     "ROUTING_COMPARE_HEATMAP_SCHEMA_VERSION",
     "render_routing_load_comparison",
     "ROUTING_COMPARE_SCHEMA_VERSION",

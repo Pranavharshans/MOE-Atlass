@@ -217,6 +217,13 @@ ignored and every failure is a safe fixed message. It creates no I/O or new
 contract surface beyond the documents themselves; MV-01 through MV-08 remain
 deferred.
 
+Feature 34 adds only the bounded analysis-bundle publication seam:
+`write_analysis_bundle` writes one coherent directory of canonical artifact
+documents plus a digest-bearing manifest, atomically per file with full
+cleanup on every failure path. It requires one shared identity across all
+bundled artifacts and creates no catalog, query, aggregation, rendering, or
+interpretation surface; MV-01 through MV-08 remain deferred.
+
 The EXPERIMENTAL prompt-prefill seam accepts plain text, borrows the caller's
 validated model/tokenizer, and composes exactly one bounded Feature 18 forward;
 it is not a generation, storage, or CLI subsystem. Feature 24 intentionally

@@ -142,3 +142,27 @@ Serialization is pure: it writes no files and touches no storage; callers own
 publication through the existing atomic writer or their own paths. This is an
 `EXPERIMENTAL` portable-evidence primitive; MV-01 through MV-08 remain
 deferred.
+
+## Analysis export bundles
+
+Feature 34 adds one bounded publication seam over the canonical documents:
+`write_analysis_bundle(destination, *, matrix=None, comparison=None,
+summary=None)`. It requires at least one artifact, exact types, and one shared
+model/adapter/inspection/layout identity across everything provided. The
+bundle is a normal directory of fixed names (`routing_load_matrix.json`,
+`routing_load_comparison.json`, `routing_load_summary.json`) plus a canonical
+`manifest.json` written last: sorted compact JSON with an
+`moeatlas.analysis_bundle` artifact type, per-entry SHA-256 digests and exact
+UTF-8 byte counts, entry count, and total bytes.
+
+Every file is published through a same-directory temporary file, `fsync`, and
+`os.replace`; any ordinary or control-flow failure unlinks everything written
+and removes a directory the seam created, so no partial bundle ever survives.
+The destination must be nonexistent or empty with an existing parent. The
+frozen `AnalysisBundleReceipt` value carries the sorted entries and totals so
+callers can verify what was published without re-reading the tree. Bundles are
+byte-deterministic: equal artifacts produce identical files in any location.
+
+This is an `EXPERIMENTAL` export primitive, not a workspace/catalog/query
+subsystem; it never reads shards, aggregates, renders, or interprets. MV-01
+through MV-08 remain deferred.

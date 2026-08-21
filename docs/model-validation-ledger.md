@@ -196,6 +196,16 @@ input acceptance, and AST purity guards on all three modules. Serialization
 performs no I/O and does not change MV-01 through MV-08 or ST-01 through
 ST-04.
 
+Feature 34 adds the model-free bounded analysis-bundle writer. Tests cover the
+four-file happy path with recomputed SHA-256 digests and byte counts, manifest
+canonicality, from_json round-trips of every bundled document, byte-identical
+determinism across directories, subset bundles, empty-bundle and identity-
+coherence rejections, destination validation (missing parent, occupied/file/
+empty destinations, str/Path/int/None), injected os.replace failures and
+KeyboardInterrupt propagation with complete cleanup and no partial artifacts,
+receipt tamper rejections, exact-type/subclass enforcement, and AST guards.
+The writer does not change MV-01 through MV-08 or ST-01 through ST-04.
+
 ## Deferred checks
 
 ### Required v1 family compatibility matrix

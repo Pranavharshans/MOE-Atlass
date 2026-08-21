@@ -132,6 +132,10 @@ deliberately deferred.
   comparisons, and summaries: byte-deterministic sorted documents with
   artifact-type markers, strict staged import validation, and exact round-trip
   equality. See [analysis](docs/analysis.md).
+- `EXPERIMENTAL` Feature 34 `write_analysis_bundle()` publication of one
+  coherent directory of canonical artifact documents plus a digest-bearing
+  manifest, atomically per file with full failure cleanup and a frozen
+  receipt. See [analysis](docs/analysis.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
