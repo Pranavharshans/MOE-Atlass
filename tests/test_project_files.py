@@ -34,10 +34,12 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "store" / "routing_shards.py",
             ROOT / "src" / "moeatlas" / "store" / "catalog.py",
             ROOT / "src" / "moeatlas" / "store" / "ports.py",
+            ROOT / "src" / "moeatlas" / "store" / "run_export.py",
             ROOT / "src" / "moeatlas" / "services" / "__init__.py",
             ROOT / "src" / "moeatlas" / "services" / "workspace.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
+            ROOT / "tests" / "test_store_run_export.py",
             ROOT / "tests" / "test_services_workspace.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
@@ -851,6 +853,57 @@ class ProjectFilesTests(unittest.TestCase):
         ):
             self.assertIn(term, source)
             self.assertIn(term, exports)
+
+    def test_run_export_bundle_docs_and_surface_are_present(self) -> None:
+        storage = (ROOT / "docs" / "storage.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                storage,
+                (
+                    "routing_run_export",
+                    "export_run_bundle",
+                    "verify_run_bundle",
+                    "import_run_bundle",
+                    "max_event_rows",
+                    "max_file_bytes",
+                    "tokens.jsonl",
+                    "routing.jsonl",
+                    "sha256:<64hex>",
+                    "token_text_stored",
+                    "event_index",
+                    "canonically encoded",
+                    "byte-identical bundles",
+                    "forged digests",
+                    "created=False",
+                    "RunBundleError",
+                    "conflict",
+                    "EXPERIMENTAL",
+                ),
+            ),
+            (architecture, ("run-evidence export bundle",)),
+            (ledger, ("does not change MV-01/MV-08",)),
+            (readme, ("export_run_bundle",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "store" / "run_export.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "store" / "__init__.py").read_text()
+        for term in (
+            "RUN_EXPORT_SCHEMA_VERSION",
+            "BUNDLE_MANIFEST_TYPE",
+            "RunBundleError",
+            "RunBundleReceipt",
+            "export_run_bundle",
+            "verify_run_bundle",
+            "import_run_bundle",
+        ):
+            self.assertIn(term, source)
+            self.assertIn(term, exports)
+        self.assertTrue((ROOT / "tests" / "test_store_run_export.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

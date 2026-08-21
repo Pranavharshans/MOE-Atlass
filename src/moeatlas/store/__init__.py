@@ -34,11 +34,26 @@ from .routing_shards import (
     list_routing_runs,
     list_routing_shards,
 )
+from .run_export import (
+    BUNDLE_MANIFEST_TYPE,
+    RUN_EXPORT_SCHEMA_VERSION,
+    RunBundleError,
+    RunBundleFileEntry,
+    RunBundleReceipt,
+    export_run_bundle,
+    import_run_bundle,
+    verify_run_bundle,
+)
 
 __all__ = [
+    "BUNDLE_MANIFEST_TYPE",
     "CATALOG_MAX_RUNS",
+    "RUN_EXPORT_SCHEMA_VERSION",
     "WORKSPACE_CATALOG_SCHEMA_VERSION",
     "CatalogRebuildReceipt",
+    "RunBundleError",
+    "RunBundleFileEntry",
+    "RunBundleReceipt",
     "DuckDBRoutingShardStore",
     "MixtralRoutingRunInventory",
     "MixtralRoutingRunSummary",
@@ -54,6 +69,8 @@ __all__ = [
     "WorkspaceCatalogError",
     "append_routing_shard",
     "catalog_path",
+    "export_run_bundle",
+    "import_run_bundle",
     "initialize_catalog",
     "list_routing_runs",
     "list_routing_shards",
@@ -61,6 +78,7 @@ __all__ = [
     "reader_from_workspace",
     "rebuild_catalog",
     "upsert_run_entry",
+    "verify_run_bundle",
     "append_mixtral_routing_shard",
     "list_mixtral_routing_runs",
     "list_mixtral_routing_shards",

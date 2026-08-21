@@ -154,3 +154,64 @@ repair, compaction, query API, or general run registry. A caller supplies the
 latest run or synthesize unavailable model, adapter, layout, inspection, time
 tags, timestamp, or status metadata. It remains EXPERIMENTAL; ST-04 and MV-01 through
 MV-08 remain deferred.
+
+## Run-evidence export bundles
+
+The open-format interchange surface over the internal Parquet shards is the
+run-evidence export bundle (EXPERIMENTAL), implemented by three seams exported
+from `moeatlas.store`: `export_run_bundle(workspace, destination, *,
+run_key, max_event_rows, max_file_bytes)`, `verify_run_bundle(source, *,
+max_event_rows, max_file_bytes)`, and `import_run_bundle(source, workspace, *,
+max_event_rows, max_file_bytes)`. One bundle carries the complete committed
+evidence of exactly one run:
+
+```text
+<destination>/
+  manifest.json
+  data/shard-<sha256>/
+    tokens.jsonl
+    routing.jsonl
+```
+
+The newline-terminated `manifest.json` has `manifest_type="routing_run_export"`,
+the exact `1.0` bundle schema version plus store/event schema versions, the
+`run_key`, fixed `writer_name="moeatlas"`/version fields, run totals, and one
+entry per committed shard with its content-addressed `shard_key`, row counts,
+per-shard `token_text_stored` redaction flag, and fixed file records (`name`,
+byte count, `sha256:<64hex>`). Every JSONL line is one canonically encoded JSON
+object (`sort_keys`, compact separators, UTF-8, no NaN) whose fields are exactly
+the frozen event fields plus a contiguous zero-based `event_index`; line order
+preserves shard event order. Two exports of the same committed run state produce
+byte-identical bundles.
+
+Verification recomputes every file digest from bytes, enforces canonical
+encoding per line and for the manifest, revalidates each shard's events through
+the neutral collection boundary and their token/layer/rank links, cross-checks
+redaction consistency (`null` text exactly when the shard did not store text),
+and re-derives each shard's content-addressed identity from the exported events
+themselves — so forged digests over altered evidence still fail. Verification is
+a pure reader: it never imports DuckDB. Import composes full verification with
+the standard shard appender, so importing into the source workspace is
+idempotent (existing shards return `created=False`) and importing into a fresh
+workspace reproduces identical shard identities; conflicting committed
+identities surface the storage `conflict` stage.
+
+Redaction travels with the evidence: a shard stored without token text exports
+`"token_text": null` lines and its manifest entry records
+`token_text_stored: false`; import reconstructs the identical shard from either
+form. Absence of token text is explicit bundle evidence, never silently inferred
+data. Both row totals and every file are bounded by strict positive
+`max_event_rows`/`max_file_bytes` budgets on export, verify, and import alike.
+
+Publication is atomic and crash-safe: the destination must be nonexistent or an
+empty real directory, members are staged in a hidden sibling directory, fsynced,
+written before the manifest, and atomically renamed into place with parent
+fsync; any failure or control-flow interruption removes the staging directory.
+Symlinks are refused for the destination, the source, and every bundle member.
+Errors are `RunBundleError` with one fixed stage: `dependency`, `workspace`,
+`source`, `format`, `budget`, `write`, `publish`, or `conflict`; underlying
+causes stay chained but out of public text. Receipts (`RunBundleReceipt`,
+`RunBundleFileEntry`) carry only scalar identity/digest values. Bundles are a
+bounded interchange format, not an analysis export, migration tool, or
+compaction path; they make no model-dependent claims, and ST-04 and MV-01
+through MV-08 remain unchanged.

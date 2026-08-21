@@ -88,6 +88,17 @@ shared orchestration used by every presentation surface:
 The layer adds no persistence of its own and no clock access; it validates
 inputs, delegates to the catalog and ports, and propagates their stage errors.
 
+## Run-evidence export bundles
+
+Workspaces are also the boundary for relocatable run evidence. The
+`moeatlas.store` bundle seams (`export_run_bundle`, `verify_run_bundle`,
+`import_run_bundle`) read committed shards from one workspace and publish or
+consume open-format evidence bundles elsewhere; see
+[storage](storage.md) for the exact format, budgets, redaction, and atomicity
+contracts. Importing a bundle into a workspace uses the standard shard
+appender, so catalog state can be rebuilt afterwards with
+`sync_runs_from_shards`.
+
 ## Boundaries
 
 - The catalog is not a query engine, scheduler, or lock manager; concurrent
