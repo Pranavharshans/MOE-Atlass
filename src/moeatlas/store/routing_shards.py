@@ -13,13 +13,20 @@ from pathlib import Path
 from typing import Any, Literal
 
 from ..core import stable_digest, validate_stable_identifier
-from ..events import EVENT_SCHEMA_VERSION, RoutingEvent, TokenEvent
-from ..runtime.routing_forward import (
-    RoutingForwardResult,
-    _fresh_routing_events,
-    _fresh_token_events,
-    _validate_routing_links,
+from ..event_validation import (
+    fresh_routing_events,
+    fresh_token_events,
+    validate_routing_links,
 )
+from ..events import EVENT_SCHEMA_VERSION, RoutingEvent, TokenEvent
+from ..runtime.routing_forward import RoutingForwardResult
+
+# Historical private validation names. The neutral event_validation module is
+# the implementation source; internal calls route through these module
+# attributes so downstream monkeypatching keeps working exactly as before.
+_fresh_token_events = fresh_token_events
+_fresh_routing_events = fresh_routing_events
+_validate_routing_links = validate_routing_links
 
 STORE_SCHEMA_VERSION = "1.0"
 ROUTING_RUN_INVENTORY_SCHEMA_VERSION = "1.0"
@@ -1247,7 +1254,7 @@ def _append_internal(
     )
 
 
-def append_mixtral_routing_shard(
+def append_routing_shard(
     workspace: str | Path,
     result: RoutingForwardResult,
     *,
@@ -1273,7 +1280,7 @@ def append_mixtral_routing_shard(
         raise _error("write", exc)
 
 
-def list_mixtral_routing_shards(
+def list_routing_shards(
     workspace: str | Path,
     *,
     run_key: str,
@@ -1565,7 +1572,7 @@ def _close_inventory_connection(
     return primary
 
 
-def list_mixtral_routing_runs(
+def list_routing_runs(
     workspace: str | Path,
     *,
     max_runs: int,
@@ -1683,6 +1690,11 @@ def list_mixtral_routing_runs(
     )
 
 
+append_mixtral_routing_shard = append_routing_shard
+list_mixtral_routing_shards = list_routing_shards
+list_mixtral_routing_runs = list_routing_runs
+
+
 __all__ = [
     "STORE_SCHEMA_VERSION",
     "ROUTING_RUN_INVENTORY_SCHEMA_VERSION",
@@ -1691,6 +1703,9 @@ __all__ = [
     "RoutingRunInventoryError",
     "MixtralRoutingRunSummary",
     "MixtralRoutingRunInventory",
+    "append_routing_shard",
+    "list_routing_shards",
+    "list_routing_runs",
     "append_mixtral_routing_shard",
     "list_mixtral_routing_shards",
     "list_mixtral_routing_runs",

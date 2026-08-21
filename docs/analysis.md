@@ -166,3 +166,19 @@ byte-deterministic: equal artifacts produce identical files in any location.
 This is an `EXPERIMENTAL` export primitive, not a workspace/catalog/query
 subsystem; it never reads shards, aggregates, renders, or interprets. MV-01
 through MV-08 remain deferred.
+
+## Declared routing universes
+
+`aggregate_routing_load()` accepts an optional `declared_universe`: the
+adapter-published `RoutingUniverse` manifest for the inspection (see
+[adapters](adapters.md)). The declared universe must be exactly what the
+inspection publishes and must pass `project_rectangular_universe()`
+explicitly, so rectangularity is a checked, named gate at the API boundary
+rather than a hidden invariant of the internal axis walk. A mismatching or
+non-rectangular universe fails at the inspection stage — before any shard
+source work — with the violated shape named. Aggregation results are
+identical with or without a declared universe; the parameter pins the
+expected topology and keeps analysis honest about which structure it
+consumes. Adapter-declared layout tags pass publication freely but remain
+subject to routing-load's decodable-layout contract (`legacy_indexed`,
+`packed`) on both paths.

@@ -9,7 +9,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..adapters import AdapterInspection
+from ..adapters import (
+    AdapterInspection,
+    RoutingUniverse,
+    project_rectangular_universe,
+    publish_routing_universe,
+)
 from ..core import (
     CaptureSource,
     ComponentKind,
@@ -280,6 +285,34 @@ def _fresh_universe(value: object) -> _InspectionUniverse:
         raise
     except Exception as exc:
         raise ValueError("inspection revalidation failed") from exc
+
+
+def _reconciled_universe(
+    derived: _InspectionUniverse,
+    inspection: AdapterInspection,
+    declared: object,
+) -> _InspectionUniverse:
+    """Check a caller-declared routing universe against the inspection.
+
+    The declared universe must be exactly what the inspection publishes and
+    must pass the explicit rectangular projection.  Publication is
+    family-blind, so this gates adapter-declared layouts and per-layer top-k
+    metadata through the same named step instead of leaving rectangularity as
+    a hidden invariant.  Axes themselves remain the validated legacy
+    derivation so matrix construction stays byte-identical across both paths.
+    """
+
+    if type(declared) is not RoutingUniverse:
+        raise TypeError(
+            f"universe must be an exact RoutingUniverse, got {type(declared).__name__}"
+        )
+    published = publish_routing_universe(inspection)
+    if published != declared:
+        raise ValueError(
+            "declared universe does not match the inspection-published routing universe"
+        )
+    project_rectangular_universe(declared)
+    return derived
 
 
 def _canonical_tuple(value: object, field_name: str) -> tuple[Any, ...]:
@@ -651,8 +684,15 @@ def aggregate_routing_load(
     max_routing_rows: int,
     max_source_bytes: int,
     max_matrix_cells: int,
+    declared_universe: object | None = None,
 ) -> RoutingLoadMatrix:
-    """Aggregate complete selected routing assignments over one run's shards."""
+    """Aggregate complete selected routing assignments over one run's shards.
+
+    ``declared_universe`` optionally supplies the adapter-published
+    :class:`~moeatlas.adapters.RoutingUniverse` for the inspection.  It must
+    match the publication exactly and project to rectangular form explicitly;
+    aggregation results are identical with or without it.
+    """
 
     if not isinstance(workspace, str | Path):
         raise TypeError("workspace must be a string or pathlib.Path")
@@ -667,6 +707,8 @@ def aggregate_routing_load(
         _strict_positive_budget(value, name)
     try:
         universe = _fresh_universe(inspection)
+        if declared_universe is not None:
+            universe = _reconciled_universe(universe, inspection, declared_universe)
     except (TypeError, ValueError) as exc:
         raise _error("inspection", exc)
     cells = len(universe.layer_keys) * universe.expert_count

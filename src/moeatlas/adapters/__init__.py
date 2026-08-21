@@ -18,6 +18,15 @@ from .mixtral import MixtralStaticAdapter
 from .planning import AdapterProbePlanError, build_routing_probe_plan
 from .qwen3_5_moe import Qwen3_5MoeStaticAdapter
 from .qwen3_moe import Qwen3MoeStaticAdapter
+from .universe import (
+    ROUTING_UNIVERSE_SCHEMA_VERSION,
+    LayerRoutingUniverse,
+    RectangularProjection,
+    RoutingUniverse,
+    RoutingUniverseError,
+    project_rectangular_universe,
+    publish_routing_universe,
+)
 
 __all__ = [
     "AdapterContractError",
@@ -25,6 +34,13 @@ __all__ = [
     "AdapterDetection",
     "AdapterExecutionError",
     "AdapterInspection",
+    "RoutingUniverse",
+    "LayerRoutingUniverse",
+    "RectangularProjection",
+    "RoutingUniverseError",
+    "publish_routing_universe",
+    "project_rectangular_universe",
+    "ROUTING_UNIVERSE_SCHEMA_VERSION",
     "StaticSemanticAdapter",
     "inspect_static_adapter",
     "MixtralStaticAdapter",

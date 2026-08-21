@@ -77,10 +77,14 @@ deliberately deferred.
   frozen output/event result; tokenization, generation, storage, and UI remain
   outside this boundary. It performs one model forward per invocation.
 - `EXPERIMENTAL` bounded routing-shard persistence for complete Feature 18
-  results: content-addressed fixed-path manifests plus ZSTD token/routing
-  Parquet, explicit token-text redaction, sequential idempotence, conflict
-  checks, and non-mutating reopen/list validation. This is a shard prerequisite,
-  not a full workspace/catalog, query, CLI, server, UI, heatmap, prompt, or
+  results through canonical `append_routing_shard()`, `list_routing_shards()`,
+  and `list_routing_runs()` APIs: content-addressed fixed-path manifests plus
+  ZSTD token/routing Parquet, explicit token-text redaction, sequential
+  idempotence, conflict checks, and non-mutating reopen/list validation. The
+  historical `append_mixtral_routing_shard()`,
+  `list_mixtral_routing_shards()`, and `list_mixtral_routing_runs()` names remain
+  exact identity aliases. This is a shard prerequisite, not a full
+  workspace/catalog, query, CLI, server, UI, heatmap, prompt, or
   expert-metric subsystem; see [storage](docs/storage.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
@@ -136,6 +140,32 @@ deliberately deferred.
   coherent directory of canonical artifact documents plus a digest-bearing
   manifest, atomically per file with full failure cleanup and a frozen
   receipt. See [analysis](docs/analysis.md).
+- Model-neutral run contracts: content-addressed `RunSpecification` manifests
+  binding resolved model/tokenizer revisions, probe plans, prompt/dataset
+  fingerprints, generation settings, privacy policy, and intervention lineage
+  into a deterministic `run:<hex>` key, plus the frozen `RunRecord` lifecycle
+  state machine (planned → provisioning → running → finalizing → completed,
+  with fail/cancel/retry paths) over pure serializable transitions. These
+  contracts execute nothing; the run engine and workspace catalog arrive in
+  later slices. See [runs](docs/runs.md).
+- `EXPERIMENTAL` versioned workspace catalog and shared application services:
+  a canonical `.moeatlas/catalog.json` run registry with atomic publication,
+  idempotent upserts, bounded rebuild-from-shards repair, and reopen/conflict
+  stage errors; model-neutral storage ports (`RoutingRunReader`,
+  `RoutingShardAppender`, `DuckDBRoutingShardStore`) over the shard
+  implementation; and the `moeatlas.services.workspace` orchestration layer
+  (initialize/open/register/record/sync/query) that the CLI, Python API, and
+  future server share. It is not yet a query engine, lock manager, or CLI
+  surface; see [workspace](docs/workspace.md).
+- `EXPERIMENTAL` adapter-published `RoutingUniverse` contracts: a versioned,
+  family-blind per-layer routing topology (expert universes, parallel native
+  expert indices, variable top-k schedules, shared experts, adapter-declared
+  layout tags) with `publish_routing_universe()` from any conforming
+  inspection and `project_rectangular_universe()` as the explicit rectangular
+  reduction for legacy analysis; `aggregate_routing_load()` accepts a declared
+  universe that must match the publication and pass the projection before any
+  shard work. Non-rectangular and unknown-family shapes are first-class.
+  See [adapters](docs/adapters.md) and [analysis](docs/analysis.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred
   to the final VM phase.
@@ -216,7 +246,7 @@ The standard-library test discovery command is also available inside the
 locked environment:
 
 ```bash
-uv run --locked python -m unittest discover -s tests -v
+uv run --locked python -m unittest discover -s tests -t . -v
 ```
 
 ## Planned product shape
@@ -227,8 +257,9 @@ analysis, storage, server, adapters, and CLI—before any boundary is promoted
 to a separately distributable package. This keeps early changes easy to test
 and lets real model behavior guide the abstractions.
 
-The roadmap is documented in [architecture](docs/architecture.md) and the
-PRD. The intended progression is:
+The dependency-ordered [delivery roadmap](docs/roadmap.md) links the PRD,
+[architecture](docs/architecture.md), and deferred validation evidence. The
+intended progression is:
 
 1. repository foundation and model-free contracts;
 2. probe core with static scanner, manifests, hooks, event schema, and a
@@ -269,11 +300,11 @@ remain deferred to the final VM.
 
 The model-free composition is explicit and manual: call
 prefill once, append its returned model-neutral `RoutingForwardResult` with
-`append_mixtral_routing_shard(...)`, rebuild the read-only run inventory with
-`list_mixtral_routing_runs(...)`, aggregate a selected run with
+`append_routing_shard(...)`, rebuild the read-only run inventory with
+`list_routing_runs(...)`, aggregate a selected run with
 `aggregate_routing_load(...)`, and finally pass that matrix to
-`render_routing_load_heatmap(...)`. The historical Mixtral analysis names are
-identity aliases. Prefill does not append, inventory,
+`render_routing_load_heatmap(...)`. Historical Mixtral storage and analysis
+names are exact identity aliases. Prefill does not append, inventory,
 aggregate, render, or expose a server/wire/progress surface on the caller's
 behalf; each later action remains independently bounded and auditable.
 An explicit Qwen3.5-MoE static adapter covers the current

@@ -14,12 +14,15 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "architecture.md",
             ROOT / "docs" / "development.md",
             ROOT / "docs" / "model-validation-ledger.md",
+            ROOT / "docs" / "roadmap.md",
             ROOT / "docs" / "schemas.md",
             ROOT / "docs" / "discovery.md",
             ROOT / "docs" / "probe.md",
             ROOT / "docs" / "events.md",
             ROOT / "docs" / "cli.md",
             ROOT / "docs" / "loading.md",
+            ROOT / "docs" / "runs.md",
+            ROOT / "docs" / "workspace.md",
             ROOT / "docs" / "runtime.md",
             ROOT / "docs" / "adapters.md",
             ROOT / "docs" / "storage.md",
@@ -29,6 +32,13 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "analysis" / "routing_load.py",
             ROOT / "src" / "moeatlas" / "store" / "__init__.py",
             ROOT / "src" / "moeatlas" / "store" / "routing_shards.py",
+            ROOT / "src" / "moeatlas" / "store" / "catalog.py",
+            ROOT / "src" / "moeatlas" / "store" / "ports.py",
+            ROOT / "src" / "moeatlas" / "services" / "__init__.py",
+            ROOT / "src" / "moeatlas" / "services" / "workspace.py",
+            ROOT / "tests" / "test_store_catalog.py",
+            ROOT / "tests" / "test_store_ports.py",
+            ROOT / "tests" / "test_services_workspace.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -37,6 +47,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_cli_routing_runs.py",
             ROOT / "src" / "moeatlas" / "runtime" / "prompt_prefill.py",
             ROOT / "tests" / "test_runtime_prompt_prefill.py",
+            ROOT / "src" / "moeatlas" / "adapters" / "universe.py",
+            ROOT / "tests" / "test_adapters_universe.py",
             ROOT / "src" / "moeatlas" / "adapters" / "qwen3_5_moe.py",
             ROOT / "tests" / "fixtures" / "qwen3_5_moe.py",
             ROOT / "tests" / "test_qwen3_5_moe_adapter.py",
@@ -55,6 +67,107 @@ class ProjectFilesTests(unittest.TestCase):
         self.assertIn("Status: deferred", ledger)
         self.assertIn("No model files are downloaded", ledger)
         self.assertIn("final VM", ledger)
+
+    def test_roadmap_preserves_authority_status_and_no_download_policy(self) -> None:
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        for term in (
+            "Status: in progress",
+            "MoEAtlas PRD",
+            "Architecture",
+            "model-validation ledger",
+            "model-free complete",
+            "VM/GPU deferred",
+            "kickbacks-v2.vsix",
+            "append_routing_shard",
+            "public structural result protocol",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, roadmap)
+
+    def test_run_contracts_docs_preserve_identity_and_lifecycle_anchors(self) -> None:
+        runs_doc = (ROOT / "docs" / "runs.md").read_text()
+        for term in (
+            "RunSpecification",
+            "run:<64 lowercase hex>",
+            "RunRecord",
+            "RunLifecycleError",
+            "intervention_opt_in",
+            "redacted",
+            "retry",
+            "model-validation-ledger.md",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, runs_doc)
+
+    def test_workspace_services_docs_preserve_catalog_and_port_anchors(self) -> None:
+        workspace = (ROOT / "docs" / "workspace.md").read_text()
+        for term in (
+            "WorkspaceCatalog",
+            "RunRegistryEntry",
+            "initialize_catalog",
+            "rebuild_catalog",
+            "CatalogRebuildReceipt",
+            "RoutingRunReader",
+            "DuckDBRoutingShardStore",
+            ".moeatlas/catalog.json",
+            "schema_version",
+            "not initialized",
+            "atomic",
+            "ST-01",
+            "model-validation-ledger.md",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, workspace)
+        services_source = (
+            ROOT / "src" / "moeatlas" / "services" / "workspace.py"
+        ).read_text()
+        for term in (
+            "initialize_workspace",
+            "open_workspace",
+            "register_run",
+            "record_run_record",
+            "sync_runs_from_shards",
+            "query_runs",
+        ):
+            self.assertIn(term, services_source)
+
+    def test_routing_universe_docs_preserve_contract_anchors(self) -> None:
+        adapters_docs = (ROOT / "docs" / "adapters.md").read_text()
+        for term in (
+            "RoutingUniverse",
+            "publish_routing_universe",
+            "project_rectangular_universe",
+            "expert_indices",
+            "routed_top_k",
+            "shared_expert_keys",
+            "legacy_indexed",
+            "family-blind",
+            "non-rectangular",
+            "declared_universe",
+            "final VM",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, adapters_docs)
+        analysis_docs = (ROOT / "docs" / "analysis.md").read_text()
+        for term in (
+            "declared_universe",
+            "RoutingUniverse",
+            "project_rectangular_universe",
+            "checked, named gate",
+        ):
+            self.assertIn(term, analysis_docs)
+        universe_source = (
+            ROOT / "src" / "moeatlas" / "adapters" / "universe.py"
+        ).read_text()
+        for term in (
+            "ROUTING_UNIVERSE_SCHEMA_VERSION",
+            "LayerRoutingUniverse",
+            "RectangularProjection",
+            "RoutingUniverseError",
+            "manifest_type",
+            "routing_universe",
+        ):
+            self.assertIn(term, universe_source)
 
     def test_qwen35_acceptance_anchors_are_present(self) -> None:
         adapter_docs = (ROOT / "docs" / "adapters.md").read_text()

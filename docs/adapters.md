@@ -220,3 +220,44 @@ evidence with `verified=False`.
 Feature 26 routing capture/decoding, current-checkpoint loading, GPU
 equivalence, and release-time immutable revision review remain deferred to the
 final VM.
+
+## Routing universe publication
+
+`publish_routing_universe()` turns one validated `AdapterInspection` into a
+versioned `RoutingUniverse` manifest (`schema_version "1.0"`,
+`manifest_type "routing_universe"`): the model-neutral description of a
+model's routed expert topology. Publication is family-blind — it consumes
+only semantic kinds, routing flags, and capture provenance, never adapter
+names or module-path conventions — so any conforming adapter, including
+unknown families, publishes through the same seam.
+
+The universe records, per layer:
+
+- `layer_index`, plus the bound `moe_layer_key` and `router_key`;
+- `expert_keys`, the canonically sorted routed expert component keys;
+- `expert_indices`, parallel native expert identifiers as declared by the
+  adapter — they may be sparse or unordered and carry no positional meaning;
+- `routed_top_k`, the layer's own schedule (variable per layer is legal);
+- `shared_expert_keys`, sorted and disjoint from `expert_keys`.
+
+The single `layout` tag is declared by the adapter in router capture
+metadata rather than drawn from a central allowlist; `legacy_indexed` and
+`packed` remain ordinary values of that vocabulary. Router captures may
+carry `layout` alone or with `routed_top_k`; when inspection facts publish
+a global top-k it must agree with every layer's effective value, and
+publication fails honestly on missing provenance, inconsistent layouts,
+uncovered routed experts, or facts that contradict the published structure.
+No contiguity or uniformity is imposed: gap layers, sparse native indices,
+and per-layer expert counts are first-class shapes.
+
+`project_rectangular_universe()` is the explicit reduction for rectangular
+consumers: it succeeds only when every layer shares one expert count and
+top-k, layer indices run contiguously from zero, and native indices are
+contiguous per layer. Non-rectangular universes fail the projection instead
+of being silently reshaped, which replaces the hidden rectangular
+assumption of earlier routing-load analysis with a checked, named step:
+`aggregate_routing_load(declared_universe=...)` verifies a declared universe
+against its inspection publication and through that projection before any
+shard work (see [analysis](analysis.md)).
+Real-checkpoint equivalence for non-rectangular families remains deferred
+to the final VM phase.

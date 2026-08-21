@@ -30,7 +30,7 @@ checkpoints, but it is not needed for the current foundation feature.
 The baseline test command has no third-party test dependency:
 
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
+PYTHONPATH=src python -m unittest discover -s tests -t . -v
 ```
 
 If the optional developer tools are installed, also run:
