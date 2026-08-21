@@ -105,7 +105,7 @@ A public structural result protocol, neutral inventory-class rename, or stored
 schema migration each changes observable compatibility and requires its own
 acceptance gate.
 
-Sequence 5 is `in progress`. Its first landed slice is the run-evidence export
+Sequence 5 is `complete`. Its first landed slice is the run-evidence export
 bundle (see [storage](storage.md)): `export_run_bundle` /
 `verify_run_bundle` / `import_run_bundle` publish one run's complete committed
 evidence as canonical JSONL under a digest-bearing manifest with per-shard
@@ -117,8 +117,13 @@ the public `query_routing_run_assignments` seam (and the
 `RoutingRunReader.query_assignments` port) for source discovery, budgets,
 validation, conflict detection, and grouped reads, reaching into no concrete
 shard internals; analysis results are unchanged on all previously passing
-inputs and multi-shard grouped counts are provably per shard. Remaining for
-this sequence: CSV/Parquet export surfaces.
+inputs and multi-shard grouped counts are provably per shard. Its third landed
+slice adds the tabular surfaces: `export_run_tables` projects one run into
+canonically encoded, byte-deterministic CSV plus optional Parquet under a
+digest-bearing canonical manifest with strict budgets, atomic crash-safe
+staging, redaction fidelity, and duckdb-free `verify_run_tables`; the
+projection is deliberately one-way, keeping lossless round-trips the bundle's
+contract.
 
 Sequence 5 (raw evidence and open storage/export) is complete only when:
 

@@ -35,12 +35,14 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "store" / "catalog.py",
             ROOT / "src" / "moeatlas" / "store" / "ports.py",
             ROOT / "src" / "moeatlas" / "store" / "run_export.py",
+            ROOT / "src" / "moeatlas" / "store" / "run_tables.py",
             ROOT / "src" / "moeatlas" / "services" / "__init__.py",
             ROOT / "src" / "moeatlas" / "services" / "workspace.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
             ROOT / "tests" / "test_store_run_export.py",
+            ROOT / "tests" / "test_store_run_tables.py",
             ROOT / "tests" / "test_services_workspace.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
@@ -961,6 +963,54 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(private=private):
                 self.assertNotIn(f"_storage.{private}", analysis)
         self.assertTrue((ROOT / "tests" / "test_store_assignment_queries.py").is_file())
+
+    def test_tabular_run_export_docs_and_surface_are_present(self) -> None:
+        storage = (ROOT / "docs" / "storage.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        workspace_doc = (ROOT / "docs" / "workspace.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                storage,
+                (
+                    "export_run_tables",
+                    "verify_run_tables",
+                    "RunTableError",
+                    "RunTableReceipt",
+                    "byte-deterministic",
+                    "one-way",
+                    "export-staging",
+                ),
+            ),
+            (architecture, ("export_run_tables",)),
+            (workspace_doc, ("export_run_tables",)),
+            (roadmap, ("export_run_tables",)),
+            (ledger, ("Tabular run exports",)),
+            (readme, ("export_run_tables",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "store" / "run_tables.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "store" / "__init__.py").read_text()
+        for term in (
+            "RUN_TABLES_SCHEMA_VERSION",
+            "TABLES_MANIFEST_TYPE",
+            "RunTableError",
+            "RunTableFileEntry",
+            "RunTableReceipt",
+            "export_run_tables",
+            "verify_run_tables",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # The tabular projection stays one-way: no import path back into shards.
+        self.assertNotIn("import_run_bundle", source)
+        self.assertNotIn("append_routing_shard", source)
+        self.assertTrue((ROOT / "tests" / "test_store_run_tables.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

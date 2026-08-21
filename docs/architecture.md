@@ -305,3 +305,14 @@ owns only inspection validation, universe reconciliation, matrix folding, and
 its connection lifecycle, and reaches into no concrete shard internals. The
 seam, like the bundle format, is family-blind: it knows shards, manifests,
 budgets, and identities, never model families.
+
+The persistence layer's third interchange surface projects that same evidence
+into open tabular formats: `export_run_tables` writes canonically encoded,
+byte-deterministic CSV (plus optional Parquet) under a digest-bearing
+canonical manifest with strict row/byte budgets, atomic crash-safe staging,
+and redaction fidelity, while `verify_run_tables` revalidates a directory —
+digests, canonicality, schema readability, manifest agreement — without
+importing DuckDB. The projection is deliberately one-way: flat rows serve
+spreadsheets and dataframes, and lossless round-trips remain the bundle's
+contract. Like the other two surfaces it is family-blind and adds no
+analysis or model-dependent claim.

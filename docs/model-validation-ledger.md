@@ -326,3 +326,13 @@ corruption-as-reopen, and typed error carriers are covered by synthetic local
 tests. The refactor is behavior-preserving for every previously passing input;
 no real-model or filesystem-scale claim changes, so MV-01 through MV-08 and
 ST-01 through ST-04 keep their deferred status.
+
+Tabular run exports (CSV/Parquet): Status: implemented at the model-free
+boundary. `export_run_tables` / `verify_run_tables` round-trips, canonical CSV
+encoding and byte determinism, redaction fidelity, multi-shard ordering,
+budgets, crash cleanup, tamper rejection, manifest-shape negotiation, and
+duckdb-free verification are covered by synthetic local tests over temporary
+workspaces. Parquet members are digest-recorded without a byte-determinism
+promise because writer metadata varies across engine versions; no real-model,
+GPU, or filesystem-scale claim is made, so MV-01 through MV-08 and ST-01
+through ST-04 keep their deferred status.

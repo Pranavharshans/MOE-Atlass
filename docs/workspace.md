@@ -105,6 +105,10 @@ appender, so catalog state can be rebuilt afterwards with
 
 - The catalog is not a query engine, scheduler, or lock manager; concurrent
   writers are out of scope until the durability work below lands.
+- Tabular exports (`export_run_tables`, `verify_run_tables`) read committed
+  shards from one workspace and publish one-way CSV/Parquet projections
+  elsewhere; see [storage](storage.md). They never write back into the
+  workspace — importing evidence remains the bundle appender's job.
 - Routing-load analysis consumes the storage query seam
   (`query_routing_run_assignments`) rather than concrete shard internals;
   richer catalog-level queries remain future work.

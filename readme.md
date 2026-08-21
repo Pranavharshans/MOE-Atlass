@@ -107,6 +107,12 @@ deliberately deferred.
   identity sets plus grouped assignment counts — under strict budgets with
   typed error carriers, and `aggregate_routing_load()` consumes exactly that
   seam instead of concrete shard internals; see [storage](docs/storage.md).
+- `EXPERIMENTAL` bounded tabular run exports: `export_run_tables()` projects
+  one run's committed evidence into canonically encoded, byte-deterministic
+  CSV plus optional Parquet under a digest-bearing manifest, with strict
+  budgets, atomic publication, redaction fidelity, and duckdb-free
+  `verify_run_tables()`; the projection is one-way — lossless round-trips
+  stay the export bundle's contract; see [storage](docs/storage.md).
 - `EXPERIMENTAL` bounded `aggregate_routing_load()` analysis over one run's
   complete Feature 19 shards, using the exact inspection-published routed
   layer/expert universe for Mixtral, Qwen3.5, or a future adapter and strict

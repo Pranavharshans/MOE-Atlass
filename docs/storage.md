@@ -242,3 +242,37 @@ validation, conflicts, and grouped reads to the seam, then folds the returned
 summaries into the same matrix as before. Results are unchanged on all
 previously passing inputs, multi-shard grouped counts are now provably per
 shard, and no analysis code touches concrete shard internals any more.
+
+## Tabular run exports
+
+`export_run_tables(workspace, destination, *, run_key, formats=("csv",),
+max_event_rows=1_000_000, max_file_bytes=1_000_000_000)` projects one run's
+committed shard evidence into open tabular formats under a new destination
+directory: `tokens.csv`/`routing.csv` carry every token and routing event in
+canonical column order, and `tokens.parquet`/`routing.parquet` repeat the same
+projection when `parquet` is requested. Rows are ordered by shard key and
+event index; redaction travels faithfully (redacted runs export empty
+`token_text` cells with `token_text_stored=false`). CSV members are
+byte-deterministic and canonically encoded — every field quoted, `\n`
+line endings, UTF-8 — and verification re-encodes them byte-for-byte.
+Parquet members are digest-recorded but deliberately not promised
+byte-deterministic (Parquet writer metadata varies across engine versions);
+they are verified by size, digest, and schema readability instead.
+
+Publication is atomic through an export-staging sibling directory with crash
+cleanup, symlink-safe member reads, strict row and per-file byte budgets, and
+a canonical digest-bearing `manifest.json` recording store/event schema
+versions, writer identity, formats, per-shard counts, and file digests.
+`verify_run_tables(source, *, max_event_rows, max_file_bytes)` revalidates a
+directory without importing DuckDB: manifest shape and canonicality, member
+digests and sizes, CSV canonical re-encoding, row-count agreement with the
+manifest totals, and rejection of non-canonical-but-digest-matching members.
+
+The projection is intentionally one-way. Tabular exports are for spreadsheets,
+dataframes, and external tools; lossless round-trips stay the run-evidence
+bundle's contract, because flat rows cannot restore event contracts, link
+validation, or content-addressed shard identity on their own. Failures raise
+`RunTableError` with stages `dependency`, `workspace`, `source`, `format`,
+`budget`, `write`, and `publish`; receipts (`RunTableReceipt`,
+`RunTableFileEntry`) are strict dataclasses carrying the manifest digest and
+sorted file entries.
