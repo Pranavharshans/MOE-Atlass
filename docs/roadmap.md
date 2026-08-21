@@ -293,7 +293,14 @@ every path including cancellation, reports a distinct `restore` stage
 when cleanup itself fails, and publishes a `moeatlas.intervention_outcome`
 artifact only after successful restoration. Synthetic modules prove the
 mechanics locally; real-model causal effect, regret, stability, and
-replication evidence stays deferred to the validation ledger.
+replication evidence stays deferred to the validation ledger. Its second
+landed slice is the causal evidence summary (see [analysis](analysis.md)):
+`analyze_causal_evidence` in `moeatlas.analysis.causal_evidence` reduces
+paired baseline/intervention observations into per-label effect summaries —
+absolute and relative effects, direction consistency across replications,
+strict stability markers, and explicit zero-effect labels — canonically
+serializable as `moeatlas.causal_evidence` artifacts and feeding Evidence
+Cards' causality/stability sections.
 
 Sequence 8 (plugins and complete headless CLI/API) is complete only when:
 

@@ -81,6 +81,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "docs" / "interventions.md",
             ROOT / "tests" / "test_interventions_recipes.py",
             ROOT / "tests" / "test_interventions_engine.py",
+            ROOT / "src" / "moeatlas" / "analysis" / "causal_evidence.py",
+            ROOT / "tests" / "test_analysis_causal_evidence.py",
             ROOT / "tests" / "test_cli_run.py",
             ROOT / "tests" / "test_cli_export.py",
             ROOT / "tests" / "test_server_app.py",
@@ -1910,6 +1912,39 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, recipes_source)
                 self.assertNotIn(forbidden, engine_source)
+        analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
+        for document, terms in (
+            (
+                analysis_doc,
+                ("analyze_causal_evidence", "moeatlas.causal_evidence", "CausalPair"),
+            ),
+            (roadmap, ("analyze_causal_evidence", "moeatlas.causal_evidence")),
+            (ledger, ("Causal evidence summaries",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        causal_source = (
+            ROOT / "src" / "moeatlas" / "analysis" / "causal_evidence.py"
+        ).read_text()
+        analysis_exports = (
+            ROOT / "src" / "moeatlas" / "analysis" / "__init__.py"
+        ).read_text()
+        for term in (
+            "CAUSAL_EVIDENCE_SCHEMA_VERSION",
+            "CausalEvidence",
+            "CausalPair",
+            "analyze_causal_evidence",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, causal_source)
+                self.assertIn(term, analysis_exports)
+        # The causal-evidence layer stays pure: no clocks, randomness,
+        # storage, or model imports.
+        for forbidden in ("import time", "import random", "datetime", "duckdb",
+                          "urllib", "torch", "transformers"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, causal_source)
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()

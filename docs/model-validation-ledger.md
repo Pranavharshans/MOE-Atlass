@@ -488,3 +488,13 @@ participates. Real-model causal effect, regret, stability, and replication
 evidence — including explicit unsupported/fused/quantized limitations —
 remains deferred VM/GPU evidence under MV-01 through MV-08; ST-01 through
 ST-04 keep their deferred status.
+
+Causal evidence summaries: Status: implemented at the model-free boundary.
+Paired-effect reduction (`analyze_causal_evidence` over `CausalPair`
+observations), per-label means, absolute/relative effects, direction
+consistency, strict stability markers, duplicate-replication rejection,
+budget failures, and canonical round-trips are covered by synthetic
+contract tests. No model, tokenizer, download, or GPU participates.
+Real-model causal effect/regret/stability/replication measurements remain
+deferred VM/GPU evidence under MV-01 through MV-08; ST-01 through ST-04
+keep their deferred status.

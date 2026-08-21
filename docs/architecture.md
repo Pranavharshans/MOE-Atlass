@@ -405,3 +405,10 @@ content-addressed (`sha256:<64 hex>` fingerprints recorded by
 `scale`, `reroute`, or `alter_router` manipulation; synthetic modules prove
 the mechanics locally, and real-model causal claims remain deferred to the
 validation ledger.
+
+Causal observation results reduce through the pure
+`moeatlas.analysis.causal_evidence` layer: paired baseline/intervention
+observations become per-label effect summaries with explicit direction
+consistency and strict stability markers under the
+`moeatlas.causal_evidence` artifact type — still family-blind, still
+without any claim that association or effect is specialization.
