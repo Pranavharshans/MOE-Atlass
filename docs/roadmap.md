@@ -48,7 +48,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | 7 | Task association and Evidence Cards | `model-free complete` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests; real-evidence capture stays in Sequence 12 |
 | 8 | Plugins and complete headless CLI/API | `in progress` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
 | 9 | FastAPI server and React UI | `in progress` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14; React SPA and browser E2E stay deferred release work |
-| 10 | Intervention and causal evidence | `in progress` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
+| 10 | Intervention and causal evidence | `model-free complete` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
 | 11 | Privacy, reliability, benchmarks, and release | `planned` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19 |
 | 12 | Final VM/GPU certification and PRD audit | `VM/GPU deferred` | MV-01–MV-08 and ST-01–ST-04 have recorded evidence; every v1 acceptance row traces to passing implementation and validation | PRD §20 and validation ledger |
 
@@ -280,7 +280,10 @@ single-page UI, packaged frontend assets, and synthetic browser E2E remain
 deferred release-engineering evidence recorded in the validation ledger;
 the read-only wire contract above is what they will consume.
 
-Sequence 10 is `in progress`. Its first landed slice is the intervention
+Sequence 10 is `model-free complete`: recipes, budgets, the failure-safe
+engine, and paired causal-effect summaries are all constructible and
+contract-tested over synthetic modules (see [interventions](interventions.md)).
+Its first landed slice is the intervention
 mechanics (see [interventions](interventions.md)): immutable
 `InterventionRecipe` contracts over the fixed `ablate`, `scale`,
 `reroute`, and `alter_router` vocabulary with per-operation parameter
@@ -300,7 +303,26 @@ paired baseline/intervention observations into per-label effect summaries —
 absolute and relative effects, direction consistency across replications,
 strict stability markers, and explicit zero-effect labels — canonically
 serializable as `moeatlas.causal_evidence` artifacts and feeding Evidence
-Cards' causality/stability sections.
+Cards' causality/stability sections. What remains deferred is real
+evidence, not contracts: interventions on live checkpoints, adapter
+declarations of unsupported/fused/quantized intervention paths, and actual
+causal/regret measurements on real models stay in Sequences 11–12 ledger
+work until VM/native-output certification exists.
+
+Sequence 10 (intervention and causal evidence) is complete only when:
+
+1. Recipes are immutable, content-addressed, and exclusive per operation;
+   budgets are immutable inputs that fail loudly.
+2. The engine sequences capture → apply → observe → restore behind adapter
+   capabilities, restores on every failure path including cancellation,
+   and never publishes an outcome before successful restoration.
+3. Paired causal summaries carry effect, direction-consistency, strict
+   stability, and zero-effect evidence with documented `null` semantics.
+4. Lineage binds derived runs to exact recipe content through the shared
+   fingerprint contract.
+5. Synthetic modules prove all mechanics locally; real-model claims are
+   deferred ledger rows, not silently assumed capabilities.
+6. The full local gate is green and the feature commit is pushed.
 
 Sequence 8 (plugins and complete headless CLI/API) is complete only when:
 
