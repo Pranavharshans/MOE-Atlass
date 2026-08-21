@@ -316,3 +316,15 @@ importing DuckDB. The projection is deliberately one-way: flat rows serve
 spreadsheets and dataframes, and lossless round-trips remain the bundle's
 contract. Like the other two surfaces it is family-blind and adds no
 analysis or model-dependent claim.
+
+The services layer gains the run engine's first data step: bounded
+deterministic dataset reading (`moeatlas.services.datasets`). A
+`DatasetInputSpec` descriptor becomes a tuple of frozen `DatasetRow` records
+under strict row/byte/file budgets, with fixed-stage `DatasetReadError`
+carriers, task-role column-mapping validation and projection, SHA-256-keyed
+deterministic batch planning (sample caps, shuffles, batches), and lazy
+DuckDB resolution for Parquet members only. Descriptors never fetch data:
+locations resolve against an explicit local base directory, HF-style format
+means an existing local snapshot directory read in sorted order, and no code
+path reaches the network. The step is family-blind — it knows rows, roles,
+budgets, and schedules, never model families.

@@ -336,3 +336,13 @@ workspaces. Parquet members are digest-recorded without a byte-determinism
 promise because writer metadata varies across engine versions; no real-model,
 GPU, or filesystem-scale claim is made, so MV-01 through MV-08 and ST-01
 through ST-04 keep their deferred status.
+
+Bounded dataset reading service: Status: implemented at the model-free
+boundary. `moeatlas.services.datasets` reading of JSONL/CSV/Parquet/text and
+local HF-style snapshots, budgets, column-mapping validation/projection,
+deterministic SHA-256-keyed batch planning, error stages, and lazy DuckDB
+resolution are covered by synthetic local tests over temporary files.
+Descriptors never fetch data and no test downloads a dataset; real
+tokenizer/dataset ingestion equivalence and large-file scale remain deferred
+MV/ST evidence, so MV-01 through MV-08 and ST-01 through ST-04 keep their
+deferred status.

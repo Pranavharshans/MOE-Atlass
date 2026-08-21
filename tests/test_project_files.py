@@ -38,12 +38,14 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "src" / "moeatlas" / "store" / "run_tables.py",
             ROOT / "src" / "moeatlas" / "services" / "__init__.py",
             ROOT / "src" / "moeatlas" / "services" / "workspace.py",
+            ROOT / "src" / "moeatlas" / "services" / "datasets.py",
             ROOT / "tests" / "test_store_catalog.py",
             ROOT / "tests" / "test_store_ports.py",
             ROOT / "tests" / "test_store_assignment_queries.py",
             ROOT / "tests" / "test_store_run_export.py",
             ROOT / "tests" / "test_store_run_tables.py",
             ROOT / "tests" / "test_services_workspace.py",
+            ROOT / "tests" / "test_services_datasets.py",
             ROOT / "tests" / "test_store_routing_shards.py",
             ROOT / "tests" / "test_store_routing_run_inventory.py",
             ROOT / "tests" / "test_analysis_routing_load.py",
@@ -1011,6 +1013,56 @@ class ProjectFilesTests(unittest.TestCase):
         self.assertNotIn("import_run_bundle", source)
         self.assertNotIn("append_routing_shard", source)
         self.assertTrue((ROOT / "tests" / "test_store_run_tables.py").is_file())
+
+    def test_dataset_reader_docs_and_surface_are_present(self) -> None:
+        runs_doc = (ROOT / "docs" / "runs.md").read_text()
+        architecture = (ROOT / "docs" / "architecture.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        readme = (ROOT / "readme.md").read_text()
+        for document, terms in (
+            (
+                runs_doc,
+                (
+                    "Bounded dataset reading",
+                    "read_dataset_rows",
+                    "DatasetRow",
+                    "DatasetReadError",
+                    "plan_dataset_batches",
+                    "project_dataset_rows",
+                    "hf_datasets",
+                    "Descriptors never fetch",
+                ),
+            ),
+            (architecture, ("moeatlas.services.datasets",)),
+            (roadmap, ("read_dataset_rows",)),
+            (ledger, ("Bounded dataset reading service",)),
+            (readme, ("read_dataset_rows",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        source = (ROOT / "src" / "moeatlas" / "services" / "datasets.py").read_text()
+        exports = (ROOT / "src" / "moeatlas" / "services" / "__init__.py").read_text()
+        for term in (
+            "DATASET_READER_SCHEMA_VERSION",
+            "DATASET_COLUMN_ROLES",
+            "DatasetReadError",
+            "DatasetRow",
+            "read_dataset_rows",
+            "plan_dataset_batches",
+            "project_dataset_rows",
+            "resolve_dataset_location",
+            "validate_column_mapping",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, source)
+                self.assertIn(term, exports)
+        # Descriptors never fetch data: no network clients anywhere in the reader.
+        for forbidden in ("urllib", "requests", "httpx", "huggingface", "socket"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertTrue((ROOT / "tests" / "test_services_datasets.py").is_file())
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()
