@@ -498,3 +498,12 @@ contract tests. No model, tokenizer, download, or GPU participates.
 Real-model causal effect/regret/stability/replication measurements remain
 deferred VM/GPU evidence under MV-01 through MV-08; ST-01 through ST-04
 keep their deferred status.
+
+Retention evaluation: Status: implemented at the model-free boundary.
+Policy bounds and contract failures, deterministic classification rules,
+untimestamped-entry semantics, combined age/count bounds, tie-breaking by
+run key, empty registries, input type contracts, and canonical report
+round-trips are covered by synthetic contract tests over temporary
+registries. No model, tokenizer, download, or GPU participates. Real
+workspace-scale retention enforcement and filesystem durability remain
+deferred evidence under ST-01 through ST-04.

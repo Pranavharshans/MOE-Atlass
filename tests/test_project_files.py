@@ -61,6 +61,8 @@ class ProjectFilesTests(unittest.TestCase):
             ROOT / "tests" / "test_services_run_engine.py",
             ROOT / "tests" / "test_services_run_inputs.py",
             ROOT / "tests" / "test_services_run_service.py",
+            ROOT / "src" / "moeatlas" / "services" / "retention.py",
+            ROOT / "tests" / "test_services_retention.py",
             ROOT / "tests" / "test_analysis_task_association.py",
             ROOT / "tests" / "test_analysis_evidence_cards.py",
             ROOT / "tests" / "test_analysis_routing_agreement.py",
@@ -1945,6 +1947,49 @@ class ProjectFilesTests(unittest.TestCase):
                           "urllib", "torch", "transformers"):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, causal_source)
+
+    def test_retention_docs_and_surface_are_present(self) -> None:
+        workspace_doc = (ROOT / "docs" / "workspace.md").read_text()
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
+        ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
+        for document, terms in (
+            (
+                workspace_doc,
+                (
+                    "RetentionPolicy",
+                    "evaluate_retention(entries, policy)",
+                    "moeatlas.retention_report",
+                    "evaluation, not deletion",
+                ),
+            ),
+            (roadmap, ("evaluate_retention()", "moeatlas.retention_report")),
+            (ledger, ("Retention evaluation",)),
+        ):
+            for term in terms:
+                with self.subTest(term=term):
+                    self.assertIn(term, document)
+        retention_source = (
+            ROOT / "src" / "moeatlas" / "services" / "retention.py"
+        ).read_text()
+        services_exports = (
+            ROOT / "src" / "moeatlas" / "services" / "__init__.py"
+        ).read_text()
+        for term in (
+            "RETENTION_SCHEMA_VERSION",
+            "RetentionError",
+            "RetentionPolicy",
+            "RetentionReport",
+            "evaluate_retention",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, retention_source)
+                self.assertIn(term, services_exports)
+        # Retention evaluation never deletes: no catalog writes, no
+        # unlinking, and no model or storage-engine imports.
+        for forbidden in ("unlink", "rmtree", "shutil", "duckdb", "torch",
+                          "transformers"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, retention_source)
 
     def test_routing_load_analysis_docs_and_surface_are_present(self) -> None:
         analysis = (ROOT / "docs" / "analysis.md").read_text()
