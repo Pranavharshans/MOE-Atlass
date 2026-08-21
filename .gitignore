@@ -21,3 +21,6 @@ workspace/
 .DS_Store
 .idea/
 .vscode/
+
+# Agent/editor local state
+.claude/
