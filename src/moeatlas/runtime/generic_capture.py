@@ -9,6 +9,11 @@ product seam. Router modules are discovered from a static ``[STRUCTURE]``
 existing passive :class:`~moeatlas.probe.HookManager`, and router payloads are
 decoded generically from the published expert count and routed top-k — with no
 adapter name, module-path convention, or certified descriptor anywhere.
+Router targets bind to the structure the scan proved — published expert
+containers and their sibling topology — so noisy name-token candidates on
+foreign families (SwiGLU ``gate_proj`` modules, ``...Moe...`` class names)
+never become hook points; strict name guards apply only when such evidence is
+absent.
 
 Score normalization is driven by the model config where determinable (a
 ``score_function`` of ``softmax`` or ``sigmoid``); when it is not determinable,
@@ -24,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..core import ComponentKind, parse_component_key
-from ..discovery import DiscoveryReport
+from ..discovery import DiscoveryReport, bind_moe_layer_key, trusted_routers
 from ..event_validation import (
     fresh_expert_events,
     fresh_routing_events,
@@ -132,10 +137,16 @@ def _fresh_report(value: object) -> DiscoveryReport:
 def structured_router_targets(report: DiscoveryReport) -> tuple[StructuredRouterTarget, ...]:
     """Resolve generic hook targets from one static structure report.
 
-    Every router candidate contributes exactly one target bound to its
-    same-index MoE layer key and its contiguous zero-based routed experts.
-    The report's strict ``expert_count``/``routed_top_k`` facts drive every
-    count; shared-expert components are excluded by kind, never by name.
+    Routers bind to the report's own structural evidence, never to name
+    guesses: a ROUTER component is trusted when its parent block publishes an
+    ``EXPERT_CONTAINER`` component, so SwiGLU ``gate_proj`` modules inside
+    individual experts never qualify, and each trusted router binds the
+    MOE_LAYER identity the scanner published at its parent-block path. When a
+    report publishes no such structure, a strictly guarded fallback applies:
+    the final dotted path segment must be exactly ``gate`` and the router's
+    layer must carry expert-container or routed-expert evidence. The report's
+    strict ``expert_count``/``routed_top_k`` facts drive every count;
+    shared-expert components are excluded by kind, never by name.
     """
 
     fresh = _fresh_report(report)
@@ -154,34 +165,28 @@ def structured_router_targets(report: DiscoveryReport) -> tuple[StructuredRouter
         )
 
     components = fresh.components
-    routers = [
-        component
-        for component in components
-        if component.kind is ComponentKind.ROUTER and component.layer_index is not None
-    ]
+    routers = trusted_routers(components)
     if not routers:
         raise StructuredCaptureError(
             "resolution", "structure report does not publish any routed router"
         )
     targets: list[StructuredRouterTarget] = []
     seen_layers: set[int] = set()
-    for router in sorted(routers, key=lambda item: item.module_path):
+    for router in routers:
         layer_index = router.layer_index
+        if layer_index is None:  # pragma: no cover - excluded by trusted_routers
+            raise StructuredCaptureError(
+                "resolution", "structure report does not publish any routed router"
+            )
         if layer_index in seen_layers:
             raise StructuredCaptureError(
                 "resolution", f"layer {layer_index} publishes more than one router"
             )
         seen_layers.add(layer_index)
-        layers = [
-            component
-            for component in components
-            if component.kind is ComponentKind.MOE_LAYER and component.layer_index == layer_index
-        ]
-        if len(layers) != 1:
-            raise StructuredCaptureError(
-                "resolution",
-                f"router on layer {layer_index} must bind exactly one MoE layer",
-            )
+        try:
+            layer_key = bind_moe_layer_key(fresh.model_key, components, router)
+        except ValueError as exc:
+            raise StructuredCaptureError("resolution", str(exc)) from exc
         experts = [
             component
             for component in components
@@ -205,7 +210,7 @@ def structured_router_targets(report: DiscoveryReport) -> tuple[StructuredRouter
             StructuredRouterTarget(
                 module_path=router.module_path,
                 component_key=router.component_key,
-                layer_key=layers[0].component_key,
+                layer_key=layer_key,
                 expert_keys=tuple(component.component_key for component in experts),
                 routed_top_k=routed_top_k,
                 layer_index=layer_index,

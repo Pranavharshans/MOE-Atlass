@@ -339,6 +339,346 @@ def test_reverse_fire_order_still_publishes_canonical_layer_blocks() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Ling/BailingMoeV3-style foreign-family regression coverage
+# ---------------------------------------------------------------------------
+
+
+class _LingHooks(_HookedNode):
+    """Passive hook node with fixture-tree children and parameters."""
+
+    def __init__(
+        self,
+        *,
+        children: dict[str, object] | None = None,
+        parameters: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__()
+        self._children = dict(children or {})
+        self._parameters = dict(parameters or {})
+
+    def named_modules(self):
+        yield "", self
+        for child_name, child in self._children.items():
+            for nested_name, nested_module in child.named_modules():
+                full_name = child_name if not nested_name else f"{child_name}.{nested_name}"
+                yield full_name, nested_module
+
+    def named_parameters(self):
+        for parameter_name, parameter in self._parameters.items():
+            yield parameter_name, parameter
+        for child_name, child in self._children.items():
+            for nested_name, parameter in child.named_parameters():
+                yield f"{child_name}.{nested_name}", parameter
+
+
+def _ling_param(shape: tuple[int, ...]) -> object:
+    return type("P", (), {"shape": shape})()
+
+
+class BailingMoeV3RMSNorm(_LingHooks):
+    """Class name tokenizes to contain 'moe' (observed VM noise source)."""
+
+
+class BailingMoeV3Linear(_LingHooks):
+    pass
+
+
+class BailingMoeV3MLP(_LingHooks):
+    """One routed expert's SwiGLU block; its gate_proj tokenizes like a router."""
+
+
+class BailingMoeV3SharedExpertMLP(_LingHooks):
+    pass
+
+
+class BailingMoeV3Experts(_LingHooks):
+    pass
+
+
+class BailingMoeV3MoEGate(_LingHooks):
+    """The real router module producing routing logits."""
+
+
+class BailingMoeV3SparseMoeBlock(_LingHooks):
+    pass
+
+
+class BailingMoeV3Attention(_LingHooks):
+    pass
+
+
+class BailingMoeV3DecoderLayer(_LingHooks):
+    pass
+
+
+class LingNamedModel:
+    """Torch-free BailingMoeV3-shaped double mimicking observed Ling naming.
+
+    Every noise source from the live VM scan is present: 130 ROUTER
+    candidates per layer (one real ``mlp.gate`` plus every SwiGLU expert and
+    shared-expert ``gate_proj``) and five MOE_LAYER candidates per layer from
+    ``...Moe...`` class names — while only ``model.layers.<n>.mlp.gate``
+    produces router logits.
+    """
+
+    def __init__(
+        self,
+        payload: object,
+        *,
+        num_layers: int = 2,
+        num_experts: int = 8,
+        routed_top_k: int = 2,
+    ) -> None:
+        hidden, intermediate = 32, 64
+
+        def swiglu(cls: type[_LingHooks]) -> _LingHooks:
+            return cls(
+                children={
+                    "gate_proj": BailingMoeV3Linear(
+                        parameters={"weight": _ling_param((intermediate, hidden))}
+                    ),
+                    "up_proj": BailingMoeV3Linear(
+                        parameters={"weight": _ling_param((intermediate, hidden))}
+                    ),
+                    "down_proj": BailingMoeV3Linear(
+                        parameters={"weight": _ling_param((hidden, intermediate))}
+                    ),
+                }
+            )
+
+        def make_layer() -> BailingMoeV3DecoderLayer:
+            return BailingMoeV3DecoderLayer(
+                children={
+                    "input_layernorm": BailingMoeV3RMSNorm(
+                        parameters={"weight": _ling_param((hidden,))}
+                    ),
+                    "self_attn": BailingMoeV3Attention(
+                        children={
+                            projection: BailingMoeV3Linear(
+                                parameters={"weight": _ling_param((hidden, hidden))}
+                            )
+                            for projection in ("q_proj", "k_proj", "v_proj", "o_proj")
+                        }
+                    ),
+                    "post_attention_layernorm": BailingMoeV3RMSNorm(
+                        parameters={"weight": _ling_param((hidden,))}
+                    ),
+                    "mlp": BailingMoeV3SparseMoeBlock(
+                        children={
+                            "gate": BailingMoeV3MoEGate(
+                                parameters={"weight": _ling_param((num_experts, hidden))}
+                            ),
+                            "experts": BailingMoeV3Experts(
+                                children={
+                                    str(index): swiglu(BailingMoeV3MLP)
+                                    for index in range(num_experts)
+                                }
+                            ),
+                            "shared_expert": swiglu(BailingMoeV3SharedExpertMLP),
+                        }
+                    ),
+                }
+            )
+
+        self.config = {
+            "num_experts": num_experts,
+            "num_experts_per_tok": routed_top_k,
+            "n_shared_experts": 1,
+        }
+        self._children = {
+            "model": _LingHooks(
+                children={
+                    "embed_tokens": BailingMoeV3Linear(
+                        parameters={"weight": _ling_param((hidden, hidden))}
+                    ),
+                    "layers": _LingHooks(
+                        children={str(index): make_layer() for index in range(num_layers)}
+                    ),
+                    "norm": BailingMoeV3RMSNorm(parameters={"weight": _ling_param((hidden,))}),
+                }
+            )
+        }
+        self.payload_by_path: dict[str, object] = {}
+        self.fire_paths = [
+            path
+            for path, module in self.named_modules()
+            if isinstance(module, BailingMoeV3MoEGate)
+        ]
+        self.calls = 0
+        self.output = object()
+        for path in self.fire_paths:
+            self.payload_by_path[path] = payload
+
+    def named_modules(self):
+        yield "", self
+        for child_name, child in self._children.items():
+            for nested_name, nested_module in child.named_modules():
+                full_name = child_name if not nested_name else f"{child_name}.{nested_name}"
+                yield full_name, nested_module
+
+    def named_parameters(self):
+        for child_name, child in self._children.items():
+            for nested_name, parameter in child.named_parameters():
+                yield f"{child_name}.{nested_name}", parameter
+
+    def __call__(self, **kwargs: object) -> object:
+        del kwargs
+        self.calls += 1
+        modules = dict(self.named_modules())
+        for path in self.fire_paths:
+            modules[path].fire(self.payload_by_path[path])
+        return self.output
+
+
+def test_ling_style_report_pollution_never_becomes_hook_targets() -> None:
+    model = LingNamedModel(_flat_logits(1, 8))
+    report = _report(model)
+    routers = [c for c in report.components if c.kind.value == "router"]
+    moe_layers = [c for c in report.components if c.kind.value == "moe_layer"]
+    assert len(routers) > len(model.fire_paths) == 2
+    assert len(moe_layers) > 2
+    targets = structured_router_targets(report)
+    assert [target.module_path for target in targets] == [
+        "model.layers.0.mlp.gate",
+        "model.layers.1.mlp.gate",
+    ]
+    assert [target.layer_index for target in targets] == [0, 1]
+    assert all(target.routed_top_k == 2 for target in targets)
+    assert all(len(target.expert_keys) == 8 for target in targets)
+    published_blocks = {
+        component.component_key
+        for component in report.components
+        if component.kind.value == "moe_layer" and component.module_path.endswith(".mlp")
+    }
+    assert {target.layer_key for target in targets} == published_blocks
+
+
+def test_ling_style_capture_decodes_end_to_end_through_the_real_routers() -> None:
+    logits = [[1.0 - 0.05 * index for index in range(8)] for _ in range(2)]
+    model = LingNamedModel(logits)
+    result = run_structured_routing_forward(
+        model, _report(model), _tokens(2), {"input_ids": [[10, 11]]}, max_events=64
+    )
+    assert result.output is model.output
+    assert len(result.routing_events) == 2 * 2 * 2
+    assert any("normalization" in note for note in result.capability_notes)
+    assert model.calls == 1
+    modules = dict(model.named_modules())
+    for path in model.fire_paths:
+        assert modules[path].callbacks == []
+
+
+class DeepseekV2MoE(_LingHooks):
+    pass
+
+
+class DeepseekV2MLP(_LingHooks):
+    pass
+
+
+class DeepseekV2Gate(_LingHooks):
+    pass
+
+
+class DeepseekV2Experts(_LingHooks):
+    pass
+
+
+class DeepseekV2ExpertFFN(_LingHooks):
+    pass
+
+
+class _NestedRouterModel(_LingHooks):
+    """Callable tree root whose gate leaves fire one passive payload."""
+
+    def __init__(
+        self,
+        *,
+        children: dict[str, object],
+        config: dict[str, object],
+        fire_class: type[_LingHooks],
+        payload: object,
+    ) -> None:
+        super().__init__(children=children)
+        self.config = config
+        self.payload = payload
+        self.calls = 0
+        self.output = object()
+        self.fire_paths = [
+            path for path, module in self.named_modules() if isinstance(module, fire_class)
+        ]
+
+    def __call__(self, **kwargs: object) -> object:
+        del kwargs
+        self.calls += 1
+        modules = dict(self.named_modules())
+        for path in self.fire_paths:
+            modules[path].fire(self.payload)
+        return self.output
+
+
+def _deepseek_style_model(payload: object, *, gate_leaf: str = "gate") -> _NestedRouterModel:
+    """Router published beside the block while experts nest under ``mlp``."""
+
+    def make_block() -> DeepseekV2MoE:
+        return DeepseekV2MoE(
+            children={
+                gate_leaf: DeepseekV2Gate(parameters={"weight": _ling_param((4, 16))}),
+                "mlp": DeepseekV2MLP(
+                    children={
+                        "experts": DeepseekV2Experts(
+                            children={
+                                str(index): DeepseekV2ExpertFFN(
+                                    parameters={
+                                        "w1": _ling_param((32, 16)),
+                                        "w2": _ling_param((16, 32)),
+                                    }
+                                )
+                                for index in range(4)
+                            }
+                        )
+                    }
+                ),
+            }
+        )
+
+    return _NestedRouterModel(
+        children={
+            "layers": _LingHooks(
+                children={"0": make_block(), "1": make_block()}
+            )
+        },
+        config={"num_experts": 4, "num_experts_per_tok": 2},
+        fire_class=DeepseekV2Gate,
+        payload=payload,
+    )
+
+
+def test_fallback_binds_gate_routers_nested_away_from_containers() -> None:
+    model = _deepseek_style_model(_flat_logits(1, 4))
+    report = _report(model)
+    targets = structured_router_targets(report)
+    assert [target.module_path for target in targets] == ["layers.0.gate", "layers.1.gate"]
+    published_blocks = {
+        component.component_key
+        for component in report.components
+        if component.kind.value == "moe_layer"
+    }
+    assert {target.layer_key for target in targets} == published_blocks
+    result = run_structured_routing_forward(
+        model, report, _tokens(1), {"input_ids": [[10]]}, max_events=32
+    )
+    assert len(result.routing_events) == 1 * 2 * 2
+
+
+def test_fallback_rejects_router_names_without_an_exact_gate_leaf() -> None:
+    model = _deepseek_style_model(_flat_logits(1, 4), gate_leaf="gating_unit")
+    with pytest.raises(StructuredCaptureError, match="does not publish any routed router"):
+        structured_router_targets(_report(model))
+    assert model.calls == 0
+
+
+# ---------------------------------------------------------------------------
 # Isolation guards
 # ---------------------------------------------------------------------------
 

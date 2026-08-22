@@ -35,10 +35,14 @@ from moeatlas.discovery import (
     DiscoveryFacts,
     DiscoveryReport,
     DiscoverySignal,
+    scan,
 )
 from moeatlas.events import RoutingEvent, TokenEvent, TokenPhase
 from moeatlas.runtime import RoutingForwardResult
 from moeatlas.store import append_routing_shard
+
+from .test_cli_scan import _loading_manifest, _loading_plan
+from .test_runtime_generic_capture import LingNamedModel
 
 try:
     import duckdb  # type: ignore[import-not-found]
@@ -200,6 +204,99 @@ def _events(document: UniversalRoutingInspection, run_key: str) -> RoutingForwar
     return RoutingForwardResult(object(), token_events, tuple(routing_events))
 
 
+def _ling_report() -> DiscoveryReport:
+    model = LingNamedModel([[1.0 - 0.05 * index for index in range(8)]])
+    return scan(model, _loading_manifest(_loading_plan()))
+
+
+def test_universal_builder_accepts_a_noisy_self_consistent_foreign_scan() -> None:
+    report = _ling_report()
+    routers = [c for c in report.components if c.kind.value == "router"]
+    assert len(routers) > 2
+    moe_layers = [c for c in report.components if c.kind.value == "moe_layer"]
+    assert len(moe_layers) > 2
+    document = build_universal_inspection(report)
+    assert type(document) is UniversalRoutingInspection
+    assert document.expert_count == 8
+    assert document.routed_top_k == 2
+    assert [layer.layer_index for layer in document.layers] == [0, 1]
+    expected_keys = {
+        component.component_key
+        for component in report.components
+        if component.kind.value == "moe_layer" and component.module_path.endswith(".mlp")
+    }
+    assert {layer.layer_key for layer in document.layers} == expected_keys
+
+
+def test_universal_builder_numbers_nonzero_origin_stacks_ordinally() -> None:
+    report = _generic_report()
+    model_key = report.model_key
+
+    def shifted(item: DiscoveryCandidate | object):
+        index = item.layer_index
+        if index is None:
+            return item
+        new_index = index + 1
+        module_path = item.module_path.replace(
+            f".layers.{index}", f".layers.{new_index}", 1
+        )
+        key = make_component_key(
+            model_key,
+            item.kind.value,
+            module_path,
+            layer_index=new_index,
+            expert_index=item.expert_index,
+        )
+        return item.model_copy(
+            update={"component_key": key, "module_path": module_path, "layer_index": new_index}
+        )
+
+    moved = report.model_copy(
+        update={
+            "components": [shifted(component) for component in report.components],
+            "candidates": [shifted(candidate) for candidate in report.candidates],
+        }
+    )
+    document = build_universal_inspection(moved)
+    assert [layer.layer_index for layer in document.layers] == [0, 1]
+    assert document.expert_count == 4
+
+
+def test_universal_builder_tolerates_name_token_noise_on_consistent_reports() -> None:
+    report = _generic_report()
+    twin = _component(
+        report.model_key,
+        ComponentKind.ROUTER,
+        "model.layers.0.gate-twin",
+        layer_index=0,
+    )
+    twin_candidate = DiscoveryCandidate(
+        component_key=twin.component_key,
+        model_key=report.model_key,
+        kind=twin.kind,
+        module_path=twin.module_path,
+        layer_index=twin.layer_index,
+        expert_index=twin.expert_index,
+        confidence=0.8,
+        evidence=[
+            DiscoveryEvidence(
+                signal=DiscoverySignal.PATH_NAME,
+                detail="module path marks router",
+                weight=0.8,
+            )
+        ],
+    )
+    noisy = report.model_copy(
+        update={
+            "components": [*report.components, twin],
+            "candidates": [*report.candidates, twin_candidate],
+        }
+    )
+    document = build_universal_inspection(noisy)
+    assert tuple(layer.layer_index for layer in document.layers) == (0, 1)
+    assert document.expert_count == 4
+
+
 def test_universal_document_derives_from_a_foreign_family_report() -> None:
     report = _generic_report()
     document = build_universal_inspection(report)
@@ -266,10 +363,12 @@ def test_universal_builder_rejects_broken_structures() -> None:
         build_universal_inspection(unrouted)
 
     duplicate_layer = _generic_report(layers=1)
+    # A second trusted router claiming the same routed layer is genuinely
+    # contradictory; name-token noise (e.g. a "gate-twin" leaf) is not.
     twin = _component(
         duplicate_layer.model_key,
         ComponentKind.ROUTER,
-        "model.layers.0.gate-twin",
+        "model.layers.0.extra.gate",
         layer_index=0,
     )
     twin_candidate = DiscoveryCandidate(
@@ -288,7 +387,7 @@ def test_universal_builder_rejects_broken_structures() -> None:
             )
         ],
     )
-    with pytest.raises(ValueError, match="do not exactly match routers"):
+    with pytest.raises(ValueError, match="router layer indices are not unique"):
         build_universal_inspection(
             duplicate_layer.model_copy(
                 update={
