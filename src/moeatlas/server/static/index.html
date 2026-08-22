@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>MoEAtlas — local workspace explorer</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/workspace">MoE<span class="brand-accent">Atlas</span></a>
+    <nav class="nav" aria-label="Primary">
+      <a href="#/workspace" data-nav="workspace">Workspace</a>
+      <a href="#/runs" data-nav="runs">Runs</a>
+      <a href="#/heatmap" data-nav="heatmap">Heatmap</a>
+    </nav>
+    <button id="theme-toggle" type="button" class="theme-toggle"
+      aria-label="Toggle color scheme">◐ Theme</button>
+  </header>
+
+  <main id="view" class="view" tabindex="-1">
+    <section class="card" aria-live="polite">Loading…</section>
+  </main>
+
+  <footer class="footer">
+    <span>Local, read-only, offline-first. No external resources.</span>
+    <span id="health-pill" class="pill" data-state="unknown">checking health…</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
