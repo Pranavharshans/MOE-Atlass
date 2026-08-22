@@ -95,6 +95,16 @@ specialization, improvement, or causal claim. MV-01 through MV-08 remain
 deferred; Feature 30 does not alter stored shard bytes, the Feature 28 matrix
 contract, or Mixtral heatmap bytes.
 
+## Serving in the local UI
+
+The local server (`docs/server.md`) serves published heatmap documents at
+`/api/runs/{run_key}/heatmap` and embeds them in the frontend's heatmap view
+via a plain iframe. Because these documents are strict-CSP, no-JavaScript,
+no-external-resource HTML5 files, embedding requires no scripts and adds no
+surface: what the browser renders is byte-identical to the CLI-written
+artifact. Runs without a published document show an honest empty state that
+points to the `moeatlas heatmap` command above.
+
 Feature 22 provides the bounded CLI composition for callers who already have
 an inspection JSON document and Feature 19 workspace:
 

@@ -26,6 +26,8 @@ _DEFAULT_ARTIFACT_BYTES = 10_000_000
 
 _HEATMAP_DIRECTORY = "heatmaps"
 
+_STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
+
 
 class ServerDependencyError(RuntimeError):
     """The optional server dependency is not installed."""
@@ -303,6 +305,26 @@ def create_app(
             ),
             collisions=report.collisions,
             failures=report.failures,
+        )
+
+    # Static frontend mount, registered strictly after every API route so
+    # /healthz and /api/* always win. The packaged assets are dependency-free
+    # vanilla HTML/CSS/JS; cache headers are explicitly disabled so local
+    # development always observes freshly served bytes.
+    if _STATIC_DIRECTORY.is_dir():
+        from fastapi.staticfiles import StaticFiles
+
+        @app.middleware("http")
+        async def _disable_static_caching(request: Any, call_next: Any) -> Any:
+            response = await call_next(request)
+            if not (
+                request.url.path.startswith("/api/") or request.url.path == "/healthz"
+            ):
+                response.headers["Cache-Control"] = "no-store"
+            return response
+
+        app.mount(
+            "/", StaticFiles(directory=_STATIC_DIRECTORY, html=True), name="static"
         )
 
     return app
