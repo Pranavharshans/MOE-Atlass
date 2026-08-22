@@ -27,20 +27,12 @@ from ..core import (
     parse_model_key,
     stable_digest,
 )
-from ..discovery import DiscoveryReport
+from ..discovery import DiscoveryReport, bind_moe_layer_key, trusted_routers
 
 UNIVERSAL_ROUTING_INSPECTION_SCHEMA_VERSION = "1.0"
 
 _UNIVERSAL_LAYOUT = "packed"
 _AXES_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
-_STRUCTURAL_KINDS = frozenset(
-    {
-        ComponentKind.MOE_LAYER,
-        ComponentKind.ROUTER,
-        ComponentKind.EXPERT,
-        ComponentKind.SHARED_EXPERT,
-    }
-)
 
 
 def _trimmed(value: str, *, field_name: str) -> str:
@@ -202,6 +194,17 @@ def build_universal_inspection(report: object) -> UniversalRoutingInspection:
 def _derive_universal_inspection(
     report: DiscoveryReport,
 ) -> UniversalRoutingInspection:
+    """Derive the inspection from the report's own resolved router universe.
+
+    Trusted routers come from evidence-bound resolution (published expert
+    containers and their sibling topology, with strict name guards as
+    fallback), so noisy name-token candidates on foreign families never enter
+    the document. Each trusted router binds its MoE-layer identity and expert
+    axis from the same report, which agree by construction; only genuinely
+    contradictory inputs — duplicate router layers, broken expert axes,
+    incomplete facts — are rejected.
+    """
+
     facts = report.facts
     routed_top_k = facts.routed_top_k
     fact_expert_count = facts.expert_count
@@ -214,47 +217,28 @@ def _derive_universal_inspection(
         raise ValueError("discovery facts are not complete routing facts")
 
     components = tuple(report.components)
-    routers = [
-        component for component in components if component.kind is ComponentKind.ROUTER
-    ]
+    routers = trusted_routers(components)
     if not routers:
         raise ValueError("discovery report has no router universe")
-    moe_layers = [
-        component for component in components if component.kind is ComponentKind.MOE_LAYER
-    ]
-    if len(moe_layers) != len(routers):
-        raise ValueError("discovery MoE layers do not exactly match routers")
-    for component in components:
-        if component.kind in _STRUCTURAL_KINDS:
-            if component.layer_index is None or type(component.layer_index) is not int:
-                raise ValueError("routing component layer index is not exact")
-            parse_component_key(component.component_key)
 
     layer_records: list[tuple[int, str, tuple[str, ...]]] = []
     seen_layer_indices: set[int] = set()
     for router in routers:
-        if router.layer_index is None or router.layer_index < 0:
+        index = router.layer_index
+        if index is None or index < 0:
             raise ValueError("router layer index is not exact")
-        if router.layer_index in seen_layer_indices:
+        if index in seen_layer_indices:
             raise ValueError("router layer indices are not unique")
-        seen_layer_indices.add(router.layer_index)
-        same_layers = [
-            component
-            for component in components
-            if component.kind is ComponentKind.MOE_LAYER
-            and component.layer_index == router.layer_index
-        ]
-        if len(same_layers) != 1:
-            raise ValueError("router must bind one exact MoE layer")
-        layer = same_layers[0]
+        seen_layer_indices.add(index)
+        layer_key = bind_moe_layer_key(report.model_key, components, router)
         experts = [
             component
             for component in components
             if component.kind is ComponentKind.EXPERT
-            and component.layer_index == router.layer_index
+            and component.layer_index == index
         ]
         indices = [component.expert_index for component in experts]
-        if any(type(index) is not int for index in indices) or sorted(indices) != list(
+        if any(type(index_) is not int for index_ in indices) or sorted(indices) != list(
             range(len(experts))
         ):
             raise ValueError("layer expert indices are not contiguous")
@@ -266,13 +250,14 @@ def _derive_universal_inspection(
             raise ValueError("layer expert universe does not match discovery facts")
         experts.sort(key=lambda component: component.expert_index)
         expert_keys = tuple(component.component_key for component in experts)
-        layer_records.append((router.layer_index, layer.component_key, expert_keys))
+        layer_records.append((index, layer_key, expert_keys))
     layer_records.sort(key=lambda record: record[0])
-    layer_indices = tuple(record[0] for record in layer_records)
+    # Documents number the resolved routing stack ordinally from zero: routed
+    # blocks may start at any module-path layer number (dense-first stacks),
+    # and events join on the stable layer/expert keys below.
+    layer_indices = tuple(position for position in range(len(layer_records)))
     layer_keys = tuple(record[1] for record in layer_records)
     expert_keys = tuple(record[2] for record in layer_records)
-    if layer_indices != tuple(range(len(layer_indices))):
-        raise ValueError("discovery layer indices are not contiguous")
     flat_expert_keys = tuple(key for row in expert_keys for key in row)
     if len(set(flat_expert_keys)) != len(flat_expert_keys):
         raise ValueError("discovery expert keys are not globally unique")

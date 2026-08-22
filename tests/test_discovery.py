@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from moeatlas.core import (
     CapabilityLabel,
     ComponentKind,
+    ComponentManifest,
     DType,
     ModelManifest,
     TokenizerIdentity,
@@ -15,7 +16,13 @@ from moeatlas.core import (
     make_config_hash,
     make_model_key,
 )
-from moeatlas.discovery import DiscoveryReport, scan
+from moeatlas.discovery import (
+    DiscoveryReport,
+    bind_moe_layer_key,
+    has_whole_word_moe_marker,
+    scan,
+    trusted_routers,
+)
 
 from .fixtures import SyntheticMoE
 
@@ -386,6 +393,147 @@ def test_routed_top_k_above_expert_count_warns() -> None:
     assert report.facts.expert_count == 2
     assert report.facts.routed_top_k == 3
     assert "routed_top_k configuration=3 exceeds expert_count=2" in report.warnings
+
+
+def test_trusted_router_resolution_binds_to_published_container_evidence() -> None:
+    model = SyntheticMoE()
+    report = scan(model, _model_manifest())
+
+    trusted = trusted_routers(report.components)
+
+    assert [router.module_path for router in trusted] == [
+        "layers.0.router",
+        "layers.1.router",
+    ]
+
+
+def test_fallback_selection_requires_an_exact_gate_leaf_and_expert_evidence() -> None:
+    model_key = make_model_key("acme/legacy-report", "r1")
+
+    def component(
+        kind: ComponentKind,
+        path: str,
+        *,
+        layer_index: int,
+        expert_index: int | None = None,
+        **extra: object,
+    ):
+        return ComponentManifest(
+            component_key=make_component_key(
+                model_key,
+                kind.value,
+                path,
+                layer_index=layer_index,
+                expert_index=expert_index,
+            ),
+            model_key=model_key,
+            kind=kind,
+            module_path=path,
+            layer_index=layer_index,
+            expert_index=expert_index,
+            capabilities=[CapabilityLabel.STRUCTURE],
+            **extra,
+        )
+
+    components = [
+        component(ComponentKind.ROUTER, "stack.layers.7.moe.gate", layer_index=7),
+        # SwiGLU-style noise: tokenizes like a router but hosts no experts.
+        component(ComponentKind.ROUTER, "stack.layers.7.moe.experts.0.gate_proj", layer_index=7),
+    ]
+    components.extend(
+        component(
+            ComponentKind.EXPERT,
+            f"stack.layers.7.moe.experts.{index}",
+            layer_index=7,
+            expert_index=index,
+            routed=True,
+            shared=False,
+        )
+        for index in range(4)
+    )
+
+    trusted = trusted_routers(components)
+    assert [router.module_path for router in trusted] == ["stack.layers.7.moe.gate"]
+    assert bind_moe_layer_key(model_key, components, trusted[0]) == make_component_key(
+        model_key, "moe_layer", "stack.layers.7.moe", layer_index=7
+    )
+
+    renamed = [
+        item.model_copy(
+            update={
+                "module_path": "stack.layers.7.moe.gating_unit",
+                "component_key": make_component_key(
+                    model_key,
+                    "router",
+                    "stack.layers.7.moe.gating_unit",
+                    layer_index=7,
+                ),
+            }
+        )
+        for item in components
+        if item.kind is ComponentKind.ROUTER and item.module_path.endswith("moe.gate")
+    ]
+    survivors = [
+        item for item in components if not item.module_path.endswith("moe.gate")
+    ] + renamed
+    assert trusted_routers(survivors) == ()
+
+
+def test_layer_binding_refuses_to_guess_without_whole_word_moe_marker() -> None:
+    model_key = make_model_key("acme/legacy-report", "r1")
+
+    def component(
+        kind: ComponentKind,
+        path: str,
+        *,
+        layer_index: int,
+        expert_index: int | None = None,
+        **extra: object,
+    ):
+        return ComponentManifest(
+            component_key=make_component_key(
+                model_key,
+                kind.value,
+                path,
+                layer_index=layer_index,
+                expert_index=expert_index,
+            ),
+            model_key=model_key,
+            kind=kind,
+            module_path=path,
+            layer_index=layer_index,
+            expert_index=expert_index,
+            capabilities=[CapabilityLabel.STRUCTURE],
+            **extra,
+        )
+
+    router = component(ComponentKind.ROUTER, "stack.layers.7.core.gate", layer_index=7)
+    components = [router]
+    components.extend(
+        component(
+            ComponentKind.EXPERT,
+            f"stack.layers.7.core.bays.{index}",
+            layer_index=7,
+            expert_index=index,
+            routed=True,
+            shared=False,
+        )
+        for index in range(4)
+    )
+
+    assert [item.module_path for item in trusted_routers(components)] == [
+        "stack.layers.7.core.gate"
+    ]
+    with pytest.raises(ValueError, match="must bind exactly one MoE layer"):
+        bind_moe_layer_key(model_key, components, router)
+
+
+def test_whole_word_moe_marker_never_matches_camelcase_substrings() -> None:
+    assert has_whole_word_moe_marker("moe.layers.0")
+    assert has_whole_word_moe_marker("blocks.3.sparse-moe")
+    assert has_whole_word_moe_marker("moe_block.router")
+    assert not has_whole_word_moe_marker("BailingMoeV3RMSNorm")
+    assert not has_whole_word_moe_marker("model.layers.1.mlp")
 
 
 def test_discovery_import_does_not_load_model_runtime() -> None:
