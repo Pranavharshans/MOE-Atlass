@@ -96,17 +96,13 @@ function readStored<T>(key: string, fallback: T): T {
 
 function AppMark() {
   return (
-    <div className="flex items-center gap-3" aria-label="MoEAtlas">
-      <div className="relative grid size-9 place-items-center overflow-hidden rounded-xl border border-signal/40 bg-signal/10">
-        <span className="absolute size-5 rounded-full border border-signal/90" />
-        <span className="absolute size-8 rounded-full border border-dashed border-cyan/45" />
-        <span className="size-1.5 rounded-full bg-signal shadow-[0_0_14px_rgba(255,142,74,0.95)]" />
-      </div>
+    <div className="app-mark" aria-label="MoEAtlas">
+      <div className="app-mark-code" aria-hidden="true">M</div>
       <div>
         <div className="font-display text-[1.05rem] font-semibold tracking-[-0.03em] text-white">
           MoE<span className="text-signal">Atlas</span>
         </div>
-        <div className="label-caps mt-0.5 text-[0.56rem] text-muted">Research console</div>
+        <div className="label-caps mt-0.5 text-[0.56rem] text-muted">Routing observatory</div>
       </div>
     </div>
   );
