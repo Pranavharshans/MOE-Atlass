@@ -7,8 +7,11 @@ from .dto import (
     AdapterEntryResponse,
     AdaptersResponse,
     HealthResponse,
+    RoutingShardEntryResponse,
+    RunDetailResponse,
     RunEntryResponse,
     RunsResponse,
+    RunSummaryResponse,
     WorkspaceResponse,
 )
 
@@ -17,7 +20,10 @@ __all__ = [
     "AdapterEntryResponse",
     "AdaptersResponse",
     "HealthResponse",
+    "RoutingShardEntryResponse",
+    "RunDetailResponse",
     "RunEntryResponse",
+    "RunSummaryResponse",
     "RunsResponse",
     "ServerDependencyError",
     "WorkspaceResponse",
