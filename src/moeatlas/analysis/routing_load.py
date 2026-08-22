@@ -12,6 +12,7 @@ from typing import Any
 from ..adapters import (
     AdapterInspection,
     RoutingUniverse,
+    UniversalRoutingInspection,
     project_rectangular_universe,
     publish_routing_universe,
 )
@@ -77,7 +78,37 @@ class _InspectionUniverse:
     routed_top_k: int
 
 
+def _fresh_universal_universe(value: UniversalRoutingInspection) -> _InspectionUniverse:
+    try:
+        fresh = UniversalRoutingInspection.model_validate(value.model_dump(mode="json"))
+        if type(fresh) is not UniversalRoutingInspection or fresh is value:
+            raise TypeError("inspection revalidation returned an unexpected type")
+        parse_model_key(fresh.model_key)
+        inspection_digest = "sha256:" + stable_digest(fresh.model_dump(mode="json"))
+        # The universal document marks its own provenance; adapter identity is
+        # deliberately the fixed generic marker so downstream artifacts never
+        # present a non-certified lane as certified adapter evidence.
+        return _InspectionUniverse(
+            model_key=fresh.model_key,
+            adapter_name="universal",
+            adapter_version=fresh.scanner_version,
+            inspection_digest=inspection_digest,
+            layout=fresh.layout,
+            layer_keys=tuple(layer.layer_key for layer in fresh.layers),
+            layer_indices=tuple(layer.layer_index for layer in fresh.layers),
+            expert_keys=tuple(layer.expert_keys for layer in fresh.layers),
+            expert_count=fresh.expert_count,
+            routed_top_k=fresh.routed_top_k,
+        )
+    except (TypeError, ValueError):
+        raise
+    except Exception as exc:
+        raise ValueError("inspection revalidation failed") from exc
+
+
 def _fresh_universe(value: object) -> _InspectionUniverse:
+    if type(value) is UniversalRoutingInspection:
+        return _fresh_universal_universe(value)
     if type(value) is not AdapterInspection:
         raise TypeError("inspection must be an exact AdapterInspection")
     try:
@@ -624,7 +655,7 @@ class RoutingLoadMatrix:
 
 def aggregate_routing_load(
     workspace: str | Path,
-    inspection: AdapterInspection,
+    inspection: AdapterInspection | UniversalRoutingInspection,
     *,
     run_key: str,
     max_routing_rows: int,
@@ -634,10 +665,15 @@ def aggregate_routing_load(
 ) -> RoutingLoadMatrix:
     """Aggregate complete selected routing assignments over one run's shards.
 
-    ``declared_universe`` optionally supplies the adapter-published
-    :class:`~moeatlas.adapters.RoutingUniverse` for the inspection.  It must
-    match the publication exactly and project to rectangular form explicitly;
-    aggregation results are identical with or without it.
+    ``inspection`` accepts either a certified
+    :class:`~moeatlas.adapters.AdapterInspection` or a universal structure
+    inspection (:class:`~moeatlas.adapters.UniversalRoutingInspection`)
+    derived from a static discovery report; both lanes produce the same
+    matrix contract.  ``declared_universe`` optionally supplies the
+    adapter-published :class:`~moeatlas.adapters.RoutingUniverse` for a
+    certified inspection.  It must match the publication exactly and project
+    to rectangular form explicitly; aggregation results are identical with or
+    without it.
     """
 
     if not isinstance(workspace, str | Path):
