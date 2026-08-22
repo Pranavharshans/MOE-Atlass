@@ -519,10 +519,11 @@ endpoints over initialized and uninitialized catalogs, bounded state
 filtering, adapter-registry exposure, fixed dependency errors, and the
 loopback-by-default `moeatlas ui` policy are covered by synthetic contract
 tests using FastAPI's TestClient over temporary workspaces. No model,
-tokenizer, download, or GPU participates. The React/TypeScript single-page
-UI, packaged frontend assets, and synthetic browser end-to-end tests are
-deferred release-engineering evidence, not passed work; MV-01 through MV-08
-and ST-01 through ST-04 keep their deferred status.
+tokenizer, download, or GPU participates. The React/TypeScript single-page UI
+is now packaged and covered by static-bundle contracts plus a local browser
+smoke; broad synthetic browser end-to-end coverage and all model-dependent
+flows remain deferred release-engineering evidence. MV-01 through MV-08 and
+ST-01 through ST-04 keep their deferred status.
 
 Intervention mechanics: Status: implemented at the model-free boundary.
 Recipe contracts (fixed operation vocabulary, per-operation parameter

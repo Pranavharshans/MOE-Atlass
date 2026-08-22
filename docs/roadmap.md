@@ -266,7 +266,7 @@ storage layer's canonical tamper-evident evidence bundle with fixed safe
 errors. The scan, compare, doctor, and adapters-list commands complete the
 PRD command set over shared services.
 
-Sequence 9 is model-free complete at the wire boundary with the React/TypeScript SPA and browser E2E recorded as deferred release evidence (status `VM/GPU deferred`). Its first landed slice is the local read-only
+Sequence 9 is model-free complete at the packaged/static boundary. The React/TypeScript SPA now ships its lean intake, preflight, run, and evidence-aware results surfaces; broad browser E2E and real execution remain deferred (status `VM/GPU deferred`). Its first landed slice is the local read-only
 server (see [server](server.md)): `create_app()` in
 `moeatlas.server.app` binds one workspace behind strict construction
 budgets and exposes `/healthz`, `/api/workspace`, bounded `/api/runs` with
@@ -276,8 +276,9 @@ extra; the wire DTOs stay importable without it. Its second landed slice
 is the `moeatlas ui WORKSPACE` command: loopback-by-default launch with an
 explicit `--allow-remote` opt-in, canonical port validation, and the fixed
 dependency hint when the server extra is missing. The React/TypeScript
-single-page UI, packaged frontend assets, and synthetic browser E2E remain
-deferred release-engineering evidence recorded in the validation ledger;
+single-page UI and packaged frontend assets are covered by local static/browser
+smoke evidence; broad synthetic browser E2E remains deferred release-engineering
+evidence recorded in the validation ledger;
 the read-only wire contract above is what they will consume.
 
 Sequence 10 is `model-free complete`: recipes, budgets, the failure-safe

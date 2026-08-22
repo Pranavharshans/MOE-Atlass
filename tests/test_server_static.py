@@ -35,6 +35,9 @@ def test_static_directory_is_packaged() -> None:
     assert (STATIC_DIRECTORY / "index.html").is_file()
     assert (STATIC_DIRECTORY / "styles.css").is_file()
     assert (STATIC_DIRECTORY / "app.js").is_file()
+    assert (STATIC_DIRECTORY / "favicon.svg").is_file()
+    assert tuple((STATIC_DIRECTORY / "assets").glob("index-*.js"))
+    assert tuple((STATIC_DIRECTORY / "assets").glob("index-*.css"))
 
 
 def test_root_serves_index_html(client) -> None:
@@ -45,6 +48,24 @@ def test_root_serves_index_html(client) -> None:
     assert "<!DOCTYPE html>" in body
     assert 'id="view"' in body
     assert "/app.js" in body
+
+
+def test_root_serves_react_bundle(client) -> None:
+    response = client.get("/")
+    assert '<div id="root"></div>' in response.text
+    script_names = tuple(path.name for path in (STATIC_DIRECTORY / "assets").glob("index-*.js"))
+    stylesheet_names = tuple(
+        path.name for path in (STATIC_DIRECTORY / "assets").glob("index-*.css")
+    )
+    assert script_names and stylesheet_names
+    script = client.get(f"/assets/{script_names[0]}")
+    stylesheet = client.get(f"/assets/{stylesheet_names[0]}")
+    assert script.status_code == 200
+    assert "javascript" in script.headers["content-type"]
+    assert "createRoot" in script.text
+    assert stylesheet.status_code == 200
+    assert stylesheet.headers["content-type"].startswith("text/css")
+    assert "app-shell" in stylesheet.text
 
 
 def test_static_assets_have_correct_content_types(client) -> None:

@@ -288,8 +288,10 @@ deliberately deferred.
   layer over the same shared services, with fixed safe errors; FastAPI is
   an optional extra (`pip install moeatlas[server]`), and
   `moeatlas ui WORKSPACE` launches it loopback-by-default with an explicit
-  `--allow-remote` opt-in. The React/TypeScript SPA is deferred release
-  work recorded honestly in the validation ledger. See [server](docs/server.md).
+  `--allow-remote` opt-in. The packaged React/TypeScript research console is
+  published with `npm run build:static`; it opens directly on model/dataset
+  intake and uses an optional provider HTTP/in-VM runner, with no SSH
+  onboarding page. See [server](docs/server.md).
 - `EXPERIMENTAL` causal intervention mechanics: `moeatlas.interventions`
   provides immutable, content-addressed recipes over the fixed
   `ablate`/`scale`/`reroute`/`alter_router` vocabulary, immutable budgets,

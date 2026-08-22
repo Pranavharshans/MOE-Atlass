@@ -32,8 +32,9 @@ webbrowser.open(artifact.resolve().as_uri())
 
 The historical `render_mixtral_routing_load_heatmap` name is an identity alias
 of the neutral renderer. The renderer itself remains pure: it returns the string and does not save or
-open anything. A future React UI is a separate presentation surface, not a replacement
-for this portable static HTML export path.
+open anything. The packaged React UI is the primary research presentation
+surface, but it is not a replacement for this portable static HTML export
+path, which remains available for artifact review and independent publication.
 
 The document preserves the matrix's layer and expert axes, numeric layer order,
 layout, schema versions, run/model/adapter identity, inspection digest, token

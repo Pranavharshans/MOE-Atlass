@@ -431,9 +431,9 @@ def create_app(
         )
 
     # Static frontend mount, registered strictly after every API route so
-    # /healthz and /api/* always win. The packaged assets are dependency-free
-    # vanilla HTML/CSS/JS; cache headers are explicitly disabled so local
-    # development always observes freshly served bytes.
+    # /healthz and /api/* always win. The packaged React bundle and legacy
+    # compatibility assets are served with caching disabled so local
+    # development observes freshly published bytes.
     if _STATIC_DIRECTORY.is_dir():
         from fastapi.staticfiles import StaticFiles
 

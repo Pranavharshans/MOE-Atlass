@@ -64,17 +64,18 @@ bytes; API responses are untouched by that header. The mount is skipped when
 the static directory is absent (for example in stripped installations), which
 leaves the pure-API surface unchanged.
 
-The current React/TypeScript research console source lives in `frontend/` and
-uses the same relative API surface. Its Vite development server proxies
-`/api` and `/healthz` to a local `moeatlas ui` process; the production asset
-packaging/mount step remains a separate release gate so the legacy static
-contract is not silently replaced mid-run.
+The React/TypeScript research console source lives in `frontend/` and uses the
+same relative API surface. Its Vite development server proxies `/api` and
+`/healthz` to a local `moeatlas ui` process. `npm run build:static` publishes
+the hashed React bundle into the package mount; the legacy `/app.js` and
+`/styles.css` assets remain available for stripped installations and contract
+compatibility, but are no longer loaded by the root page.
 
-The frontend is hash-routed (`#/workspace`, `#/runs`, `#/runs/{run_key}`,
-`#/heatmap[/{run_key}]`) and consumes only the read-only endpoints above.
-Every fetch failure renders an inline error banner; heatmap documents are
-embedded as-is via an iframe because they are strict-CSP, no-JavaScript
-static artifacts.
+The React console keeps its research navigation in the current browser
+surface and consumes only the relative API endpoints above. Its results view
+embeds published heatmap documents as-is via an iframe because they are
+strict-CSP, no-JavaScript static artifacts. The legacy compatibility bundle
+retains the historical hash-routed views when used directly.
 
 ## Local launch
 
@@ -87,8 +88,9 @@ workspace, and stops cleanly on Ctrl-C.
 
 ## Honest scope
 
-The dependency-free local single-page UI described above is served by the
-same `moeatlas ui WORKSPACE` command; the browser end-to-end tests from the
-PRD remain recorded as deferred release-engineering evidence in
+The local research console described above is served by the same
+`moeatlas ui WORKSPACE` command; broad browser end-to-end tests from the PRD
+remain recorded as deferred release-engineering evidence in
 `model-validation-ledger.md`. The read-only API above is the contract the
-frontend consumes. Nothing here claims UI parity beyond the shipped views.
+frontend consumes. Nothing here claims model or VM certification beyond the
+shipped views.
