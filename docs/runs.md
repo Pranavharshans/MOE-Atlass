@@ -197,6 +197,33 @@ unknown run keys. Like the layers beneath it, the service never branches on
 input kind or model family, and package tests exercise it exclusively over
 fake executors and temporary fixtures.
 
+## Real-model executor
+
+`moeatlas run` can drive a genuine model over planned batches through the
+built-in `transformers-routing` executor (`moeatlas.executors`). The CLI
+resolves `--executor` names from the built-in registry first and falls back to
+the `moeatlas.executors` entry-point group, so third-party executors publish
+exactly like adapter plugins while fake test executors keep working unchanged.
+
+The executor binds one validated `LoadingPlan` and resolves it exclusively
+through existing seams: HF/local loading goes through `moeatlas.runtime`
+(`load_huggingface`/`load_local`, still lazily importing torch/transformers
+only at execution time), structure evidence comes from the static scanner over
+the loaded model, and each planned prompt row is tokenized through the loaded
+tokenizer and executed by the generic structure-driven capture composition
+(see `docs/runtime.md`) — emitting `TokenEvent`/`RoutingEvent` rows validated
+by `moeatlas.events`. Row failures stay evidence: missing tokenizers,
+unsupported plan sources, and load failures are declared dependency/validation
+`RowFailure`s with fixed messages, while capture mismatches surface as
+execution failures without partial publication.
+
+Publication is automatic. After the run service publishes the terminal
+lifecycle record, the executor appends its accumulated events as one immutable
+routing shard through `append_routing_shard` (unchanged) and reconciles the
+workspace catalog via `rebuild_catalog`, so `/api/runs` sees the completed run
+with shard counts without any manual step. Token text stays redacted unless
+the caller opts in.
+
 ## Boundaries and deferred evidence
 
 These contracts bind artifacts by identifier; they do not verify that a

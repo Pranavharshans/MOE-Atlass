@@ -36,6 +36,14 @@ from .contracts import (
     RuntimeObservation,
     RuntimeValidationError,
 )
+from .generic_capture import (
+    StructuredCaptureError,
+    StructuredRouterTarget,
+    StructuredRoutingForwardResult,
+    decode_structured_payload,
+    run_structured_routing_forward,
+    structured_router_targets,
+)
 from .loader import load_custom, load_instance
 from .mixtral_routing import MixtralRoutingDecoder
 from .model_loader import load_huggingface, load_local
@@ -88,6 +96,12 @@ __all__ = [
     "run_mixtral_routing_forward",
     "run_mixtral_prompt_prefill",
     "run_routing_forward",
+    "StructuredCaptureError",
+    "StructuredRoutingForwardResult",
+    "StructuredRouterTarget",
+    "decode_structured_payload",
+    "run_structured_routing_forward",
+    "structured_router_targets",
     "load_custom",
     "load_huggingface",
     "load_and_scan",
