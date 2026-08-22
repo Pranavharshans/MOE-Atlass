@@ -38,10 +38,14 @@ from .contracts import (
 )
 from .generic_capture import (
     StructuredCaptureError,
+    StructuredExpertTarget,
     StructuredRouterTarget,
     StructuredRoutingForwardResult,
+    decode_expert_activity,
     decode_structured_payload,
+    run_structured_expert_forward,
     run_structured_routing_forward,
+    structured_expert_targets,
     structured_router_targets,
 )
 from .loader import load_custom, load_instance
@@ -97,10 +101,14 @@ __all__ = [
     "run_mixtral_prompt_prefill",
     "run_routing_forward",
     "StructuredCaptureError",
+    "StructuredExpertTarget",
     "StructuredRoutingForwardResult",
     "StructuredRouterTarget",
+    "decode_expert_activity",
     "decode_structured_payload",
+    "run_structured_expert_forward",
     "run_structured_routing_forward",
+    "structured_expert_targets",
     "structured_router_targets",
     "load_custom",
     "load_huggingface",

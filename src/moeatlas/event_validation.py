@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .events import RoutingEvent, TokenEvent
+from .events import ExpertEvent, RoutingEvent, TokenEvent
 
 
 def fresh_token_events(
@@ -108,8 +108,45 @@ def validate_routing_links(
         raise ValueError("every supplied token must be represented by routing events")
 
 
+def fresh_expert_events(value: object) -> tuple[ExpertEvent, ...]:
+    """Return fresh expert events after validating collection invariants."""
+
+    if type(value) is not tuple:
+        raise TypeError("expert_events must be an exact tuple")
+    fresh_events: list[ExpertEvent] = []
+    seen: set[tuple[str, str]] = set()
+    for event in value:
+        if type(event) is not ExpertEvent:
+            raise TypeError("expert_events must contain exact ExpertEvent objects")
+        fresh = ExpertEvent.model_validate(event.model_dump(mode="json"))
+        if type(fresh) is not ExpertEvent or fresh is event:
+            raise TypeError("expert event revalidation returned an unexpected type")
+        link = (fresh.token_key, fresh.expert_key)
+        if link in seen:
+            raise ValueError("expert_events must have unique token-expert links")
+        seen.add(link)
+        fresh_events.append(fresh)
+    return tuple(fresh_events)
+
+
+def validate_expert_links(
+    token_events: tuple[TokenEvent, ...],
+    expert_events: tuple[ExpertEvent, ...],
+) -> None:
+    """Validate deterministic links between normalized token and expert events."""
+
+    if not token_events:
+        raise ValueError("expert links require at least one supplied token")
+    token_key_set = {event.token_key for event in token_events}
+    for event in expert_events:
+        if event.token_key not in token_key_set:
+            raise ValueError("every expert event must reference a supplied token")
+
+
 __all__ = [
+    "fresh_expert_events",
     "fresh_routing_events",
     "fresh_token_events",
+    "validate_expert_links",
     "validate_routing_links",
 ]

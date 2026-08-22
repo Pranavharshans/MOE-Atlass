@@ -29,7 +29,7 @@ and real data (`openai_humaneval` @ `7dce6050`).
 | 3 | HF dataset → rows → batches | WORKS | HumanEval read through `services.datasets` + `run_inputs` planning (164 rows → deterministic batches); hub download itself is caller-owned by contract |
 | 4 | Run model through dataset rows | MISSING | No real-model executor exists; `moeatlas.executors` entry-point group is empty and only fake executors are wired |
 | 5a | Routing capture | PARTIAL | Real forwards captured via caller-owned hooks because `RoutingCaptureSession` requires certified-family `AdapterInspection` |
-| 5b | Per-layer expert activation capture | MISSING | `ExpertEvent` schema + probe levels exist as contracts; no runtime code produces them; shards have no expert-event table |
+| 5b | Per-layer expert activation capture | WORKS | `run_structured_expert_forward` captures per-invoked-expert norms from real hook plumbing; shards carry `experts.parquet` under store schema 2.0 with reopen/tamper validation; analysis publishes bounded activation summaries (real-checkpoint fidelity: final VM) |
 | 6 | Persist events to shards | WORKS | Real shard written (29,440 routing events); slow at ~1M-event scale (DuckDB row-by-row executemany); catalog sync is a manual second call |
 | 7 | Routing-load matrix | BLOCKED BY DESIGN | `aggregate_routing_load` demands an exact certified-family `AdapterInspection`; universal scan reports cannot enter analysis |
 | 8 | Heatmap render | BLOCKED BY DESIGN | Same inspection gate upstream; renderer itself is proven |
@@ -70,6 +70,9 @@ Make `moeatlas run` drive a genuine transformers model over planned batches.
   behavior unchanged.
 
 ### Phase R3 — Expert activation capture (step 5b)
+
+Status: landed model-free (2026-08-22); real-checkpoint norm fidelity and
+GPU performance claims remain governed by the model-validation ledger.
 
 Turn the `ExpertEvent` contract into runtime reality.
 
