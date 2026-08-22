@@ -571,24 +571,86 @@ function RunConfigPage({ runner, onNavigate }: { runner: RunnerDraft; onNavigate
   );
 }
 
+type RunEntry = {
+  run_key: string;
+  state?: string | null;
+  token_event_count?: number;
+  routing_event_count?: number;
+};
+
+type RunSummary = {
+  status: string;
+  reason?: string | null;
+  adapter_name?: string | null;
+  adapter_version?: string | null;
+  token_count?: number | null;
+  assignment_count?: number | null;
+  layer_count?: number | null;
+  expert_count?: number | null;
+  routed_top_k?: number | null;
+  inspection_digest?: string | null;
+};
+
+function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return <div className="metric-card"><p className="label-caps text-[0.56rem] text-muted">{label}</p><p className="mt-3 font-mono text-lg text-white">{value}</p><p className="mt-1 text-[0.65rem] text-muted">{detail}</p></div>;
+}
+
 function RunsPage() {
   const [state, setState] = useState<"loading" | "ready" | "unavailable">("loading");
-  const [count, setCount] = useState<number | null>(null);
+  const [entries, setEntries] = useState<RunEntry[]>([]);
+  const [selectedRun, setSelectedRun] = useState("");
+  const [summary, setSummary] = useState<RunSummary | null>(null);
+  const [summaryState, setSummaryState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
+
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/runs", { headers: { Accept: "application/json" }, signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error("unavailable");
-        return response.json() as Promise<{ count?: number }>;
+        return response.json() as Promise<{ entries?: RunEntry[] }>;
       })
-      .then((document) => { setCount(typeof document.count === "number" ? document.count : 0); setState("ready"); })
+      .then((document) => {
+        const nextEntries = Array.isArray(document.entries) ? document.entries : [];
+        setEntries(nextEntries);
+        setSelectedRun((current) => current || nextEntries[0]?.run_key || "");
+        setState("ready");
+      })
       .catch((cause) => { if (cause instanceof DOMException && cause.name === "AbortError") return; setState("unavailable"); });
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (!selectedRun) {
+      setSummary(null);
+      setSummaryState("idle");
+      return undefined;
+    }
+    const controller = new AbortController();
+    setSummaryState("loading");
+    fetch(`/api/runs/${encodeURIComponent(selectedRun)}/summary`, { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("unavailable");
+        return response.json() as Promise<RunSummary>;
+      })
+      .then((document) => { setSummary(document); setSummaryState("ready"); })
+      .catch((cause) => { if (cause instanceof DOMException && cause.name === "AbortError") return; setSummary(null); setSummaryState("unavailable"); });
+    return () => controller.abort();
+  }, [selectedRun]);
+
+  const selectedEntry = entries.find((entry) => entry.run_key === selectedRun);
   return (
     <div className="space-y-6">
-      <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Runs</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white">Trace inventory.</h1><p className="mt-3 max-w-[55ch] text-sm leading-6 text-muted">Every run is a pinned contract with inspectable routing artifacts. Live execution appears here once a discovery job is submitted.</p></div><div className="research-header-meta"><StatusDot tone={state === "unavailable" ? "warn" : "good"} /><span>{state === "loading" ? "Reading workspace…" : state === "unavailable" ? "Workspace offline" : `${count ?? 0} registered`}</span></div></header>
-      <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">No live traces yet.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Use the analysis surface to bind a model and dataset. This view will expose progress, provenance, routing load, and validation evidence.</p></section>
+      <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Runs / Inspect</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white">Trace inventory.</h1><p className="mt-3 max-w-[58ch] text-sm leading-6 text-muted">Routing heatmaps, validation status, and activation artifacts belong to a completed run. The UI never fills missing evidence with a visual guess.</p></div><div className="research-header-meta"><StatusDot tone={state === "unavailable" ? "warn" : "good"} /><span>{state === "loading" ? "Reading workspace…" : state === "unavailable" ? "Workspace offline" : `${entries.length} registered`}</span></div></header>
+      {state === "loading" ? <section className="empty-surface"><p className="text-sm text-muted">Reading run catalog…</p></section> : state === "unavailable" ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">Workspace unavailable.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Start the local UI server or connect the provider runner before asking for stored traces.</p></section> : entries.length === 0 ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">No published traces.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Stage a run and let the executor publish its immutable shards. Heatmap cells appear only after routing events are validated.</p></section> : (
+        <>
+          <div className="run-selector-row"><label className="field-label" htmlFor="run-selector">Run key<select id="run-selector" className="input-control mt-2" value={selectedRun} onChange={(event) => setSelectedRun(event.target.value)}>{entries.map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key} · {entry.state ?? "unknown"}</option>)}</select></label><div className="runtime-pill"><StatusDot tone={selectedEntry?.state === "completed" ? "good" : "warn"} />{selectedEntry?.state ?? "unknown"}</div></div>
+          <div className="metric-grid"><MetricCard label="Tokens" value={summary?.token_count == null ? "—" : String(summary.token_count)} detail="validated token rows" /><MetricCard label="Assignments" value={summary?.assignment_count == null ? "—" : String(summary.assignment_count)} detail="selected expert routes" /><MetricCard label="Layers" value={summary?.layer_count == null ? "—" : String(summary.layer_count)} detail="published routing layers" /><MetricCard label="Experts" value={summary?.expert_count == null ? "—" : String(summary.expert_count)} detail="routed expert universe" /></div>
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
+            <section className="research-card"><div className="flex items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Routing load</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Layer × expert heatmap</h2></div><span className="source-card-type">{summaryState === "loading" ? "loading" : summary?.status ?? "unavailable"}</span></div>{summary?.status === "available" && selectedRun ? <iframe className="heatmap-frame-react mt-5" title={`Routing heatmap for ${selectedRun}`} src={`/api/runs/${encodeURIComponent(selectedRun)}/heatmap`} /> : <div className="empty-heatmap mt-5"><GitBranch size={20} className="text-muted" /><p className="mt-3 text-sm text-white">No published matrix.</p><p className="mt-1 max-w-[32ch] text-center text-xs leading-5 text-muted">{summary?.reason ?? "A validated routing inspection is required before rendering heat."}</p></div>}</section>
+            <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center gap-2"><ShieldCheck size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Validation</p></div><dl className="contract-list mt-5"><div><dt>Status</dt><dd>{summary?.status ?? "pending"}</dd></div><div><dt>Adapter</dt><dd>{summary?.adapter_name ?? "—"}</dd></div><div><dt>Top-k</dt><dd>{summary?.routed_top_k == null ? "—" : summary.routed_top_k}</dd></div><div><dt>Digest</dt><dd>{summary?.inspection_digest ? summary.inspection_digest.slice(0, 18) + "…" : "—"}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Expert activity</p></div><p className="mt-4 text-xs leading-5 text-muted">Activation summaries will appear when the run publishes expert-event evidence. Routing load alone is not an activation claim.</p></section></aside>
+          </div>
+        </>
+      )}
     </div>
   );
 }
