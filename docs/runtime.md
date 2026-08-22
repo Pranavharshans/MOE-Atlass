@@ -365,11 +365,19 @@ contract; checkpoint/GPU certification remains deferred to the final VM.
 max_events, config=None)` in `moeatlas.runtime.generic_capture` turns the
 caller-owned hook pattern into a product seam for foreign families. It
 discovers router modules purely from a static `[STRUCTURE]` `DiscoveryReport`
-(router candidates bind one same-index MoE layer and the report's strict
-`expert_count`/`routed_top_k` facts drive every count), attaches passive
-forward hooks through the existing `HookManager`, and decodes each router
-payload generically against the discovered expert universe — no adapter name,
+by binding to the structure the scan proved: trusted router candidates are
+those whose parent block publishes an `EXPERT_CONTAINER` component, each binds
+the `MOE_LAYER` identity published at its parent-block path, and the report's
+strict `expert_count`/`routed_top_k` facts drive every count. This keeps noisy
+name-token candidates on foreign families (SwiGLU `gate_proj` modules,
+`...Moe...` class names) out of the hook set; strict name guards (exact
+`gate` final path segment plus expert evidence, whole-word `moe` path markers)
+apply only when a report publishes no such structure. Hooks attach passively
+through the existing `HookManager`, and each router payload decodes
+generically against the discovered expert universe — no adapter name,
 module-path convention, or certified descriptor anywhere.
+`build_universal_inspection` resolves the same report universe, so generic
+captures and universal documents agree by construction.
 
 Two payload forms decode today: packed `(logits, scores, indices)` tuples use
 their native scores as probabilities, and flat `[tokens, experts]` logit

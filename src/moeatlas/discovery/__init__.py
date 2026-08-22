@@ -7,6 +7,7 @@ from .models import (
     DiscoveryReport,
     DiscoverySignal,
 )
+from .routing_universe import bind_moe_layer_key, has_whole_word_moe_marker, trusted_routers
 from .scanner import discover, scan
 
 __all__ = [
@@ -15,6 +16,9 @@ __all__ = [
     "DiscoveryFacts",
     "DiscoveryReport",
     "DiscoverySignal",
+    "bind_moe_layer_key",
     "discover",
+    "has_whole_word_moe_marker",
     "scan",
+    "trusted_routers",
 ]
