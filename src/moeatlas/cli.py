@@ -273,11 +273,12 @@ def build_parser() -> argparse.ArgumentParser:
             "entry-point group."
         ),
         epilog=(
-            "The executor is mandatory and never built in: real model "
-            "execution belongs to adapter plugins, and no command downloads "
-            "a model implicitly. Dataset locations resolve relative to the "
-            "workspace directory. Timestamps come only from --at; the CLI "
-            "never reads a clock."
+            "The executor is mandatory: the built-in routing executor drives "
+            "a real resolved model, and additional executors publish as "
+            "plugins in the moeatlas.executors entry-point group. No command "
+            "downloads a model implicitly. Dataset locations resolve "
+            "relative to the workspace directory. Timestamps come only from "
+            "--at; the CLI never reads a clock."
         ),
     )
     run.add_argument("workspace", metavar="WORKSPACE")
@@ -961,13 +962,21 @@ class _RunInputError(ValueError):
     """Raised when run inputs cannot be safely accepted by the CLI."""
 
 
-def _load_executor(name: str):
-    """Resolve one executor plugin from the moeatlas.executors group."""
+def _load_executor(name: str, plan: object):
+    """Resolve one executor plugin: built-ins first, then the group."""
 
     from importlib.metadata import entry_points
 
     if not name or name != name.strip():
         raise _RunInputError("--executor must be a non-empty name")
+    try:
+        from .executors import build_builtin_executor
+
+        builtin = build_builtin_executor(name, plan)
+    except Exception as exc:
+        raise _RunInputError("builtin executor failed to initialize") from exc
+    if builtin is not None:
+        return builtin
     try:
         candidates = entry_points(group=_EXECUTOR_ENTRY_POINT_GROUP)
     except Exception as exc:
@@ -1034,7 +1043,7 @@ def _handle_run(args: argparse.Namespace) -> int:
         plan = _read_run_loading_plan(args.loading_plan)
         _preflight_loading_plan(plan)
         input_spec = _build_run_input(args)
-        executor = _load_executor(args.executor)
+        executor = _load_executor(args.executor, plan)
 
         from .runs.specs import DataProvenance, ModelProvenance, RunSpecification
         from .services import execute_specification, publish_run_report
@@ -1051,6 +1060,9 @@ def _handle_run(args: argparse.Namespace) -> int:
             data=DataProvenance(input=input_spec),
             created_by=args.created_by,
         )
+        binder = getattr(executor, "bind_run_key", None)
+        if callable(binder):
+            binder(specification.run_key)
         report = execute_specification(
             specification,
             executor=executor,
@@ -1061,6 +1073,9 @@ def _handle_run(args: argparse.Namespace) -> int:
             **budgets,
         )
         publish_run_report(args.workspace, report, at=args.at)
+        publisher = getattr(executor, "publish_run_artifacts", None)
+        if callable(publisher):
+            publisher(args.workspace)
     except _RunInputError as exc:
         print(f"moeatlas run: {exc}", file=sys.stderr)
         return 2
