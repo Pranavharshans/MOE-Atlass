@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -14,11 +15,14 @@ from typing import Any, Literal
 
 from ..core import stable_digest, validate_stable_identifier
 from ..event_validation import (
+    fresh_expert_events,
     fresh_routing_events,
     fresh_token_events,
+    validate_expert_links,
     validate_routing_links,
 )
-from ..events import EVENT_SCHEMA_VERSION, RoutingEvent, TokenEvent
+from ..events import EVENT_SCHEMA_VERSION, ExpertEvent, RoutingEvent, TokenEvent
+from ..runtime.generic_capture import StructuredRoutingForwardResult
 from ..runtime.routing_forward import RoutingForwardResult
 
 # Historical private validation names. The neutral event_validation module is
@@ -26,10 +30,18 @@ from ..runtime.routing_forward import RoutingForwardResult
 # attributes so downstream monkeypatching keeps working exactly as before.
 _fresh_token_events = fresh_token_events
 _fresh_routing_events = fresh_routing_events
+_fresh_expert_events = fresh_expert_events
 _validate_routing_links = validate_routing_links
+_validate_expert_links = validate_expert_links
 
-STORE_SCHEMA_VERSION = "1.0"
+STORE_SCHEMA_VERSION = "2.0"
+LEGACY_STORE_SCHEMA_VERSION = "1.0"
+_KNOWN_STORE_SCHEMA_VERSIONS = frozenset(
+    {STORE_SCHEMA_VERSION, LEGACY_STORE_SCHEMA_VERSION}
+)
 ROUTING_RUN_INVENTORY_SCHEMA_VERSION = "1.0"
+
+_DEFAULT_MAX_EXPERT_EVENTS = 65536
 
 _DUCKDB_MIN = (1, 4, 5)
 _DUCKDB_MAX = (1, 5, 0)
@@ -40,8 +52,10 @@ _ROUTING_ROOT = "routing"
 _ROUTING_VERSION = "v1"
 _TOKENS_FILE = "tokens.parquet"
 _ROUTING_FILE = "routing.parquet"
+_EXPERTS_FILE = "experts.parquet"
 _MANIFEST_FILE = "manifest.json"
-_FINAL_NAMES = frozenset({_MANIFEST_FILE, _TOKENS_FILE, _ROUTING_FILE})
+_V1_FINAL_NAMES = frozenset({_MANIFEST_FILE, _TOKENS_FILE, _ROUTING_FILE})
+_V2_FINAL_NAMES = _V1_FINAL_NAMES | {_EXPERTS_FILE}
 _STAGES = frozenset({"dependency", "workspace", "write", "publish", "reopen", "conflict"})
 _STAGING_NAME = re.compile(r"^\.staging-[A-Za-z0-9]+$")
 _FILE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -76,6 +90,20 @@ _ROUTING_COLUMNS = (
     ("weight", "DOUBLE"),
     ("selected", "BOOLEAN"),
 )
+_EXPERT_COLUMNS = (
+    ("store_schema_version", "VARCHAR"),
+    ("shard_key", "VARCHAR"),
+    ("event_index", "BIGINT"),
+    ("schema_version", "VARCHAR"),
+    ("event_type", "VARCHAR"),
+    ("token_key", "VARCHAR"),
+    ("expert_key", "VARCHAR"),
+    ("input_norm", "DOUBLE"),
+    ("output_norm", "DOUBLE"),
+    ("contribution_norm", "DOUBLE"),
+    ("latency_ms", "DOUBLE"),
+    ("metadata", "VARCHAR"),
+)
 _MANIFEST_KEYS = frozenset(
     {
         "manifest_type",
@@ -91,6 +119,7 @@ _MANIFEST_KEYS = frozenset(
         "files",
     }
 )
+_MANIFEST_KEYS_V2 = _MANIFEST_KEYS | {"expert_count"}
 _FILE_INFO_KEYS = frozenset({"name", "bytes", "sha256"})
 
 
@@ -266,8 +295,11 @@ class RoutingShardReceipt:
     created: bool
 
     def __post_init__(self) -> None:
-        if type(self.schema_version) is not str or self.schema_version != STORE_SCHEMA_VERSION:
-            raise ValueError("schema_version must be the exact store schema version")
+        if (
+            type(self.schema_version) is not str
+            or self.schema_version not in _KNOWN_STORE_SCHEMA_VERSIONS
+        ):
+            raise ValueError("schema_version must be a supported store schema version")
         if type(self.shard_key) is not str or _SHARD_KEY.fullmatch(self.shard_key) is None:
             raise ValueError("shard_key must be a canonical shard digest")
         if type(self.run_key) is not str:
@@ -297,10 +329,13 @@ class RoutingShardReceipt:
 @dataclass(frozen=True, slots=True)
 class _ShardData:
     receipt: RoutingShardReceipt
+    store_version: str
     token_rows: tuple[tuple[object, ...], ...]
     routing_rows: tuple[tuple[object, ...], ...]
+    expert_rows: tuple[tuple[object, ...], ...]
     token_keys: frozenset[str]
     routing_links: frozenset[tuple[str, str, int]]
+    expert_links: frozenset[tuple[str, str]]
 
 
 def _error(stage: str, cause: BaseException) -> RoutingShardError:
@@ -368,6 +403,8 @@ def _semantic_rows(
     routing_events: tuple[RoutingEvent, ...],
     *,
     store_token_text: bool,
+    expert_events: tuple[ExpertEvent, ...] = (),
+    store_version: str = STORE_SCHEMA_VERSION,
 ) -> tuple[
     tuple[tuple[object, ...], ...],
     tuple[tuple[object, ...], ...],
@@ -406,7 +443,7 @@ def _semantic_rows(
         for index, event in enumerate(routing_events)
     )
     semantic = {
-        "store_schema_version": STORE_SCHEMA_VERSION,
+        "store_schema_version": store_version,
         "event_schema_version": EVENT_SCHEMA_VERSION,
         "redaction": {"token_text_stored": store_token_text},
         "run_key": token_events[0].run_key,
@@ -443,6 +480,24 @@ def _semantic_rows(
             for row in routing_rows
         ],
     }
+    if expert_events:
+        semantic["experts"] = [
+            {
+                "event_index": index,
+                "schema_version": payload["schema_version"],
+                "event_type": payload["event_type"],
+                "token_key": payload["token_key"],
+                "expert_key": payload["expert_key"],
+                "input_norm": payload["input_norm"],
+                "output_norm": payload["output_norm"],
+                "contribution_norm": payload["contribution_norm"],
+                "latency_ms": payload["latency_ms"],
+                "metadata": payload["metadata"],
+            }
+            for index, payload in enumerate(
+                event.model_dump(mode="json") for event in expert_events
+            )
+        ]
     return token_rows, routing_rows, semantic
 
 
@@ -494,6 +549,38 @@ def _persisted_rows(
         for index, event in enumerate(routing_events)
     )
     return token_rows, routing_rows
+
+
+def _persisted_expert_rows(
+    expert_events: tuple[ExpertEvent, ...],
+    *,
+    shard_key: str,
+) -> tuple[tuple[object, ...], ...]:
+    rows: list[tuple[object, ...]] = []
+    for index, event in enumerate(expert_events):
+        # Field values come from one JSON dump so the opaque payload boundary
+        # stays symmetric with reopen-time reconstruction.
+        dumped = event.model_dump(mode="json")
+        metadata = dumped["metadata"]
+        rows.append(
+            (
+                STORE_SCHEMA_VERSION,
+                shard_key,
+                index,
+                dumped["schema_version"],
+                dumped["event_type"],
+                dumped["token_key"],
+                dumped["expert_key"],
+                dumped["input_norm"],
+                dumped["output_norm"],
+                dumped["contribution_norm"],
+                dumped["latency_ms"],
+                json.dumps(metadata, ensure_ascii=False, allow_nan=False, sort_keys=True)
+                if metadata
+                else None,
+            )
+        )
+    return tuple(rows)
 
 
 def _ensure_directory(path: Path) -> None:
@@ -578,6 +665,7 @@ def _write_parquets(
     stage: Path,
     token_rows: tuple[tuple[object, ...], ...],
     routing_rows: tuple[tuple[object, ...], ...],
+    expert_rows: tuple[tuple[object, ...], ...] = (),
 ) -> None:
     connection: Any | None = None
     try:
@@ -594,17 +682,30 @@ def _write_parquets(
             "layer_key VARCHAR, rank BIGINT, expert_key VARCHAR, router_logit DOUBLE, "
             "probability DOUBLE, weight DOUBLE, selected BOOLEAN)"
         )
+        connection.execute(
+            "CREATE TEMP TABLE experts (store_schema_version VARCHAR, shard_key VARCHAR, "
+            "event_index BIGINT, schema_version VARCHAR, event_type VARCHAR, token_key VARCHAR, "
+            "expert_key VARCHAR, input_norm DOUBLE, output_norm DOUBLE, "
+            "contribution_norm DOUBLE, latency_ms DOUBLE, metadata VARCHAR)"
+        )
         connection.executemany(
             "INSERT INTO tokens VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", token_rows
         )
         connection.executemany(
             "INSERT INTO routing VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", routing_rows
         )
+        if expert_rows:
+            connection.executemany(
+                "INSERT INTO experts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", expert_rows
+            )
         connection.table("tokens").order("event_index").write_parquet(
             str(stage / _TOKENS_FILE), compression="zstd", overwrite=False
         )
         connection.table("routing").order("event_index").write_parquet(
             str(stage / _ROUTING_FILE), compression="zstd", overwrite=False
+        )
+        connection.table("experts").order("event_index").write_parquet(
+            str(stage / _EXPERTS_FILE), compression="zstd", overwrite=False
         )
     except Exception as exc:
         raise _error("write", exc)
@@ -651,18 +752,15 @@ def _manifest_for(
     stage: Path,
     duckdb: Any,
     token_text_stored: bool,
+    expert_count: int = 0,
 ) -> dict[str, object]:
     files = {
-        _TOKENS_FILE: {
-            "name": _TOKENS_FILE,
-            "bytes": (stage / _TOKENS_FILE).stat().st_size,
-            "sha256": f"sha256:{_sha256_file(stage / _TOKENS_FILE)}",
-        },
-        _ROUTING_FILE: {
-            "name": _ROUTING_FILE,
-            "bytes": (stage / _ROUTING_FILE).stat().st_size,
-            "sha256": f"sha256:{_sha256_file(stage / _ROUTING_FILE)}",
-        },
+        name: {
+            "name": name,
+            "bytes": (stage / name).stat().st_size,
+            "sha256": f"sha256:{_sha256_file(stage / name)}",
+        }
+        for name in sorted(_V2_FINAL_NAMES - {_MANIFEST_FILE})
     }
     return {
         "manifest_type": "routing_shard",
@@ -673,6 +771,7 @@ def _manifest_for(
         "token_text_stored": token_text_stored,
         "token_count": len(token_rows),
         "routing_count": len(routing_rows),
+        "expert_count": expert_count,
         "writer_name": "duckdb",
         "writer_version": duckdb.__version__,
         "files": files,
@@ -693,12 +792,19 @@ def _strict_manifest(
     shard_key: str,
     duckdb: Any,
 ) -> dict[str, object]:
-    if type(manifest) is not dict or set(manifest) != _MANIFEST_KEYS:
+    if type(manifest) is not dict:
+        raise ValueError("manifest shape is not exact")
+    version = manifest.get("store_schema_version")
+    if version == STORE_SCHEMA_VERSION:
+        expected_keys = _MANIFEST_KEYS_V2
+    elif version == LEGACY_STORE_SCHEMA_VERSION:
+        expected_keys = _MANIFEST_KEYS
+    else:
+        raise ValueError("store schema version is unsupported")
+    if set(manifest) != expected_keys:
         raise ValueError("manifest shape is not exact")
     if manifest["manifest_type"] != "routing_shard":
         raise ValueError("manifest type is unsupported")
-    if manifest["store_schema_version"] != STORE_SCHEMA_VERSION:
-        raise ValueError("store schema version is unsupported")
     if manifest["event_schema_version"] != EVENT_SCHEMA_VERSION:
         raise ValueError("event schema version is unsupported")
     if manifest["shard_key"] != shard_key or not isinstance(shard_key, str):
@@ -711,6 +817,10 @@ def _strict_manifest(
         raise ValueError("manifest routing count is invalid")
     if manifest["token_count"] <= 0 or manifest["routing_count"] <= 0:
         raise ValueError("manifest counts must be positive")
+    if version == STORE_SCHEMA_VERSION:
+        value = manifest["expert_count"]
+        if type(value) is not int or isinstance(value, bool) or value < 0:
+            raise ValueError("manifest expert count is invalid")
     if type(manifest["token_text_stored"]) is not bool:
         raise ValueError("manifest redaction value is invalid")
     if manifest["writer_name"] != "duckdb" or type(manifest["writer_version"]) is not str:
@@ -720,9 +830,12 @@ def _strict_manifest(
         if len(parts) != 3 or not (_DUCKDB_MIN <= parts < _DUCKDB_MAX):
             raise ValueError("manifest writer version is unsupported")
     files = manifest["files"]
-    if type(files) is not dict or set(files) != {_TOKENS_FILE, _ROUTING_FILE}:
+    expected_files = {_TOKENS_FILE, _ROUTING_FILE}
+    if version == STORE_SCHEMA_VERSION:
+        expected_files.add(_EXPERTS_FILE)
+    if type(files) is not dict or set(files) != expected_files:
         raise ValueError("manifest file set is not exact")
-    for name in (_TOKENS_FILE, _ROUTING_FILE):
+    for name in sorted(expected_files):
         info = files[name]
         if type(info) is not dict or set(info) != _FILE_INFO_KEYS:
             raise ValueError("manifest file metadata is not exact")
@@ -778,6 +891,16 @@ def _read_rows_with_connection(
     return tuple(rows)
 
 
+def _expected_final_names(payload: object) -> frozenset[str]:
+    """Return the exact committed entry set for a manifest's store version."""
+
+    if type(payload) is dict and payload.get("store_schema_version") == (
+        LEGACY_STORE_SCHEMA_VERSION
+    ):
+        return _V1_FINAL_NAMES
+    return _V2_FINAL_NAMES
+
+
 def _read_shard_manifest(
     shard: Path,
     run_key: str,
@@ -790,8 +913,6 @@ def _read_shard_manifest(
     try:
         if shard.is_symlink() or not shard.is_dir():
             raise ValueError("committed shard is not a directory")
-        if {item.name for item in shard.iterdir()} != _FINAL_NAMES:
-            raise ValueError("committed shard contains unsupported entries")
         manifest_path = shard / _MANIFEST_FILE
         if manifest_path.is_symlink() or not manifest_path.is_file():
             raise ValueError("managed shard manifest is not a regular file")
@@ -799,6 +920,8 @@ def _read_shard_manifest(
         if not manifest_bytes.endswith(b"\n") or manifest_bytes[:-1].endswith(b"\n"):
             raise ValueError("manifest newline is not exact")
         manifest_payload = json.loads(manifest_bytes[:-1].decode("utf-8"))
+        if {item.name for item in shard.iterdir()} != _expected_final_names(manifest_payload):
+            raise ValueError("committed shard contains unsupported entries")
         name = shard.name
         if not name.startswith(_SHARD_PREFIX):
             raise ValueError("committed shard name is invalid")
@@ -826,11 +949,19 @@ def _reconstruct_shard_with_connection(
     """Reopen one shard using a caller-owned connection."""
 
     manifest, shard_key = _read_shard_manifest(shard, run_key, duckdb)
+    store_version = str(manifest["store_schema_version"])
     try:
         token_rows = _read_rows_with_connection(connection, shard / _TOKENS_FILE, _TOKEN_COLUMNS)
         routing_rows = _read_rows_with_connection(
             connection, shard / _ROUTING_FILE, _ROUTING_COLUMNS
         )
+        expert_rows: tuple[tuple[object, ...], ...] = ()
+        if store_version == STORE_SCHEMA_VERSION:
+            expert_rows = _read_rows_with_connection(
+                connection, shard / _EXPERTS_FILE, _EXPERT_COLUMNS
+            )
+            if len(expert_rows) != manifest["expert_count"]:
+                raise ValueError("parquet row counts do not match manifest")
         if (
             len(token_rows) != manifest["token_count"]
             or len(routing_rows) != manifest["routing_count"]
@@ -838,7 +969,7 @@ def _reconstruct_shard_with_connection(
             raise ValueError("parquet row counts do not match manifest")
         token_events: list[TokenEvent] = []
         for index, row in enumerate(token_rows):
-            _validate_token_row(row, index, shard_key, manifest["token_text_stored"])
+            _validate_token_row(row, index, shard_key, manifest["token_text_stored"], store_version)
             token_text = row[10] if manifest["token_text_stored"] else ""
             token_events.append(
                 TokenEvent(
@@ -855,7 +986,7 @@ def _reconstruct_shard_with_connection(
             )
         routing_events: list[RoutingEvent] = []
         for index, row in enumerate(routing_rows):
-            _validate_routing_row(row, index, shard_key)
+            _validate_routing_row(row, index, shard_key, store_version)
             routing_events.append(
                 RoutingEvent(
                     schema_version=row[3],
@@ -870,13 +1001,34 @@ def _reconstruct_shard_with_connection(
                     selected=row[12],
                 )
             )
+        expert_events: list[ExpertEvent] = []
+        for index, row in enumerate(expert_rows):
+            _validate_expert_row(row, index, shard_key)
+            metadata = json.loads(row[11]) if row[11] is not None else {}
+            expert_events.append(
+                ExpertEvent(
+                    schema_version=row[3],
+                    event_type=row[4],
+                    token_key=row[5],
+                    expert_key=row[6],
+                    input_norm=row[7],
+                    output_norm=row[8],
+                    contribution_norm=row[9],
+                    latency_ms=row[10],
+                    metadata=metadata,
+                )
+            )
         token_events_tuple = tuple(token_events)
         routing_events_tuple = tuple(routing_events)
+        expert_events_tuple = tuple(expert_events)
         _validate_routing_links(token_events_tuple, routing_events_tuple)
+        _validate_expert_links(token_events_tuple, expert_events_tuple)
         _, _, semantic = _semantic_rows(
             token_events_tuple,
             routing_events_tuple,
             store_token_text=manifest["token_text_stored"],
+            expert_events=expert_events_tuple,
+            store_version=store_version,
         )
         if _shard_key(semantic) != manifest["shard_key"]:
             raise ValueError("committed shard semantic digest mismatch")
@@ -886,7 +1038,7 @@ def _reconstruct_shard_with_connection(
         raise _error("reopen", exc)
 
     receipt = RoutingShardReceipt(
-        schema_version=STORE_SCHEMA_VERSION,
+        schema_version=store_version,
         shard_key=manifest["shard_key"],
         run_key=run_key,
         relative_path=_relative_path(run_key, shard_key),
@@ -897,10 +1049,13 @@ def _reconstruct_shard_with_connection(
     )
     return _ShardData(
         receipt=receipt,
+        store_version=store_version,
         token_rows=token_rows,
         routing_rows=routing_rows,
+        expert_rows=expert_rows,
         token_keys=frozenset(row[5] for row in token_rows),
         routing_links=frozenset((row[5], row[6], row[7]) for row in routing_rows),
+        expert_links=frozenset((row[5], row[6]) for row in expert_rows),
     )
 
 
@@ -967,7 +1122,7 @@ def _validate_file_metadata(shard: Path, manifest: dict[str, object]) -> None:
     files = manifest["files"]
     if type(files) is not dict:
         raise ValueError("manifest file metadata is not an object")
-    for name in (_TOKENS_FILE, _ROUTING_FILE):
+    for name in sorted(files):
         path = shard / name
         if path.is_symlink() or not path.is_file():
             raise ValueError("managed shard file is not a regular file")
@@ -979,11 +1134,15 @@ def _validate_file_metadata(shard: Path, manifest: dict[str, object]) -> None:
 
 
 def _validate_token_row(
-    row: tuple[Any, ...], index: int, shard_key: str, token_text_stored: bool
+    row: tuple[Any, ...],
+    index: int,
+    shard_key: str,
+    token_text_stored: bool,
+    store_version: str,
 ) -> None:
     if len(row) != len(_TOKEN_COLUMNS):
         raise ValueError("token row shape is not exact")
-    if row[0] != STORE_SCHEMA_VERSION or row[1] != shard_key or row[2] != index:
+    if row[0] != store_version or row[1] != shard_key or row[2] != index:
         raise ValueError("token row identity is invalid")
     if row[3] != EVENT_SCHEMA_VERSION or row[4] != "token":
         raise ValueError("token row schema identity is invalid")
@@ -996,15 +1155,40 @@ def _validate_token_row(
         raise ValueError("redacted token text is not null")
 
 
-def _validate_routing_row(row: tuple[Any, ...], index: int, shard_key: str) -> None:
+def _validate_routing_row(
+    row: tuple[Any, ...], index: int, shard_key: str, store_version: str
+) -> None:
     if len(row) != len(_ROUTING_COLUMNS):
         raise ValueError("routing row shape is not exact")
-    if row[0] != STORE_SCHEMA_VERSION or row[1] != shard_key or row[2] != index:
+    if row[0] != store_version or row[1] != shard_key or row[2] != index:
         raise ValueError("routing row identity is invalid")
     if row[3] != EVENT_SCHEMA_VERSION or row[4] != "routing":
         raise ValueError("routing row schema identity is invalid")
     if type(row[12]) is not bool or row[12] is not True:
         raise ValueError("routing row selection is invalid")
+
+
+def _validate_expert_row(row: tuple[Any, ...], index: int, shard_key: str) -> None:
+    if len(row) != len(_EXPERT_COLUMNS):
+        raise ValueError("expert row shape is not exact")
+    if row[0] != STORE_SCHEMA_VERSION or row[1] != shard_key or row[2] != index:
+        raise ValueError("expert row identity is invalid")
+    if row[3] != EVENT_SCHEMA_VERSION or row[4] != "expert":
+        raise ValueError("expert row schema identity is invalid")
+    for value in row[7:11]:
+        if value is not None and (type(value) is not float or not math.isfinite(value)):
+            raise ValueError("expert row measurements must be finite floats or null")
+    metadata = row[11]
+    if metadata is not None:
+        if type(metadata) is not str:
+            raise ValueError("expert row metadata must be a canonical JSON string or null")
+        try:
+            parsed = json.loads(metadata)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("expert row metadata must be valid JSON") from exc
+        canonical = json.dumps(parsed, ensure_ascii=False, allow_nan=False, sort_keys=True)
+        if canonical.encode("utf-8") != metadata.encode("utf-8"):
+            raise ValueError("expert row metadata is not canonically encoded")
 
 
 def _reconstruct_shard(
@@ -1015,8 +1199,6 @@ def _reconstruct_shard(
     try:
         if shard.is_symlink() or not shard.is_dir():
             raise ValueError("committed shard is not a directory")
-        if {item.name for item in shard.iterdir()} != _FINAL_NAMES:
-            raise ValueError("committed shard contains unsupported entries")
         manifest_path = shard / _MANIFEST_FILE
         if manifest_path.is_symlink() or not manifest_path.is_file():
             raise ValueError("managed shard manifest is not a regular file")
@@ -1024,6 +1206,8 @@ def _reconstruct_shard(
         if not manifest_bytes.endswith(b"\n") or manifest_bytes[:-1].endswith(b"\n"):
             raise ValueError("manifest newline is not exact")
         manifest_payload = json.loads(manifest_bytes[:-1].decode("utf-8"))
+        if {item.name for item in shard.iterdir()} != _expected_final_names(manifest_payload):
+            raise ValueError("committed shard contains unsupported entries")
         name = shard.name
         if not name.startswith(_SHARD_PREFIX):
             raise ValueError("committed shard name is invalid")
@@ -1039,17 +1223,23 @@ def _reconstruct_shard(
     except Exception as exc:
         raise _error("reopen", exc)
 
+    store_version = str(manifest["store_schema_version"])
     token_rows = _read_rows(duckdb, shard / _TOKENS_FILE, _TOKEN_COLUMNS)
     routing_rows = _read_rows(duckdb, shard / _ROUTING_FILE, _ROUTING_COLUMNS)
+    expert_rows: tuple[tuple[object, ...], ...] = ()
+    if store_version == STORE_SCHEMA_VERSION:
+        expert_rows = _read_rows(duckdb, shard / _EXPERTS_FILE, _EXPERT_COLUMNS)
     try:
         if (
             len(token_rows) != manifest["token_count"]
             or len(routing_rows) != manifest["routing_count"]
         ):
             raise ValueError("parquet row counts do not match manifest")
+        if expert_rows and len(expert_rows) != manifest["expert_count"]:
+            raise ValueError("parquet row counts do not match manifest")
         token_events: list[TokenEvent] = []
         for index, row in enumerate(token_rows):
-            _validate_token_row(row, index, shard_key, manifest["token_text_stored"])
+            _validate_token_row(row, index, shard_key, manifest["token_text_stored"], store_version)
             token_text = row[10] if manifest["token_text_stored"] else ""
             token_events.append(
                 TokenEvent(
@@ -1066,7 +1256,7 @@ def _reconstruct_shard(
             )
         routing_events: list[RoutingEvent] = []
         for index, row in enumerate(routing_rows):
-            _validate_routing_row(row, index, shard_key)
+            _validate_routing_row(row, index, shard_key, store_version)
             routing_events.append(
                 RoutingEvent(
                     schema_version=row[3],
@@ -1081,13 +1271,34 @@ def _reconstruct_shard(
                     selected=row[12],
                 )
             )
+        expert_events: list[ExpertEvent] = []
+        for index, row in enumerate(expert_rows):
+            _validate_expert_row(row, index, shard_key)
+            metadata = json.loads(row[11]) if row[11] is not None else {}
+            expert_events.append(
+                ExpertEvent(
+                    schema_version=row[3],
+                    event_type=row[4],
+                    token_key=row[5],
+                    expert_key=row[6],
+                    input_norm=row[7],
+                    output_norm=row[8],
+                    contribution_norm=row[9],
+                    latency_ms=row[10],
+                    metadata=metadata,
+                )
+            )
         token_events_tuple = tuple(token_events)
         routing_events_tuple = tuple(routing_events)
+        expert_events_tuple = tuple(expert_events)
         _validate_routing_links(token_events_tuple, routing_events_tuple)
+        _validate_expert_links(token_events_tuple, expert_events_tuple)
         _, _, semantic = _semantic_rows(
             token_events_tuple,
             routing_events_tuple,
             store_token_text=manifest["token_text_stored"],
+            expert_events=expert_events_tuple,
+            store_version=store_version,
         )
         if _shard_key(semantic) != manifest["shard_key"]:
             raise ValueError("committed shard semantic digest mismatch")
@@ -1097,7 +1308,7 @@ def _reconstruct_shard(
         raise _error("reopen", exc)
 
     receipt = RoutingShardReceipt(
-        schema_version=STORE_SCHEMA_VERSION,
+        schema_version=store_version,
         shard_key=manifest["shard_key"],
         run_key=run_key,
         relative_path=_relative_path(run_key, shard_key),
@@ -1108,10 +1319,13 @@ def _reconstruct_shard(
     )
     return _ShardData(
         receipt=receipt,
+        store_version=store_version,
         token_rows=token_rows,
         routing_rows=routing_rows,
+        expert_rows=expert_rows,
         token_keys=frozenset(row[5] for row in token_rows),
         routing_links=frozenset((row[5], row[6], row[7]) for row in routing_rows),
+        expert_links=frozenset((row[5], row[6]) for row in expert_rows),
     )
 
 
@@ -1138,13 +1352,17 @@ def _existing_shards(run_parent: Path, run_key: str, duckdb: Any) -> tuple[_Shar
     shards.sort(key=lambda item: item.receipt.shard_key)
     seen_tokens: set[str] = set()
     seen_links: set[tuple[str, str, int]] = set()
+    seen_expert_links: set[tuple[str, str]] = set()
     for shard in shards:
-        if seen_tokens.intersection(shard.token_keys) or seen_links.intersection(
-            shard.routing_links
+        if (
+            seen_tokens.intersection(shard.token_keys)
+            or seen_links.intersection(shard.routing_links)
+            or seen_expert_links.intersection(shard.expert_links)
         ):
             raise _error("conflict", ValueError("committed shards overlap identities"))
         seen_tokens.update(shard.token_keys)
         seen_links.update(shard.routing_links)
+        seen_expert_links.update(shard.expert_links)
     return tuple(shards)
 
 
@@ -1155,12 +1373,14 @@ def _append_internal(
     *,
     store_token_text: bool,
     duckdb: Any,
+    expert_events: tuple[ExpertEvent, ...] = (),
 ) -> RoutingShardReceipt:
     run_key = token_events[0].run_key
     token_rows, routing_rows, semantic = _semantic_rows(
         token_events,
         routing_events,
         store_token_text=store_token_text,
+        expert_events=expert_events,
     )
     shard_key = _shard_key(semantic)
     token_rows, routing_rows = _persisted_rows(
@@ -1169,6 +1389,7 @@ def _append_internal(
         store_token_text=store_token_text,
         shard_key=shard_key,
     )
+    expert_rows = _persisted_expert_rows(expert_events, shard_key=shard_key)
     run_parent = _ensure_run_parent(workspace, run_key)
     final = workspace / _relative_path(run_key, shard_key)
     try:
@@ -1187,9 +1408,13 @@ def _append_internal(
     for shard in existing:
         if shard.receipt.shard_key == shard_key:
             return shard.receipt
-        if set(row[5] for row in token_rows).intersection(shard.token_keys) or set(
-            (row[5], row[6], row[7]) for row in routing_rows
-        ).intersection(shard.routing_links):
+        if (
+            set(row[5] for row in token_rows).intersection(shard.token_keys)
+            or set((row[5], row[6], row[7]) for row in routing_rows).intersection(
+                shard.routing_links
+            )
+            or set((row[5], row[6]) for row in expert_rows).intersection(shard.expert_links)
+        ):
             raise _error("conflict", ValueError("new shard overlaps a committed identity"))
 
     if final_exists or final_symlink:
@@ -1206,8 +1431,8 @@ def _append_internal(
 
     published = False
     try:
-        _write_parquets(duckdb, stage, token_rows, routing_rows)
-        for name in (_TOKENS_FILE, _ROUTING_FILE):
+        _write_parquets(duckdb, stage, token_rows, routing_rows, expert_rows)
+        for name in sorted(_V2_FINAL_NAMES - {_MANIFEST_FILE}):
             path = stage / name
             if os.name == "posix":
                 os.chmod(path, 0o600)
@@ -1221,6 +1446,7 @@ def _append_internal(
             stage,
             duckdb,
             store_token_text,
+            expert_count=len(expert_rows),
         )
         _write_manifest(stage, manifest)
         _fsync_directory(stage)
@@ -1273,6 +1499,61 @@ def append_routing_shard(
             routing_events,
             store_token_text=store_text,
             duckdb=duckdb,
+        )
+    except RoutingShardError:
+        raise
+    except Exception as exc:
+        raise _error("write", exc)
+
+
+def _fresh_structured_experts(
+    value: object,
+) -> tuple[tuple[TokenEvent, ...], tuple[RoutingEvent, ...], tuple[ExpertEvent, ...]]:
+    """Freshly validate a structured result including its expert events."""
+
+    if type(value) is not StructuredRoutingForwardResult:
+        raise TypeError("result must be an exact StructuredRoutingForwardResult")
+    token_events = _fresh_token_events(value.token_events)
+    routing_events = _fresh_routing_events(value.routing_events)
+    expert_events = _fresh_expert_events(value.expert_events)
+    _validate_routing_links(token_events, routing_events)
+    _validate_expert_links(token_events, expert_events)
+    return token_events, routing_events, expert_events
+
+
+def append_structured_shard(
+    workspace: str | Path,
+    result: StructuredRoutingForwardResult,
+    *,
+    store_token_text: bool = False,
+    max_expert_events: int = _DEFAULT_MAX_EXPERT_EVENTS,
+) -> RoutingShardReceipt:
+    """Append one structured capture result (routing plus expert events).
+
+    Expert events ride the same immutable content-addressed shard under
+    ``experts.parquet``; identity overlap against committed shards mirrors the
+    routing-row conflict semantics. The strict per-shard expert budget is
+    checked before any workspace mutation.
+    """
+
+    path = _validate_workspace(workspace)
+    token_events, routing_events, expert_events = _fresh_structured_experts(result)
+    store_text = _validate_store_token_text(store_token_text)
+    if type(max_expert_events) is not int or isinstance(max_expert_events, bool):
+        raise TypeError("max_expert_events must be a strict positive integer")
+    if max_expert_events <= 0:
+        raise ValueError("max_expert_events must be a strict positive integer")
+    if len(expert_events) > max_expert_events:
+        raise ValueError("expert events exceed the per-shard expert-event budget")
+    duckdb = _load_duckdb()
+    try:
+        return _append_internal(
+            path,
+            token_events,
+            routing_events,
+            store_token_text=store_text,
+            duckdb=duckdb,
+            expert_events=expert_events,
         )
     except RoutingShardError:
         raise
@@ -1349,12 +1630,19 @@ def _inventory_basic_manifest(
     if not payload.endswith(b"\n") or payload[:-1].endswith(b"\n"):
         raise ValueError("manifest newline is not exact")
     parsed = json.loads(payload[:-1].decode("utf-8"))
-    if type(parsed) is not dict or set(parsed) != _MANIFEST_KEYS:
+    if type(parsed) is not dict:
+        raise ValueError("manifest shape is not exact")
+    version = parsed.get("store_schema_version")
+    if version == STORE_SCHEMA_VERSION:
+        expected_keys = _MANIFEST_KEYS_V2
+    elif version == LEGACY_STORE_SCHEMA_VERSION:
+        expected_keys = _MANIFEST_KEYS
+    else:
+        raise ValueError("store schema version is unsupported")
+    if set(parsed) != expected_keys:
         raise ValueError("manifest shape is not exact")
     if parsed["manifest_type"] != "routing_shard":
         raise ValueError("manifest type is unsupported")
-    if parsed["store_schema_version"] != STORE_SCHEMA_VERSION:
-        raise ValueError("store schema version is unsupported")
     if parsed["event_schema_version"] != EVENT_SCHEMA_VERSION:
         raise ValueError("event schema version is unsupported")
     if type(parsed["run_key"]) is not str:
@@ -1364,16 +1652,24 @@ def _inventory_basic_manifest(
         raise ValueError("run identity is inconsistent")
     if parsed["shard_key"] != shard_key or _SHARD_KEY.fullmatch(shard_key) is None:
         raise ValueError("manifest shard identity mismatch")
-    for name in ("token_count", "routing_count"):
+    count_names = ("token_count", "routing_count")
+    if version == STORE_SCHEMA_VERSION:
+        count_names = (*count_names, "expert_count")
+    for name in count_names:
         value = parsed[name]
-        if type(value) is not int or isinstance(value, bool) or value <= 0:
+        if type(value) is not int or isinstance(value, bool) or value < 0:
             raise ValueError("manifest event count is invalid")
+    if parsed["token_count"] <= 0 or parsed["routing_count"] <= 0:
+        raise ValueError("manifest event count is invalid")
     if type(parsed["token_text_stored"]) is not bool:
         raise ValueError("manifest redaction value is invalid")
     files = parsed["files"]
-    if type(files) is not dict or set(files) != {_TOKENS_FILE, _ROUTING_FILE}:
+    expected_files = {_TOKENS_FILE, _ROUTING_FILE}
+    if version == STORE_SCHEMA_VERSION:
+        expected_files.add(_EXPERTS_FILE)
+    if type(files) is not dict or set(files) != expected_files:
         raise ValueError("manifest file set is not exact")
-    for name in (_TOKENS_FILE, _ROUTING_FILE):
+    for name in sorted(expected_files):
         info = files[name]
         if type(info) is not dict or set(info) != _FILE_INFO_KEYS:
             raise ValueError("manifest file metadata is not exact")
@@ -1418,7 +1714,11 @@ def _inventory_shards_for_run(
         try:
             if child.is_symlink() or not child.is_dir():
                 raise ValueError("committed shard is not a directory")
-            if {item.name for item in child.iterdir()} != _FINAL_NAMES:
+            raw_manifest = (child / _MANIFEST_FILE).read_bytes()
+            if not raw_manifest.endswith(b"\n"):
+                raise ValueError("manifest newline is not exact")
+            manifest_payload = json.loads(raw_manifest[:-1].decode("utf-8"))
+            if {item.name for item in child.iterdir()} != _expected_final_names(manifest_payload):
                 raise ValueError("committed shard contains unsupported entries")
         except Exception as exc:
             raise _error("reopen", exc)
@@ -1446,10 +1746,15 @@ def _inventory_shards_for_run(
         if _run_digest(known_run_key) != run_digest:
             raise _inventory_error("index", ValueError("run directory digest mismatch"))
         try:
-            for path in (token_path, routing_path):
+            data_paths = [token_path, routing_path]
+            if manifest["store_schema_version"] == STORE_SCHEMA_VERSION:
+                data_paths.append(shard / _EXPERTS_FILE)
+            for path in data_paths:
                 if path.is_symlink() or not path.is_file():
                     raise ValueError("managed shard file is not a regular file")
-            source_bytes = manifest_bytes + token_path.stat().st_size + routing_path.stat().st_size
+            source_bytes = (
+                manifest_bytes + sum(path.stat().st_size for path in data_paths)
+            )
         except Exception as exc:
             raise _error("reopen", exc)
         result.append(
@@ -1530,7 +1835,15 @@ def _inventory_index(
             raise RoutingRunInventoryError("budget")
         for shard in shards:
             source_total += shard.source_bytes
-            event_total += int(shard.manifest["token_count"]) + int(shard.manifest["routing_count"])
+            event_total += (
+                int(shard.manifest["token_count"])
+                + int(shard.manifest["routing_count"])
+                + (
+                    int(shard.manifest["expert_count"])
+                    if shard.manifest["store_schema_version"] == STORE_SCHEMA_VERSION
+                    else 0
+                )
+            )
         if source_total > max_source_bytes or event_total > max_event_rows:
             raise RoutingRunInventoryError("budget")
         if shards:
@@ -1620,6 +1933,10 @@ def list_routing_runs(
                 token_rows = _inventory_count_rows(connection, source.shard / _TOKENS_FILE)
                 routing_rows = _inventory_count_rows(connection, source.shard / _ROUTING_FILE)
                 actual_events += token_rows + routing_rows
+                if source.manifest["store_schema_version"] == STORE_SCHEMA_VERSION:
+                    actual_events += _inventory_count_rows(
+                        connection, source.shard / _EXPERTS_FILE
+                    )
                 if actual_events > max_event_rows:
                     raise RoutingRunInventoryError("budget")
                 if (
@@ -1631,18 +1948,22 @@ def list_routing_runs(
             data: list[_ShardData] = []
             seen_tokens: set[str] = set()
             seen_links: set[tuple[str, str, int]] = set()
+            seen_expert_links: set[tuple[str, str]] = set()
             for source in run_shards:
                 actual = _reconstruct_shard_with_connection(
                     source.shard, source.run_key, duckdb, connection
                 )
                 if actual.receipt.shard_key != source.shard_key:
                     raise _error("reopen", ValueError("shard identity changed during reopen"))
-                if seen_tokens.intersection(actual.token_keys) or seen_links.intersection(
-                    actual.routing_links
+                if (
+                    seen_tokens.intersection(actual.token_keys)
+                    or seen_links.intersection(actual.routing_links)
+                    or seen_expert_links.intersection(actual.expert_links)
                 ):
                     raise _error("conflict", ValueError("committed shards overlap identities"))
                 seen_tokens.update(actual.token_keys)
                 seen_links.update(actual.routing_links)
+                seen_expert_links.update(actual.expert_links)
                 data.append(actual)
             if not data:
                 continue
@@ -1822,6 +2143,8 @@ def query_routing_run_assignments(
                 (shard / _TOKENS_FILE).stat().st_size,
                 (shard / _ROUTING_FILE).stat().st_size,
             ]
+            if manifest["store_schema_version"] == STORE_SCHEMA_VERSION:
+                sizes.append((shard / _EXPERTS_FILE).stat().st_size)
         except Exception as exc:
             raise ValueError("managed shard metadata is unreadable") from exc
         source_bytes += sum(sizes)
@@ -1926,6 +2249,227 @@ def query_routing_run_assignments(
     return tuple(records)
 
 
+@dataclass(frozen=True, slots=True)
+class RoutingShardExpertActivityQuery:
+    """Validated per-shard expert-activity summary from one bounded query."""
+
+    shard_key: str
+    expert_event_count: int
+    activity_cells: tuple[tuple[str, str, int, int, float, float], ...]
+
+    def __post_init__(self) -> None:
+        if type(self.shard_key) is not str or _SHARD_KEY.fullmatch(self.shard_key) is None:
+            raise ValueError("shard_key must be a canonical shard digest")
+        if type(self.expert_event_count) is not int or isinstance(
+            self.expert_event_count, bool
+        ) or self.expert_event_count < 0:
+            raise ValueError("expert_event_count must be a non-negative integer")
+        if type(self.activity_cells) is not tuple:
+            raise TypeError("activity_cells must be an exact tuple")
+        keys: list[tuple[str, str]] = []
+        for entry in self.activity_cells:
+            if type(entry) is not tuple or len(entry) != 6:
+                raise ValueError(
+                    "activity_cells entries must be (layer, expert, events, measured, sum, max)"
+                )
+            layer_key, expert_key, count, measured, total, peak = entry
+            if type(layer_key) is not str or type(expert_key) is not str:
+                raise TypeError("activity cell keys must be exact strings")
+            for value in (count, measured):
+                if type(value) is not int or isinstance(value, bool) or value <= 0:
+                    raise ValueError("activity cell counts must be strict positive integers")
+            if measured > count:
+                raise ValueError("measured contributions cannot exceed the event count")
+            for value in (total, peak):
+                if type(value) is not float or not math.isfinite(value) or value < 0.0:
+                    raise ValueError("activity cell sums/maxima must be finite nonnegative floats")
+            keys.append((layer_key, expert_key))
+        if keys != sorted(keys):
+            raise ValueError("activity_cells must be sorted by layer and expert key")
+
+
+def query_expert_activity(
+    workspace: str | Path,
+    *,
+    run_key: str,
+    layer_keys: tuple[str, ...],
+    expert_keys: tuple[tuple[str, ...], ...],
+    max_expert_rows: int,
+    max_source_bytes: int,
+    duckdb: Any,
+    connection: Any,
+) -> tuple[RoutingShardExpertActivityQuery, ...]:
+    """Return validated per-shard expert-activity summaries for one run.
+
+    Mirrors :func:`query_routing_run_assignments`: every shard is reopened and
+    fully validated before its grouped per-expert contribution aggregates are
+    returned in canonical shard order. ``layer_keys``/``expert_keys`` supply
+    the layer mapping because expert rows carry opaque component identities.
+    Shards without expert evidence (legacy ``1.0`` shards or empty tables)
+    contribute zero-activity records. Raw rows are never retained.
+    """
+
+    for value, name in (
+        (max_expert_rows, "max_expert_rows"),
+        (max_source_bytes, "max_source_bytes"),
+    ):
+        _strict_positive_query_budget(value, name)
+    if type(layer_keys) is not tuple or not layer_keys:
+        raise TypeError("layer_keys must be a non-empty tuple of strings")
+    if type(expert_keys) is not tuple or len(expert_keys) != len(layer_keys):
+        raise TypeError("expert_keys must match layer_keys exactly")
+    layer_of_expert: dict[str, str] = {}
+    for layer_key, row in zip(layer_keys, expert_keys):
+        if type(layer_key) is not str or type(row) is not tuple or not row:
+            raise TypeError("universe rows must map string layers to non-empty key tuples")
+        for expert_key in row:
+            if type(expert_key) is not str:
+                raise TypeError("expert universe keys must be exact strings")
+            if expert_key in layer_of_expert:
+                raise ValueError("expert universe keys must be globally unique")
+            layer_of_expert[expert_key] = layer_key
+
+    path = _validate_workspace(workspace)
+    stable_run_key = _validate_run_key(run_key)
+    run_parent = _existing_run_parent(path, stable_run_key)
+    if run_parent is None:
+        raise ValueError("run has no committed routing shards")
+    try:
+        children = tuple(run_parent.iterdir())
+    except Exception as exc:
+        raise ValueError("managed run directory is unreadable") from exc
+    shard_paths: list[Path] = []
+    for child in children:
+        if _STAGING_NAME.fullmatch(child.name):
+            if child.is_symlink() or not child.is_dir():
+                raise RoutingShardError("reopen")
+            continue
+        if child.name.startswith(".staging-"):
+            raise RoutingShardError("reopen")
+        if not child.name.startswith(_SHARD_PREFIX):
+            raise RoutingShardError("reopen")
+        shard_paths.append(child)
+    if not shard_paths:
+        raise ValueError("run has no committed routing shards")
+
+    sources: list[tuple[Path, dict[str, object], str]] = []
+    source_bytes = 0
+    declared_expert_rows = 0
+    for shard in sorted(shard_paths, key=lambda item: item.name):
+        manifest, shard_key = _read_shard_manifest(shard, stable_run_key, duckdb)
+        if manifest["store_schema_version"] == STORE_SCHEMA_VERSION:
+            declared_expert_rows += int(manifest["expert_count"])
+            if declared_expert_rows > max_expert_rows:
+                raise RoutingRunInventoryError("budget") from ValueError(
+                    "expert rows exceed the source budget"
+                )
+        try:
+            sizes = [
+                (shard / _MANIFEST_FILE).stat().st_size,
+                (shard / _TOKENS_FILE).stat().st_size,
+                (shard / _ROUTING_FILE).stat().st_size,
+            ]
+            if manifest["store_schema_version"] == STORE_SCHEMA_VERSION:
+                sizes.append((shard / _EXPERTS_FILE).stat().st_size)
+        except Exception as exc:
+            raise ValueError("managed shard metadata is unreadable") from exc
+        source_bytes += sum(sizes)
+        if source_bytes > max_source_bytes:
+            raise RoutingRunInventoryError("budget") from ValueError(
+                "source bytes exceed the source budget"
+            )
+        sources.append((shard, manifest, shard_key))
+
+    records: list[RoutingShardExpertActivityQuery] = []
+    seen_tokens: set[str] = set()
+    seen_links: set[tuple[str, str, int]] = set()
+    seen_expert_links: set[tuple[str, str]] = set()
+    actual_expert_rows = 0
+    try:
+        for shard, manifest, shard_key in sources:
+            try:
+                actual = _reconstruct_shard_with_connection(
+                    shard, stable_run_key, duckdb, connection
+                )
+                if actual.receipt.shard_key != shard_key:
+                    raise RoutingShardError("reopen") from ValueError(
+                        "shard identity changed during reopen"
+                    )
+            except RoutingShardError:
+                raise
+            except OSError as exc:
+                raise RoutingRunQueryError() from exc
+            except Exception as exc:
+                raise ValueError("shard source validation failed") from exc
+            if (
+                seen_tokens.intersection(actual.token_keys)
+                or seen_links.intersection(actual.routing_links)
+                or seen_expert_links.intersection(actual.expert_links)
+            ):
+                raise RoutingShardError("conflict")
+            seen_tokens.update(actual.token_keys)
+            seen_links.update(actual.routing_links)
+            seen_expert_links.update(actual.expert_links)
+            actual_expert_rows += len(actual.expert_rows)
+            if actual_expert_rows > max_expert_rows:
+                raise RoutingRunInventoryError("budget") from ValueError(
+                    "actual expert rows exceed the row budget"
+                )
+            grouped: dict[tuple[str, str], list[object]] = {}
+            for row in actual.expert_rows:
+                token_key, expert_key, contribution = row[5], row[6], row[9]
+                del token_key
+                layer_key = layer_of_expert.get(expert_key)
+                if layer_key is None:
+                    raise ValueError("shard expert references an unknown expert")
+                cell = grouped.get((layer_key, expert_key))
+                if cell is None:
+                    cell = [0, []]
+                    grouped[(layer_key, expert_key)] = cell
+                cell[0] += 1
+                if contribution is not None:
+                    if (
+                        type(contribution) is not float
+                        or not math.isfinite(contribution)
+                        or contribution < 0.0
+                    ):
+                        raise ValueError("expert contribution norms must be finite nonnegative")
+                    cell[1].append(contribution)
+            cells: list[tuple[str, str, int, int, float, float]] = []
+            for (cell_layer, cell_expert), (event_count, contributions) in sorted(
+                grouped.items()
+            ):
+                cells.append(
+                    (
+                        cell_layer,
+                        cell_expert,
+                        event_count,
+                        len(contributions),
+                        math.fsum(contributions),
+                        max(contributions),
+                    )
+                )
+            records.append(
+                RoutingShardExpertActivityQuery(
+                    shard_key=shard_key,
+                    expert_event_count=len(actual.expert_rows),
+                    activity_cells=tuple(cells),
+                )
+            )
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except (
+        RoutingShardError,
+        RoutingRunInventoryError,
+        RoutingRunQueryError,
+        ValueError,
+    ):
+        raise
+    except BaseException as exc:
+        raise RoutingRunQueryError() from exc
+    return tuple(records)
+
+
 append_mixtral_routing_shard = append_routing_shard
 list_mixtral_routing_shards = list_routing_shards
 list_mixtral_routing_runs = list_routing_runs
@@ -1933,18 +2477,22 @@ list_mixtral_routing_runs = list_routing_runs
 
 __all__ = [
     "STORE_SCHEMA_VERSION",
+    "LEGACY_STORE_SCHEMA_VERSION",
     "ROUTING_RUN_INVENTORY_SCHEMA_VERSION",
     "RoutingShardError",
     "RoutingShardReceipt",
     "RoutingRunInventoryError",
     "RoutingRunQueryError",
     "RoutingShardAssignmentQuery",
+    "RoutingShardExpertActivityQuery",
     "MixtralRoutingRunSummary",
     "MixtralRoutingRunInventory",
     "append_routing_shard",
+    "append_structured_shard",
     "list_routing_shards",
     "list_routing_runs",
     "query_routing_run_assignments",
+    "query_expert_activity",
     "append_mixtral_routing_shard",
     "list_mixtral_routing_shards",
     "list_mixtral_routing_runs",

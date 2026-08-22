@@ -31,3 +31,8 @@ changes are always listed.
 - Failure-safe intervention engine, immutable recipes/budgets, paired
   causal-evidence summaries (Slice 10).
 - Retention evaluation over the workspace run registry (Slice 11).
+- Expert-event runtime reality (R3): structure-driven `EXPERT_ACTIVITY`
+  capture producing per-invoked-expert norms, store schema 2.0 shards with
+  an `experts.parquet` table, declared expert budgets, tamper/conflict
+  semantics mirroring routing rows, legacy `1.0` shard compatibility, and
+  bounded per-layer activation summaries in analysis.

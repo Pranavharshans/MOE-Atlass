@@ -10,7 +10,11 @@ import pytest
 import moeatlas.cli as cli_module
 from moeatlas.cli import build_parser, main
 from moeatlas.scan import ScanOutputError
-from moeatlas.store import MixtralRoutingRunInventory, append_mixtral_routing_shard
+from moeatlas.store import (
+    STORE_SCHEMA_VERSION,
+    MixtralRoutingRunInventory,
+    append_mixtral_routing_shard,
+)
 
 from .test_runtime_routing_forward import _run
 
@@ -200,7 +204,16 @@ def test_inventory_serialization_and_writer_control_flow_are_exact(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     inventory = MixtralRoutingRunInventory(
-        "1.0", "mixtral_routing_run_inventory", "1.0", "1.0", 0, 0, 0, 0, 0, ()
+        "1.0",
+        "mixtral_routing_run_inventory",
+        STORE_SCHEMA_VERSION,
+        "1.0",
+        0,
+        0,
+        0,
+        0,
+        0,
+        (),
     )
 
     class SerializationFailure:

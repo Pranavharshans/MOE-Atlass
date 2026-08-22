@@ -25,8 +25,13 @@ from typing import Any
 
 from ..core import ComponentKind, parse_component_key
 from ..discovery import DiscoveryReport
-from ..event_validation import fresh_routing_events, fresh_token_events
-from ..events import RoutingEvent, TokenEvent
+from ..event_validation import (
+    fresh_expert_events,
+    fresh_routing_events,
+    fresh_token_events,
+    validate_expert_links,
+)
+from ..events import ExpertEvent, RoutingEvent, TokenEvent
 from ..probe import (
     CaptureMode,
     CapturePolicy,
@@ -42,6 +47,8 @@ from ..probe import (
 _STAGES = frozenset({"preflight", "resolution", "decode", "events", "lifecycle"})
 
 _CONFIG_SCORE_KEYS = ("score_function", "routing_norm")
+
+_DEFAULT_MAX_EXPERT_EVENTS = 65536
 
 
 class StructuredCaptureError(RuntimeError):
@@ -89,6 +96,28 @@ class StructuredRouterTarget:
                 raise ValueError(f"{name} must be a non-negative integer")
         if self.routed_top_k <= 0 or self.routed_top_k > len(self.expert_keys):
             raise ValueError("routed_top_k must be positive within the expert count")
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredExpertTarget:
+    """One generic expert hook target derived purely from structure evidence."""
+
+    module_path: str
+    component_key: str
+    layer_key: str
+    layer_index: int
+
+    def __post_init__(self) -> None:
+        for name in ("module_path", "component_key", "layer_key"):
+            value = getattr(self, name)
+            if type(value) is not str or not value:
+                raise TypeError(f"{name} must be a non-empty string")
+        parse_component_key(self.component_key)
+        parse_component_key(self.layer_key)
+        if type(self.layer_index) is not int or isinstance(self.layer_index, bool):
+            raise ValueError("layer_index must be a strict integer")
+        if self.layer_index < 0:
+            raise ValueError("layer_index must be non-negative")
 
 
 def _fresh_report(value: object) -> DiscoveryReport:
@@ -183,6 +212,141 @@ def structured_router_targets(report: DiscoveryReport) -> tuple[StructuredRouter
             )
         )
     return tuple(targets)
+
+
+def structured_expert_targets(report: DiscoveryReport) -> tuple[StructuredExpertTarget, ...]:
+    """Resolve one generic expert hook target per routed expert component.
+
+    The routing universe from :func:`structured_router_targets` drives every
+    count; each discovered expert component key must bind exactly one expert
+    module path, and the resulting targets are ordered by layer index and
+    zero-based expert index. Shared-expert components never appear because the
+    router universe only publishes routed experts.
+    """
+
+    fresh = _fresh_report(report)
+    router_targets = structured_router_targets(fresh)
+    components = {
+        component.component_key: component
+        for component in fresh.components
+        if component.kind is ComponentKind.EXPERT
+    }
+    targets: list[StructuredExpertTarget] = []
+    seen_paths: set[str] = set()
+    for router_target in sorted(router_targets, key=lambda target: target.layer_index):
+        for expert_key in router_target.expert_keys:
+            component = components.get(expert_key)
+            if component is None:
+                raise StructuredCaptureError(
+                    "resolution",
+                    f"routed expert {expert_key!r} is missing an expert component",
+                )
+            if type(component.module_path) is not str or not component.module_path:
+                raise StructuredCaptureError(
+                    "resolution",
+                    f"expert {expert_key!r} does not publish a module path",
+                )
+            if component.module_path in seen_paths:
+                raise StructuredCaptureError(
+                    "resolution",
+                    f"module path {component.module_path!r} hosts more than one routed expert",
+                )
+            seen_paths.add(component.module_path)
+            targets.append(
+                StructuredExpertTarget(
+                    module_path=component.module_path,
+                    component_key=expert_key,
+                    layer_key=router_target.layer_key,
+                    layer_index=router_target.layer_index,
+                )
+            )
+    return tuple(targets)
+
+
+def _materialized(value: object) -> object:
+    """Detach/move/cast a tensor-like value via duck-typed method chaining."""
+
+    current = value
+    for method_name in ("detach", "cpu", "float"):
+        method = getattr(current, method_name, None)
+        current = method() if callable(method) else current
+    return current
+
+
+def _flatten_finite_floats(value: object, *, what: str) -> list[float]:
+    """Recursively flatten a materialized payload into finite float values."""
+
+    current = _materialized(value)
+    tolist = getattr(current, "tolist", None)
+    if callable(tolist):
+        try:
+            current = tolist()
+        except Exception as exc:
+            raise StructuredCaptureError("decode", f"{what} payload is not materializable") from exc
+    flat: list[float] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, list | tuple):
+            for item in node:
+                walk(item)
+            return
+        if type(node) is not float or not math.isfinite(node):
+            raise StructuredCaptureError("decode", f"{what} payload entries must be finite floats")
+        flat.append(node)
+
+    try:
+        walk(current)
+    except RecursionError as exc:
+        raise StructuredCaptureError("decode", f"{what} payload nesting is too deep") from exc
+    if not flat:
+        raise StructuredCaptureError("decode", f"{what} payload must contain at least one value")
+    return flat
+
+
+def _shape_signature(value: object) -> tuple[int, ...] | None:
+    """Return the nested list shape of an already-materialized payload."""
+
+    if isinstance(value, list | tuple):
+        if not value:
+            return None
+        first = _shape_signature(value[0])
+        if first is None or any(_shape_signature(item) != first for item in value[1:]):
+            return None
+        return (len(value),) + first
+    if type(value) is float:
+        return ()
+    return None
+
+
+def decode_expert_activity(
+    inputs: object,
+    output: object,
+) -> tuple[float, float, float | None]:
+    """Decode one opaque expert hook invocation into L2 norm measurements.
+
+    The input side uses the first positional forward argument (the torch
+    forward-hook convention); norms are computed over detached, materialized
+    values without importing any model stack. ``contribution_norm`` requires
+    matching input/output shapes and is ``None`` otherwise — expert FFN blocks
+    legitimately change width.
+    """
+
+    input_value = inputs[0] if isinstance(inputs, tuple | list) and inputs else inputs
+    flat_input = _flatten_finite_floats(input_value, what="expert input")
+    flat_output = _flatten_finite_floats(output, what="expert output")
+    input_norm = math.sqrt(sum(value * value for value in flat_input))
+    output_norm = math.sqrt(sum(value * value for value in flat_output))
+    contribution_norm: float | None = None
+    input_materialized = _materialized(input_value)
+    output_materialized = _materialized(output)
+    input_shape = _shape_signature(input_materialized)
+    output_shape = _shape_signature(output_materialized)
+    if input_shape == output_shape and len(flat_input) == len(flat_output):
+        difference = (
+            out_value - in_value for in_value, out_value in zip(flat_input, flat_output)
+        )
+        contribution_norm = math.sqrt(sum(value * value for value in difference))
+    return input_norm, output_norm, contribution_norm
 
 
 def _materialize_floats(value: object) -> list[list[float]]:
@@ -398,12 +562,18 @@ def decode_structured_payload(
 
 @dataclass(frozen=True, slots=True)
 class StructuredRoutingForwardResult:
-    """Caller-owned output plus complete generic routing evidence."""
+    """Caller-owned output plus complete generic routing evidence.
+
+    ``expert_events`` carries optional per-invoked-expert activity evidence;
+    when present it revalidates and links to the captured tokens exactly like
+    routing rows do.
+    """
 
     output: object = field(repr=False)
     token_events: tuple[TokenEvent, ...]
     routing_events: tuple[RoutingEvent, ...]
     capability_notes: tuple[str, ...] = ()
+    expert_events: tuple[ExpertEvent, ...] = ()
 
     def __post_init__(self) -> None:
         fresh_tokens = fresh_token_events(self.token_events)
@@ -411,9 +581,12 @@ class StructuredRoutingForwardResult:
         for note in self.capability_notes:
             if type(note) is not str or not note or note != note.strip():
                 raise TypeError("capability_notes must be non-empty trimmed strings")
+        fresh_experts = fresh_expert_events(self.expert_events)
+        validate_expert_links(fresh_tokens, fresh_experts)
         object.__setattr__(self, "token_events", fresh_tokens)
         object.__setattr__(self, "routing_events", fresh_routes)
         object.__setattr__(self, "capability_notes", tuple(self.capability_notes))
+        object.__setattr__(self, "expert_events", fresh_experts)
 
 
 def run_structured_routing_forward(
@@ -552,11 +725,251 @@ def run_structured_routing_forward(
     )
 
 
+def run_structured_expert_forward(
+    model: object,
+    report: DiscoveryReport,
+    token_events: tuple[TokenEvent, ...],
+    model_kwargs: dict[str, object],
+    *,
+    max_events: int,
+    config: object = None,
+    max_expert_events: int = _DEFAULT_MAX_EXPERT_EVENTS,
+) -> StructuredRoutingForwardResult:
+    """Run exactly one forward with structure-driven routing AND expert capture.
+
+    Router targets decode exactly as :func:`run_structured_routing_forward`;
+    each discovered routed-expert module additionally receives one passive
+    ``EXPERT_ACTIVITY`` forward hook whose payload is reduced to input/output/
+    contribution L2 norms for the whole invocation. Every selected expert must
+    fire exactly once, every fired expert must be selected at least once, and
+    the projected expert-event count must fit ``max_expert_events`` — otherwise
+    the capture fails without publishing anything.
+    """
+
+    if not callable(model):
+        raise TypeError("model must be callable")
+    if type(max_events) is not int or isinstance(max_events, bool):
+        raise TypeError("max_events must be a strict integer")
+    if max_events <= 0:
+        raise ValueError("max_events must be positive")
+    if type(max_expert_events) is not int or isinstance(max_expert_events, bool):
+        raise TypeError("max_expert_events must be a strict integer")
+    if max_expert_events <= 0:
+        raise ValueError("max_expert_events must be positive")
+    if type(model_kwargs) is not dict:
+        raise TypeError("model_kwargs must be an exact dict")
+    for key in model_kwargs:
+        if type(key) is not str or not key or key != key.strip():
+            raise TypeError("model_kwargs keys must be non-empty trimmed exact strings")
+
+    fresh_tokens = fresh_token_events(token_events)
+    router_targets = structured_router_targets(report)
+    expert_targets = structured_expert_targets(report)
+    top_k = router_targets[0].routed_top_k
+    expected_events = len(fresh_tokens) * len(router_targets) * top_k
+    # Every selected (token, layer) pair contributes one expert event per rank.
+    expected_expert_events = expected_events
+    if max_events < expected_events:
+        raise StructuredCaptureError(
+            "preflight", "max_events is insufficient for complete structured routing capture"
+        )
+    if max_expert_events < expected_expert_events:
+        raise StructuredCaptureError(
+            "preflight",
+            "max_expert_events is insufficient for complete structured expert capture",
+        )
+
+    plan = ProbePlan(
+        level=ProbeLevel.EXPERT_ACTIVITY,
+        hook_points=(HookPoint.FORWARD,),
+        targets=(
+            *[ProbeTarget(
+                module_path=target.module_path,
+                component_key=target.component_key,
+                component_kind=ComponentKind.ROUTER,
+            ) for target in router_targets],
+            *[ProbeTarget(
+                module_path=target.module_path,
+                component_key=target.component_key,
+                component_kind=ComponentKind.EXPERT,
+            ) for target in expert_targets],
+        ),
+        capture=CapturePolicy(mode=CaptureMode.STATS, reduction=ReductionPolicy.COUNTS),
+    )
+
+    captured: dict[str, tuple[RoutingEvent, ...]] = {}
+    captured_experts: dict[str, tuple[StructuredExpertTarget, float, float, float | None]] = {}
+    notes: set[str] = set()
+
+    def callback_for(target: StructuredRouterTarget):
+        def callback(module: object, inputs: object, output: object) -> None:
+            del module, inputs
+            events, note = decode_structured_payload(
+                output,
+                target=target,
+                token_events=fresh_tokens,
+                config=config,
+            )
+            if note:
+                notes.add(note)
+            if target.module_path in captured:
+                raise StructuredCaptureError(
+                    "events", f"router {target.module_path!r} fired more than once"
+                )
+            captured[target.module_path] = events
+
+        return callback
+
+    def expert_callback_for(target: StructuredExpertTarget):
+        def callback(module: object, inputs: object, output: object) -> None:
+            del module
+            input_norm, output_norm, contribution_norm = decode_expert_activity(inputs, output)
+            if target.module_path in captured_experts:
+                raise StructuredCaptureError(
+                    "events", f"expert {target.module_path!r} fired more than once"
+                )
+            captured_experts[target.module_path] = (
+                target,
+                input_norm,
+                output_norm,
+                contribution_norm,
+            )
+
+        return callback
+
+    callbacks: dict[HookBinding, Any] = {
+        HookBinding(target.module_path, HookPoint.FORWARD): callback_for(target)
+        for target in router_targets
+    }
+    for target in expert_targets:
+        callbacks[HookBinding(target.module_path, HookPoint.FORWARD)] = expert_callback_for(target)
+    manager = HookManager(model, plan, callbacks)
+    entered = False
+    try:
+        manager.__enter__()
+        entered = True
+        output = model(**dict(model_kwargs))
+    except BaseException:
+        if entered:
+            try:
+                manager.close()
+            except Exception:
+                pass  # cleanup failures never replace the primary body exception
+        raise
+    manager.__exit__(None, None, None)
+
+    missing = [
+        target.module_path for target in router_targets if target.module_path not in captured
+    ]
+    if missing:
+        raise StructuredCaptureError(
+            "events", f"routers did not fire during the forward: {missing}"
+        )
+    ordered_targets = sorted(router_targets, key=lambda target: target.layer_index)
+    routing: list[RoutingEvent] = []
+    for target in ordered_targets:
+        routing.extend(captured[target.module_path])
+
+    token_keys = [token.token_key for token in fresh_tokens]
+    expected_pairs = {(key, target.layer_key) for key in token_keys for target in router_targets}
+    observed_pairs = {(event.token_key, event.layer_key) for event in routing}
+    if observed_pairs != expected_pairs:
+        raise StructuredCaptureError(
+            "events", "routing capture did not publish complete events for every token and layer"
+        )
+    grouped: dict[tuple[str, str], list[RoutingEvent]] = {}
+    for event in routing:
+        grouped.setdefault((event.token_key, event.layer_key), []).append(event)
+    for group in grouped.values():
+        ranks = sorted(event.rank for event in group)
+        if ranks != list(range(top_k)):
+            raise StructuredCaptureError(
+                "events",
+                f"routing capture ranks are not exactly 0..{top_k - 1}",
+            )
+        experts = [event.expert_key for event in sorted(group, key=lambda item: item.rank)]
+        if len(set(experts)) != len(experts):
+            raise StructuredCaptureError(
+                "events", "routing capture selected the same expert twice for one token"
+            )
+
+    # Expert completeness: every fired expert must be bound to a known routed
+    # expert of its layer and selected by at least one token; every selected
+    # (layer, expert) pair must have fired exactly once.
+    layer_by_key = {target.layer_key: target.layer_index for target in router_targets}
+    experts_by_layer: dict[str, tuple[str, ...]] = {}
+    for target in expert_targets:
+        experts_by_layer.setdefault(target.layer_key, ())
+        experts_by_layer[target.layer_key] = experts_by_layer[target.layer_key] + (
+            target.component_key,
+        )
+    fired_by_layer: dict[str, dict[str, tuple[float, float, float | None]]] = {}
+    for module_path, (target, input_norm, output_norm, contribution_norm) in (
+        captured_experts.items()
+    ):
+        known = experts_by_layer.get(target.layer_key, ())
+        if target.component_key not in known or target.layer_key not in layer_by_key:
+            raise StructuredCaptureError(
+                "events",
+                f"fired expert {module_path!r} is outside the discovered routing universe",
+            )
+        fired_by_layer.setdefault(target.layer_key, {})[target.component_key] = (
+            input_norm,
+            output_norm,
+            contribution_norm,
+        )
+    selected_pairs: set[tuple[str, str]] = set()
+    for event in routing:
+        selected_pairs.add((event.layer_key, event.expert_key))
+    for pair in sorted(selected_pairs):
+        if pair[1] not in fired_by_layer.get(pair[0], {}):
+            raise StructuredCaptureError(
+                "events",
+                f"selected expert at layer {pair[0]!r} did not fire during the forward",
+            )
+
+    expert_events: list[ExpertEvent] = []
+    for target in sorted(expert_targets, key=lambda item: item.layer_index):
+        norms = fired_by_layer[target.layer_key][target.component_key]
+        selected_tokens = [
+            event.token_key
+            for event in routing
+            if event.layer_key == target.layer_key and event.expert_key == target.component_key
+        ]
+        if not selected_tokens:
+            # An expert module legitimately fires without any captured token
+            # selecting it (batch dispatch); it contributes no events.
+            continue
+        for token_key in selected_tokens:
+            expert_events.append(
+                ExpertEvent(
+                    token_key=token_key,
+                    expert_key=target.component_key,
+                    input_norm=norms[0],
+                    output_norm=norms[1],
+                    contribution_norm=norms[2],
+                    metadata={"invocation_token_count": len(selected_tokens)},
+                )
+            )
+
+    return StructuredRoutingForwardResult(
+        output=output,
+        token_events=fresh_tokens,
+        routing_events=tuple(routing),
+        capability_notes=tuple(sorted(notes)),
+        expert_events=tuple(expert_events),
+    )
+
+
 __all__ = [
     "StructuredCaptureError",
-    "StructuredRoutingForwardResult",
+    "StructuredExpertTarget",
     "StructuredRouterTarget",
+    "StructuredRoutingForwardResult",
+    "decode_expert_activity",
     "decode_structured_payload",
+    "run_structured_expert_forward",
     "run_structured_routing_forward",
+    "structured_expert_targets",
     "structured_router_targets",
 ]

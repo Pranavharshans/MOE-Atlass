@@ -51,3 +51,28 @@ These contracts do not capture tensors, install hooks, write Parquet/DuckDB,
 run inference, derive model values, or provide a storage engine. Those runtime
 and persistence responsibilities remain later feature boundaries and the real
 PyTorch/GPU validation remains deferred in the [validation ledger](model-validation-ledger.md).
+
+## Expert event runtime capture (R3.1)
+
+The `ExpertEvent` contract has a runtime producer: the structure-driven expert
+capture in `moeatlas.runtime.generic_capture`. `structured_expert_targets()`
+resolves one generic hook target per routed-expert component from a static
+`[STRUCTURE]` report — the routing universe drives every count, shared experts
+are excluded by kind, and no adapter name or module-path convention appears
+anywhere. `run_structured_expert_forward()` attaches router decode hooks plus
+passive `EXPERT_ACTIVITY` forward hooks through the existing `HookManager`
+plumbing, runs exactly one caller-owned forward, and reduces each expert
+invocation to L2 norms via duck-typed tensor access (`detach/cpu/float/tolist`);
+no model stack is imported.
+
+Each fired invocation records `input_norm`, `output_norm`, and — when input
+and output shapes match — `contribution_norm`; width-changing FFN blocks
+honestly leave `contribution_norm` null. One `ExpertEvent` is published per
+selected (token, expert) pair referencing that invocation's norms, with the
+invoked batch size recorded under metadata (`latency_ms` stays null because a
+passive post-forward hook cannot observe per-invocation wall time). Capture is
+all-or-nothing: every selected expert must fire exactly once, routers must
+fire once, and the projected event count must fit the strict
+`max_expert_events` budget, otherwise nothing is published. Events land on
+the result value as `expert_events` alongside routing evidence and are stored
+through `append_structured_shard` (see [storage](storage.md)).

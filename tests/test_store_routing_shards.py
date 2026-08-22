@@ -103,7 +103,11 @@ def test_qwen35_result_round_trips_through_historical_store_surface(tmp_path: Pa
     assert manifest["manifest_type"] == "routing_shard"
     assert manifest["store_schema_version"] == STORE_SCHEMA_VERSION
     assert manifest["event_schema_version"] == result.token_events[0].schema_version
-    assert set(manifest["files"]) == {"tokens.parquet", "routing.parquet"}
+    assert set(manifest["files"]) == {
+        "tokens.parquet",
+        "routing.parquet",
+        "experts.parquet",
+    }
     again = append_mixtral_routing_shard(workspace, result)
     assert again.created is False
     assert again.shard_key == receipt.shard_key
@@ -209,6 +213,7 @@ def test_public_append_list_reopen_and_idempotence(layout: str, tmp_path: Path) 
         "manifest.json",
         "tokens.parquet",
         "routing.parquet",
+        "experts.parquet",
     }
     if os.name == "posix":
         managed_directories = (
@@ -251,6 +256,7 @@ def test_exact_manifest_and_physical_schemas_and_values(tmp_path: Path) -> None:
         "token_text_stored",
         "token_count",
         "routing_count",
+        "expert_count",
         "writer_name",
         "writer_version",
         "files",
@@ -259,7 +265,11 @@ def test_exact_manifest_and_physical_schemas_and_values(tmp_path: Path) -> None:
     assert manifest["store_schema_version"] == STORE_SCHEMA_VERSION
     assert manifest["writer_name"] == "duckdb"
     assert manifest["token_text_stored"] is True
-    assert set(manifest["files"]) == {"tokens.parquet", "routing.parquet"}
+    assert set(manifest["files"]) == {
+        "tokens.parquet",
+        "routing.parquet",
+        "experts.parquet",
+    }
     assert all(
         set(info) == {"name", "bytes", "sha256"}
         and info["name"] == name
@@ -500,7 +510,7 @@ def test_manifest_shape_identity_and_checksums_are_strict(tmp_path: Path, tamper
     elif tamper == "manifest_type":
         payload["manifest_type"] = "other"
     elif tamper == "store_schema_version":
-        payload["store_schema_version"] = "2.0"
+        payload["store_schema_version"] = "3.0"
     elif tamper == "event_schema_version":
         payload["event_schema_version"] = "2.0"
     elif tamper == "shard_key":
@@ -625,7 +635,7 @@ def test_valid_checksum_parquet_tampering_reaches_exact_reopen_validation(
         elif tamper == "noncontiguous_event_index":
             mutable[0][2] = 7
         elif tamper == "token_store_schema_version":
-            mutable[0][0] = "2.0"
+            mutable[0][0] = "3.0"
         elif tamper == "token_shard_key":
             mutable[0][1] = "shard:" + "0" * 64
         elif tamper == "token_schema_version":
@@ -646,7 +656,7 @@ def test_valid_checksum_parquet_tampering_reaches_exact_reopen_validation(
         if tamper == "selected_false":
             mutable[0][12] = False
         elif tamper == "routing_store_schema_version":
-            mutable[0][0] = "2.0"
+            mutable[0][0] = "3.0"
         elif tamper == "routing_shard_key":
             mutable[0][1] = "shard:" + "0" * 64
         elif tamper == "routing_schema_version":
@@ -965,7 +975,7 @@ def test_post_rename_parent_fsync_failure_recovers_by_idempotent_retry(
     def fail_parent_only(fd: int) -> None:
         nonlocal calls
         calls += 1
-        if calls == 6:
+        if calls == 7:
             raise OSError("injected parent fsync failure")
         original_fsync(fd)
 
@@ -1214,7 +1224,8 @@ def test_sql_is_literal_parameterized_and_parquet_uses_relation_path_api() -> No
 
 
 def test_public_signatures_and_no_output_serialization() -> None:
-    assert STORE_SCHEMA_VERSION == "1.0"
+    assert STORE_SCHEMA_VERSION == "2.0"
+    assert storage.LEGACY_STORE_SCHEMA_VERSION == "1.0"
     assert tuple(inspect.signature(append_mixtral_routing_shard).parameters) == (
         "workspace",
         "result",

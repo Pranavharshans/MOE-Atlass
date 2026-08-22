@@ -136,10 +136,10 @@ def test_inventory_constructor_invariant_matrix() -> None:
         "runs": (summary,),
     }
     for field, value in (
-        ("schema_version", "2.0"),
+        ("schema_version", "9.9"),
         ("manifest_type", "other"),
-        ("store_schema_version", "2.0"),
-        ("event_schema_version", "2.0"),
+        ("store_schema_version", "3.0"),
+        ("event_schema_version", "9.9"),
         ("run_count", True),
         ("shard_count", -1),
         ("token_count", 1.0),
@@ -205,7 +205,12 @@ def test_multi_run_multi_shard_order_bytes_and_mixed_redaction(tmp_path: Path) -
         shard = workspace / item.relative_path
         expected_bytes += sum(
             (shard / name).stat().st_size
-            for name in ("manifest.json", "tokens.parquet", "routing.parquet")
+            for name in (
+                "manifest.json",
+                "tokens.parquet",
+                "routing.parquet",
+                "experts.parquet",
+            )
         )
     assert inventory.source_bytes == expected_bytes
 
