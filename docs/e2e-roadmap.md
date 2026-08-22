@@ -99,6 +99,12 @@ Expose artifacts over HTTP so the frontend has one API.
 
 The local single-page app consuming R4.
 
+The new React/TypeScript research console source is now landed under
+`frontend/`: it opens directly on model/dataset intake, supports optional
+public Hub suggestions, and treats an in-VM/provider HTTP runner as the
+remote path. It deliberately has no SSH onboarding page. Packaging that
+bundle into the `moeatlas ui` static mount remains a release-engineering gate.
+
 - R5.1 Model view: architecture report (family, layers, experts, top-k,
   router paths) straight from the scan document.
 - R5.2 Runs view: catalog runs, event counts, state filters (endpoints exist).

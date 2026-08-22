@@ -13,6 +13,12 @@ from .datasets import (
     resolve_dataset_location,
     validate_column_mapping,
 )
+from .hub import (
+    HUB_SEARCH_SCHEMA_VERSION,
+    HubSearchEntry,
+    HubSearchError,
+    search_hub,
+)
 from .retention import (
     RETENTION_SCHEMA_VERSION,
     RetentionError,
@@ -66,6 +72,7 @@ __all__ = [
     "CHECKPOINT_SCHEMA_VERSION",
     "DATASET_COLUMN_ROLES",
     "DATASET_READER_SCHEMA_VERSION",
+    "HUB_SEARCH_SCHEMA_VERSION",
     "EXECUTION_PROGRESS_STAGE",
     "ROW_FAILURE_KINDS",
     "RUN_ENGINE_SCHEMA_VERSION",
@@ -78,6 +85,8 @@ __all__ = [
     "RetentionPolicy",
     "evaluate_retention",
     "DatasetRow",
+    "HubSearchEntry",
+    "HubSearchError",
     "ExecutionOutcome",
     "RowFailure",
     "RowRecord",
@@ -106,6 +115,7 @@ __all__ = [
     "record_run_record",
     "register_run",
     "resolve_dataset_location",
+    "search_hub",
     "sync_runs_from_shards",
     "validate_column_mapping",
 ]

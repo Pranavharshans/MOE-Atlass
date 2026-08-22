@@ -6,9 +6,10 @@ registry) and owns no orchestration of its own. FastAPI is an optional
 dependency imported only inside :func:`create_app`; the wire DTOs in
 :mod:`moeatlas.server.dto` stay importable without it.
 
-The app is read-only and local-first: no model loading, no downloads, no
-network egress, no storage writes. Failures carry fixed safe details that
-never echo input contents.
+The app is read-only and local-first: it performs no model loading, dataset
+downloads, or storage writes. Public Hub metadata is fetched only for an
+explicit ``/api/hub/search`` request, with a fixed HTTPS origin and bounded
+results. Failures carry fixed safe details that never echo input contents.
 """
 
 from __future__ import annotations
@@ -77,6 +78,8 @@ def create_app(
         AdapterEntryResponse,
         AdaptersResponse,
         HealthResponse,
+        HubSearchEntryResponse,
+        HubSearchResponse,
         RoutingShardEntryResponse,
         RunDetailResponse,
         RunEntryResponse,
@@ -174,6 +177,46 @@ def create_app(
             package_version=__version__,
             python_version=sys.version.split()[0],
             model_validation_status="deferred",
+        )
+
+    @app.get("/api/hub/search", response_model=HubSearchResponse)
+    def hub_search(
+        kind: str = Query(default="model"),
+        q: str = Query(default=""),
+        limit: int = Query(default=6, ge=1, le=10),
+    ) -> HubSearchResponse:
+        """Return bounded public suggestions after an explicit UI query."""
+
+        from ..services.hub import HubSearchError, search_hub
+
+        try:
+            entries = search_hub(kind, q, limit=limit)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400, detail="invalid Hugging Face search request"
+            ) from exc
+        except HubSearchError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        normalized_kind = kind if kind in {"model", "dataset"} else "model"
+        return HubSearchResponse(
+            schema_version="1.0",
+            kind=normalized_kind,
+            query=q.strip(),
+            count=len(entries),
+            entries=tuple(
+                HubSearchEntryResponse(
+                    identifier=entry.identifier,
+                    kind=entry.kind,
+                    author=entry.author,
+                    downloads=entry.downloads,
+                    likes=entry.likes,
+                    pipeline_tag=entry.pipeline_tag,
+                    library_name=entry.library_name,
+                    tags=entry.tags,
+                    last_modified=entry.last_modified,
+                )
+                for entry in entries
+            ),
         )
 
     @app.get("/api/workspace", response_model=WorkspaceResponse)

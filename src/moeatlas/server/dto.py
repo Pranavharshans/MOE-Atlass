@@ -8,6 +8,8 @@ the server layer owns no orchestration of its own.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -95,10 +97,36 @@ class AdaptersResponse(_WireModel):
     failures: tuple[tuple[str, str], ...] = Field(default_factory=tuple)
 
 
+class HubSearchEntryResponse(_WireModel):
+    """Bounded public metadata for one model or dataset suggestion."""
+
+    identifier: str
+    kind: Literal["model", "dataset"]
+    author: str | None = None
+    downloads: int | None = None
+    likes: int | None = None
+    pipeline_tag: str | None = None
+    library_name: str | None = None
+    tags: tuple[str, ...] = Field(default_factory=tuple)
+    last_modified: str | None = None
+
+
+class HubSearchResponse(_WireModel):
+    """Response for an explicit public Hugging Face search request."""
+
+    schema_version: str
+    kind: Literal["model", "dataset"]
+    query: str
+    count: int
+    entries: tuple[HubSearchEntryResponse, ...] = Field(default_factory=tuple)
+
+
 __all__ = [
     "AdapterEntryResponse",
     "AdaptersResponse",
     "HealthResponse",
+    "HubSearchEntryResponse",
+    "HubSearchResponse",
     "RoutingShardEntryResponse",
     "RunDetailResponse",
     "RunEntryResponse",

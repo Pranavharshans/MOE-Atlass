@@ -26,3 +26,4 @@ dist/
 
 # Agent/editor local state
 .claude/
+.playwright-cli/

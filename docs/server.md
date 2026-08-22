@@ -4,8 +4,8 @@ The optional `server` layer is a thin, read-only FastAPI application over
 the same shared services the CLI uses. It owns no orchestration of its
 own: every endpoint delegates to workspace/catalog services or the adapter
 registry, carries fixed safe error details that never echo input contents,
-and never loads a model, downloads anything, writes to storage, or opens a
-network egress path.
+and never loads a model, downloads a checkpoint, or writes to storage. The
+explicit public Hub search endpoint is the only metadata egress path.
 
 FastAPI is an optional dependency (`pip install moeatlas[server]`). The
 wire DTOs in `moeatlas.server.dto` stay importable without it;
@@ -45,6 +45,10 @@ All endpoints are GET and read-only:
   documents report the fixed byte-budget failure.
 - `/api/adapters` — the versioned adapter plugin registry listing with
   provenance, policy status, collisions, and isolated failures.
+- `/api/hub/search?kind=model|dataset&q=...&limit=...` — bounded public
+  Hugging Face suggestions for the research console. This endpoint is called
+  only after a user types a query; it accepts no arbitrary URL or browser
+  token, and exact IDs remain usable when public search is unavailable.
 
 The application is built with documentation routes disabled
 (`docs_url=None`, `redoc_url=None`, `openapi_url=None`) so no unbounded
@@ -54,13 +58,17 @@ schema surface is exposed.
 
 `create_app()` mounts the packaged single-page frontend from
 `moeatlas/server/static/` at `/` **after** every API route, so `/healthz`
-and `/api/*` always take precedence. The assets are dependency-free vanilla
-HTML/CSS/JS: no npm/node build chain, no CDN links, and no external
-resources of any kind (the repo stays offline-first). Static responses are
-served with `Cache-Control: no-store` so local development always observes
-freshly served bytes; API responses are untouched by that header. The mount
-is skipped when the static directory is absent (for example in stripped
-installations), which leaves the pure-API surface unchanged.
+and `/api/*` always take precedence. Static responses are served with
+`Cache-Control: no-store` so local development always observes freshly served
+bytes; API responses are untouched by that header. The mount is skipped when
+the static directory is absent (for example in stripped installations), which
+leaves the pure-API surface unchanged.
+
+The current React/TypeScript research console source lives in `frontend/` and
+uses the same relative API surface. Its Vite development server proxies
+`/api` and `/healthz` to a local `moeatlas ui` process; the production asset
+packaging/mount step remains a separate release gate so the legacy static
+contract is not silently replaced mid-run.
 
 The frontend is hash-routed (`#/workspace`, `#/runs`, `#/runs/{run_key}`,
 `#/heatmap[/{run_key}]`) and consumes only the read-only endpoints above.
