@@ -18,7 +18,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 
-type NavigationItem = "analysis" | "runs" | "settings";
+type NavigationItem = "analysis" | "discovery" | "runs" | "settings";
 type RunnerMode = "local" | "remote";
 type HubKind = "model" | "dataset";
 type SearchState = "idle" | "loading" | "ready" | "unavailable";
@@ -59,6 +59,7 @@ const DEFAULT_RUNNER: RunnerDraft = { mode: "local", endpoint: "" };
 
 const NAVIGATION: Array<{ id: NavigationItem; label: string; icon: Icon }> = [
   { id: "analysis", label: "Analysis", icon: Plus },
+  { id: "discovery", label: "Discover", icon: GitBranch },
   { id: "runs", label: "Runs", icon: Pulse },
   { id: "settings", label: "Settings", icon: GearSix },
 ];
@@ -352,7 +353,7 @@ function RunnerBoundary({ value, onChange }: { value: RunnerDraft; onChange: (va
   );
 }
 
-function AnalysisPage({ runner, setRunner }: { runner: RunnerDraft; setRunner: (value: RunnerDraft) => void }) {
+function AnalysisPage({ runner, setRunner, onNavigate }: { runner: RunnerDraft; setRunner: (value: RunnerDraft) => void; onNavigate: (item: NavigationItem) => void }) {
   const [sources, setSources] = useState<SourceDraft>(() => readStored("moeatlas-analysis-sources", DEFAULT_SOURCES));
   const [queued, setQueued] = useState(false);
   const modelError = useMemo(() => validateHubId(sources.modelId, "Model ID"), [sources.modelId]);
@@ -415,7 +416,69 @@ function AnalysisPage({ runner, setRunner }: { runner: RunnerDraft; setRunner: (
           <button type="button" className="button-primary w-full justify-between" disabled={!ready} onClick={queueDiscovery}>
             {queued ? "Discovery contract saved" : "Queue discovery"}<ArrowRight size={16} weight="bold" />
           </button>
-          {queued ? <p className="rounded-xl border border-cyan/25 bg-cyan/[0.06] p-3 text-xs leading-5 text-cyan" role="status">Sources are saved locally for the next discovery step. No model or dataset has been loaded yet.</p> : null}
+          {queued ? <div className="space-y-2" role="status"><p className="rounded-xl border border-cyan/25 bg-cyan/[0.06] p-3 text-xs leading-5 text-cyan">Sources are saved locally for the next discovery step. No model or dataset has been loaded yet.</p><button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("discovery")}>Open preflight <ArrowRight size={16} /></button></div> : null}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function GateRow({ label, detail, tone = "quiet" }: { label: string; detail: string; tone?: "good" | "quiet" | "warn" }) {
+  return (
+    <div className="gate-row">
+      <div className="flex min-w-0 items-center gap-2"><StatusDot tone={tone} /><span className="truncate text-xs font-medium text-white">{label}</span></div>
+      <span className="shrink-0 font-mono text-[0.62rem] text-muted">{detail}</span>
+    </div>
+  );
+}
+
+function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => void }) {
+  const [sources] = useState<SourceDraft>(() => readStored("moeatlas-analysis-sources", DEFAULT_SOURCES));
+  const [runner] = useState<RunnerDraft>(() => readStored("moeatlas-runner", DEFAULT_RUNNER));
+  const [staged, setStaged] = useState(() => window.localStorage.getItem("moeatlas-preflight-staged") === "true");
+  const hasContract = !validateHubId(sources.modelId, "Model ID") && !validateHubId(sources.datasetId, "Dataset ID");
+
+  if (!hasContract) {
+    return (
+      <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><GitBranch size={21} /></div><h1 className="mt-5 font-display text-3xl font-semibold tracking-[-0.04em] text-white">No discovery contract.</h1><p className="mt-3 max-w-[43ch] text-center text-sm leading-6 text-muted">Bind a model and dataset on the analysis surface before asking the runtime to inspect anything.</p><button type="button" className="button-primary mt-6" onClick={() => onNavigate("analysis")}>Back to analysis <ArrowRight size={16} weight="bold" /></button></section>
+    );
+  }
+
+  function stagePreflight() {
+    window.localStorage.setItem("moeatlas-preflight-staged", "true");
+    setStaged(true);
+  }
+
+  return (
+    <div className="space-y-6">
+      <header className="research-header">
+        <div><p className="label-caps text-[0.61rem] text-signal">Discovery / Preflight</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Read the runtime before the run.</h1><p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">This envelope shows what will be inspected and what still requires the selected GPU runner. A staged contract is not model evidence.</p></div>
+        <div className="research-header-meta"><StatusDot tone={staged ? "good" : "quiet"} /><span>{staged ? "Preflight staged" : "Runtime inspection pending"}</span></div>
+      </header>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
+        <main className="space-y-5">
+          <section className="research-card">
+            <div className="flex items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Bound identity</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Provenance envelope</h2></div><ShieldCheck size={19} className="text-cyan" /></div>
+            <dl className="contract-grid mt-6">
+              <div><dt>Model ID</dt><dd>{sources.modelId}</dd></div>
+              <div><dt>Model revision</dt><dd>{sources.modelRevision.trim() || "main"}</dd></div>
+              <div><dt>Dataset ID</dt><dd>{sources.datasetId}</dd></div>
+              <div><dt>Dataset revision</dt><dd>{sources.datasetRevision?.trim() || "main"}</dd></div>
+              <div><dt>Dataset config</dt><dd>{sources.datasetConfig.trim() || "default"}</dd></div>
+              <div><dt>Dataset split</dt><dd>{sources.datasetSplit.trim() || "train"}</dd></div>
+              <div><dt>Execution target</dt><dd>{runner.mode === "local" ? "this machine" : runner.endpoint.trim() || "in-VM console"}</dd></div>
+            </dl>
+          </section>
+          <section className="research-card">
+            <div className="flex items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Inspection gates</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">What the runner must prove</h2></div><GitBranch size={19} className="text-cyan" /></div>
+            <div className="mt-5 divide-y divide-line"><GateRow label="Model configuration" detail="runtime read" /><GateRow label="MoE topology" detail="STRUCTURE pending" /><GateRow label="Router payload shape" detail="DECODE pending" /><GateRow label="Dataset schema" detail="READ pending" /><GateRow label="Immutable revision evidence" detail="RESOLVE pending" /></div>
+          </section>
+        </main>
+        <aside className="space-y-5">
+          <section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Resource envelope</p><Database size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Weights</dt><dd>not measured</dd></div><div><dt>Accelerator</dt><dd>{runner.mode === "local" ? "local probe" : "provider probe"}</dd></div><div><dt>Rows</dt><dd>bounded later</dd></div><div><dt>Capture</dt><dd>off</dd></div></dl></section>
+          <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Evidence rule</p></div><p className="mt-4 text-xs leading-5 text-muted">Discovery can report topology and router seams. It must not label routing as captured until a real forward produces validated events.</p></section>
+          <button type="button" className="button-primary w-full justify-between" onClick={stagePreflight}>{staged ? "Preflight staged" : "Stage runtime preflight"}<ArrowRight size={16} weight="bold" /></button>
+          {staged ? <p className="rounded-xl border border-cyan/25 bg-cyan/[0.06] p-3 text-xs leading-5 text-cyan" role="status">Intent is saved locally. No model, dataset, or GPU process was started by this browser action.</p> : null}
         </aside>
       </div>
     </div>
@@ -456,7 +519,7 @@ function SettingsPage({ runner, setRunner }: { runner: RunnerDraft; setRunner: (
 export function App() {
   const [active, setActive] = useState<NavigationItem>("analysis");
   const [runner, setRunner] = useState<RunnerDraft>(() => readStored("moeatlas-runner", DEFAULT_RUNNER));
-  const content = active === "analysis" ? <AnalysisPage runner={runner} setRunner={setRunner} /> : active === "runs" ? <RunsPage /> : <SettingsPage runner={runner} setRunner={setRunner} />;
+  const content = active === "analysis" ? <AnalysisPage runner={runner} setRunner={setRunner} onNavigate={setActive} /> : active === "discovery" ? <DiscoveryPage onNavigate={setActive} /> : active === "runs" ? <RunsPage /> : <SettingsPage runner={runner} setRunner={setRunner} />;
 
   return (
     <div className="app-shell min-h-screen">
@@ -464,7 +527,7 @@ export function App() {
         <aside className="hidden w-[14.5rem] shrink-0 flex-col border-r border-line px-5 py-6 lg:flex">
           <AppMark />
           <div className="mt-12"><p className="label-caps px-3 text-[0.58rem] text-muted">Observe</p><nav className="mt-3 space-y-1" aria-label="Primary navigation">{NAVIGATION.map((item) => { const Icon = item.icon; const selected = active === item.id; return <button type="button" key={item.id} className={`nav-item ${selected ? "nav-item-active" : ""}`} onClick={() => setActive(item.id)} aria-current={selected ? "page" : undefined}><Icon size={18} weight={selected ? "fill" : "regular"} />{item.label}</button>; })}</nav></div>
-          <div className="mt-auto rounded-2xl border border-line bg-panel/60 p-4"><div className="flex items-center gap-2"><StatusDot /><span className="text-xs font-medium text-white">Local-first workspace</span></div><p className="mt-2 text-xs leading-5 text-muted">Contracts and artifacts stay beside the workspace.</p></div>
+          <div className="mt-auto flex items-center justify-between px-1 text-[0.68rem] text-muted"><span>MoEAtlas</span><span>v0.1.0</span></div>
         </aside>
         <main className="min-w-0 flex-1 px-4 py-4 sm:px-7 sm:py-6 lg:px-10">
           <header className="mb-9 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3 lg:hidden"><AppMark /></div><div className="hidden items-center gap-2 text-xs text-muted lg:flex"><span className="text-white">MoEAtlas</span><span className="text-muted/40">/</span><span>{NAVIGATION.find((item) => item.id === active)?.label}</span></div><div className="ml-auto flex items-center gap-3"><div className="runtime-pill"><StatusDot /><span>{runner.mode === "local" ? "Local runtime" : "Provider runtime"}</span></div><span className="hidden font-mono text-[0.62rem] text-muted sm:inline">schema 1.0</span></div></header>
