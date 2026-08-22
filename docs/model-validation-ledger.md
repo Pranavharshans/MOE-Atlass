@@ -246,20 +246,68 @@ Fill this section only when the VM is provisioned. Do not replace the
 `deferred` status with an assumption.
 
 ```text
-VM/provider:
-Date (UTC):
-OS / architecture:
-Python:
-MoEAtlas commit/tag:
-PyTorch / Transformers / safetensors:
-GPU / driver / CUDA:
+VM/provider: vast.ai instance 48352897 (machine 17422), RTX 3090 container image cuda-12.4.1-auto
+Date (UTC): 2026-08-22
+OS / architecture: Ubuntu 22.04.5 LTS, x86_64 (unprivileged Docker container)
+Python: 3.11.16 (uv-managed venv)
+MoEAtlas commit/tag: working tree synced @ local commit 87b508cb5d92d61f051c7dfaa411e9a1eee599d2
+PyTorch / Transformers / safetensors: torch 2.6.0+cu124 / transformers 5.15.0 / safetensors 0.8.0
+  (accelerate 1.14.0, bitsandbytes 0.50.1, duckdb 1.4.5, pydantic 2.13.4)
+GPU / driver / CUDA: NVIDIA GeForce RTX 3090 24GB (capability 8,6) / driver 550.144.03 / CUDA 12.4 (nvcc V12.4.131)
 Model ID and immutable revision:
-Tokenizer ID and revision:
-Commands:
-Artifacts and logs:
+  - unsloth/Qwen3-30B-A3B-bnb-4bit @ e1b99b50cfb1b2381489585b53ad96858a09853b (bnb NF4 — BROKEN as-shipped, see below)
+  - inclusionAI/Ling-3.0-tiny @ b61f4338de3e68ffc9c0bc1ed5e902981a4a929e (bf16, BailingMoeV3ForCausalLM / bailing_hybrid)
+  - amd/Instella-MoE-16B-A3B-Think @ fe339bc1a946… (bf16, native deepseek_v3 class)
+Tokenizer ID and revision: each model's snapshot-pinned tokenizer at the revisions above
+Commands: see vm-evidence/scripts/ on the VM and per-phase logs listed below
+Artifacts and logs: /root/moeatlas/vm-evidence/ (lint.log, unittest.log, build.log, env.log,
+  st-checks.log, mv06-cuda.log, provenance.log, model-download.log, model-verify.log,
+  ling-mv01..mv07 logs/json, instella-*.log/json, mv08-wheel-tests.log, mv07-qwen-bnb-broken.log)
 Results:
+  - CI-equivalent gates on Linux VM: pytest 2478 passed; ruff clean; unittest discovery OK;
+    wheel+sdist built.
+  - ST-01..ST-03: 21/21 sub-checks PASS on overlay filesystem (legacy+packed shards, reopen/list,
+    idempotence/conflict, tamper detection, crash-injection cleanup, modes 0700/0600).
+  - MV-06: CUDA validated (torch.cuda.is_available()=True, device/capability recorded).
+  - MV-01/MV-02 (generic-fallback lane): Ling auto-discovered experts 128==config, top-k 8==config,
+    shared 1, 23 routers, [STRUCTURE]-only tier with honest warnings; certified adapters correctly
+    rejected it. Instella auto-discovered experts 64==64, top-k 6==6, shared 2==2 via the same
+    universal seam with ZERO per-model code — generic scanner universality confirmed on a third
+    foreign architecture.
+  - MV-03..MV-05 (caller-owned lane, no certified adapter): Ling routing capture 2392/2392 complete
+    events, ids∈[0,128), golden sigmoid+bias+group-limited top-k recompute matched; passive hook
+    equivalence bitwise identical (max_abs_diff 0.0); overhead +0.545% mean latency, peak VRAM 14.73GiB.
+  - MV-07: two paths recorded — (a) Qwen3-bnb NF4 quantized path BROKEN as-shipped under
+    transformers 5.15 (packed fused expert uint8 Parameters receive no quant_state; 93,360 quant
+    metadata keys reported UNEXPECTED); no reconstruction attempted per decision; (b) native bf16
+    path fully functional including fused Triton kernels (fla-core 0.5.2) for hybrid attention.
+  - MV-08: wheel sha256 93744dba532ac58122055e5fb5ee0e146a3f8ee5ec3099f423755e4ea4a05452;
+    isolated venv install → 2403 passed (+45 subtests); 145 expected out-of-tree failures are
+    source-introspection guards requiring the checkout tree; no functional/artifact failures.
 Known limitations:
+  - No certified adapter family was exercised against a real checkpoint in this run; all real-model
+    discovery used the generic static fallback and all capture was explicitly caller-owned. MV-01
+    through MV-05 remain `deferred` for the certified-family matrix (Mixtral/Qwen3/DeepSeek/MiniMax).
+  - The unsloth bnb-4bit export of Qwen3-30B-A3B cannot execute under transformers 5.15; a non-broken
+    quantized checkpoint is required before any MV-07 pass can be claimed for that lane.
+  - load_instance rejects a live transformers PretrainedConfig object
+    (`config.id2label object keys must be strings`) while accepting the plain config.json mapping —
+    product seam fix pending.
 ```
+
+### 2026-08-22 status annotations
+
+- MV-01..MV-05: stay `deferred` (generic-fallback and caller-owned evidence above does not satisfy
+  the certified-adapter requirements of these rows).
+- MV-06: CUDA environment validation evidence collected; row completion still requires the
+  certified-family command/log set.
+- MV-07: quantized-path lane has an explicit FAIL record (Qwen3-bnb broken export) and a working
+  native-bf16 record (Ling fused Triton kernels); row stays `deferred` until a valid quantized
+  checkpoint passes end-to-end.
+- MV-08: packaged-wheel re-run executed successfully for the model-free suite (2403 passed);
+  row stays `deferred` until repeated after certified-family model-dependent tests exist.
+- ST-01..ST-03: target-VM evidence complete (21/21); rows may move to `passed` at release review
+  once the exact commands are transcribed into release docs. ST-04 remains `deferred`.
 
 ## Completion rule
 
