@@ -381,7 +381,24 @@ def test_runtime_observation_and_config_validation_is_strict() -> None:
                 config={"bad": float("nan")},
             ),
         )
-    with pytest.raises(RuntimeValidationError, match="keys must be strings"):
+    model = SyntheticMoE()
+    tokenizer = TokenizerStub()
+    result = load_instance(
+        _plan(),
+        model,
+        tokenizer,
+        observation=_artifacts(
+            model=model,
+            tokenizer=tokenizer,
+            config={"nested": {1: "canonicalized", 2: "also-canonicalized"}},
+        ),
+    )
+    assert result.manifest.config_hash == make_config_hash(
+        {"nested": {"1": "canonicalized", "2": "also-canonicalized"}}
+    )
+    result.close()
+
+    with pytest.raises(RuntimeValidationError, match="collide after JSON string normalization"):
         model = SyntheticMoE()
         tokenizer = TokenizerStub()
         load_instance(
@@ -391,7 +408,7 @@ def test_runtime_observation_and_config_validation_is_strict() -> None:
             observation=_artifacts(
                 model=model,
                 tokenizer=tokenizer,
-                config={"nested": {1: "bad"}},
+                config={"nested": {1: "integer", "1": "string"}},
             ),
         )
     with pytest.raises(RuntimeValidationError, match="config"):

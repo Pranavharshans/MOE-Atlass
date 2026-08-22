@@ -90,12 +90,13 @@ layer.
 max_file_bytes, duckdb)` turns a `DatasetInputSpec` into a deterministic
 tuple of frozen `DatasetRow(index, values)` records for the file-backed
 formats — JSONL, CSV, Parquet, and text (one `{"text": line}` row per line) —
-plus `hf_datasets`, which means an existing local snapshot directory read in
-sorted filename order with a single data format. Descriptors never fetch
-data: relative locations require an explicit local `base_directory`,
-absolute paths pass through, and nothing ever reaches the network. DuckDB is
-imported lazily and only for Parquet members; every other format reads
-without it.
+plus `hf_datasets`, which means either an existing local snapshot directory
+read in sorted filename order with a single data format or an explicit Hub
+repository/split streamed through the optional `datasets` package. Hub access
+requires `allow_downloads=true`; relative locations still require an explicit
+local `base_directory`, and local formats never reach the network. DuckDB is
+imported lazily and only for Parquet members; the Hub reader is imported lazily
+and is bounded by the same row and canonical-row-byte budgets.
 
 Reading is bounded and deterministic: strict row, per-row canonical-JSON
 byte, and per-file byte budgets (exceeding any raises `DatasetReadError` at

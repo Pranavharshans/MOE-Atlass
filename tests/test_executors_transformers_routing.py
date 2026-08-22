@@ -24,7 +24,10 @@ from moeatlas.executors import (
     build_builtin_executor,
     builtin_executor_names,
 )
-from moeatlas.executors.transformers_routing import TransformersRoutingExecutor
+from moeatlas.executors.transformers_routing import (
+    TransformersRoutingExecutor,
+    _move_model_inputs,
+)
 from moeatlas.runtime.contracts import LoadedModel
 from moeatlas.services import initialize_workspace, query_runs
 from moeatlas.services.run_engine import RowFailure
@@ -130,6 +133,28 @@ def test_missing_prompt_is_rejected() -> None:
     assert excinfo.value.message == "row values must carry a non-empty string 'prompt'"
 
 
+def test_model_inputs_move_tensor_like_values_to_model_device() -> None:
+    class TensorLike:
+        def __init__(self) -> None:
+            self.devices: list[object] = []
+
+        def to(self, device: object) -> TensorLike:
+            self.devices.append(device)
+            return self
+
+    class DeviceModel:
+        device = "cuda:0"
+
+    input_ids = TensorLike()
+    attention_mask = TensorLike()
+    moved = _move_model_inputs(
+        DeviceModel(), {"input_ids": input_ids, "attention_mask": attention_mask}
+    )
+    assert moved["input_ids"] is input_ids
+    assert input_ids.devices == ["cuda:0"]
+    assert attention_mask.devices == ["cuda:0"]
+
+
 def test_unsupported_source_plan_is_a_dependency_failure(fake_loader) -> None:
     plan = _loading_plan(source_kind=SourceKind.INSTANCE)
     executor = TransformersRoutingExecutor(plan)
@@ -223,6 +248,9 @@ def test_executor_happy_path_appends_shard_and_updates_catalog(
     shards = list_routing_shards(workspace, run_key=entry.run_key)
     assert len(shards) == 1
     assert shards[0].token_text_stored is False
+    inspection_path = workspace / "inspections" / f"{entry.run_key}.json"
+    assert inspection_path.is_file()
+    assert "universal_routing_inspection" in inspection_path.read_text(encoding="utf-8")
 
 
 def test_publish_without_events_returns_none_and_stays_idempotent(

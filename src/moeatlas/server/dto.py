@@ -64,16 +64,19 @@ class RunDetailResponse(_WireModel):
 
 
 class RunSummaryResponse(_WireModel):
-    """Typed routing-load summary response.
-
-    The local server owns no adapter inspection document, so it can never
-    produce a summary itself; the fixed ``unavailable`` status and reason
-    keep that honest scope on the wire instead of inventing computation.
-    """
+    """Typed routing-load summary response for universal or certified runs."""
 
     run_key: str
     status: str
     reason: str | None = None
+    adapter_name: str | None = None
+    adapter_version: str | None = None
+    token_count: int | None = None
+    assignment_count: int | None = None
+    layer_count: int | None = None
+    expert_count: int | None = None
+    routed_top_k: int | None = None
+    inspection_digest: str | None = None
 
 
 class AdapterEntryResponse(_WireModel):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from dataclasses import fields
 from pathlib import Path
 
@@ -267,6 +269,51 @@ def test_hf_snapshot_shape_violations_are_rejected(tmp_path: Path) -> None:
         with pytest.raises(DatasetReadError) as caught:
             read_dataset_rows(spec, base_directory=tmp_path)
         assert caught.value.stage == stage
+
+
+def test_hf_hub_dataset_streams_a_bounded_prefix_with_explicit_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def load_dataset(**kwargs: object):
+        calls.append(kwargs)
+        return iter(
+            [
+                {"prompt": "one", "label": 1},
+                {"prompt": "two", "label": 2},
+            ]
+        )
+
+    fake_datasets = types.ModuleType("datasets")
+    fake_datasets.load_dataset = load_dataset  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "datasets", fake_datasets)
+    spec = DatasetInputSpec(
+        format=DatasetFormat.HF_DATASETS,
+        location="org/benchmark",
+        config_name="default",
+        split="test",
+        revision="a" * 40,
+        allow_downloads=True,
+    )
+    rows = read_dataset_rows(spec, base_directory=tmp_path, max_rows=2)
+    assert [row.values["prompt"] for row in rows] == ["one", "two"]
+    assert calls == [
+        {
+            "path": "org/benchmark",
+            "name": "default",
+            "split": "test",
+            "revision": "a" * 40,
+            "streaming": True,
+        }
+    ]
+
+
+def test_hf_hub_requires_explicit_download_opt_in(tmp_path: Path) -> None:
+    spec = DatasetInputSpec(format=DatasetFormat.HF_DATASETS, location="org/benchmark")
+    with pytest.raises(DatasetReadError, match="allow_downloads=True") as caught:
+        read_dataset_rows(spec, base_directory=tmp_path)
+    assert caught.value.stage == "read"
 
 
 # ---------------------------------------------------------------------------

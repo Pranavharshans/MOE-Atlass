@@ -292,6 +292,40 @@ def _model_kwargs(
     return kwargs
 
 
+def _model_factory_name(config: object) -> str:
+    """Select the task-aware Transformers auto factory from observed config.
+
+    ``AutoModel`` is a useful backbone fallback, but it can silently discard
+    the causal/seq2seq head that a real checkpoint declares. Prefer an
+    explicit architecture suffix, then use the encoder-decoder flag; unknown
+    configurations remain on the backbone fallback for foreign families.
+    """
+
+    try:
+        architectures = getattr(config, "architectures", None)
+    except Exception:
+        architectures = None
+    if isinstance(architectures, list | tuple):
+        names = tuple(name for name in architectures if isinstance(name, str))
+        suffixes = (
+            ("ForCausalLM", "AutoModelForCausalLM"),
+            ("ForConditionalGeneration", "AutoModelForSeq2SeqLM"),
+            ("ForSeq2SeqLM", "AutoModelForSeq2SeqLM"),
+            ("ForSequenceClassification", "AutoModelForSequenceClassification"),
+            ("ForTokenClassification", "AutoModelForTokenClassification"),
+            ("ForMaskedLM", "AutoModelForMaskedLM"),
+        )
+        for suffix, factory in suffixes:
+            if any(name.endswith(suffix) for name in names):
+                return factory
+    try:
+        if getattr(config, "is_encoder_decoder", False) is True:
+            return "AutoModelForSeq2SeqLM"
+    except Exception:
+        pass
+    return "AutoModel"
+
+
 def _load_transformers(
     plan: LoadingPlan,
     *,
@@ -304,7 +338,6 @@ def _load_transformers(
     transformers = _import_optional("transformers")
     config_loader = _require_factory(transformers, "AutoConfig")
     tokenizer_loader = _require_factory(transformers, "AutoTokenizer")
-    model_loader = _require_factory(transformers, "AutoModel")
     dtype = _dtype_kwarg(plan)
     device_map = _device_map_kwarg(plan)
     common_model = _common_kwargs(
@@ -324,6 +357,7 @@ def _load_transformers(
         stack.add_object(loaded_config)
         tokenizer = _call_stage("tokenizer", tokenizer_loader, tokenizer_target, **common_tokenizer)
         stack.add_object(tokenizer)
+        model_loader = _require_factory(transformers, _model_factory_name(loaded_config))
         model = _call_stage(
             "model",
             model_loader,

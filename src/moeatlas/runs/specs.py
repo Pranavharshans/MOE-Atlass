@@ -63,7 +63,7 @@ class RunInputKind(str, Enum):
 
 
 class DatasetFormat(str, Enum):
-    """Supported dataset descriptor formats; descriptors never fetch data."""
+    """Supported dataset descriptor formats; descriptors have no side effects."""
 
     JSONL = "jsonl"
     CSV = "csv"
@@ -202,7 +202,12 @@ class PromptInputSpec(StrictManifestModel):
 
 
 class DatasetInputSpec(StrictManifestModel):
-    """Dataset descriptor identity; reading the data is a later engine step."""
+    """Dataset descriptor identity; reading the data is a later engine step.
+
+    ``hf_datasets`` may name either an existing local snapshot or a Hub
+    repository. Hub access is explicit through ``allow_downloads``; the
+    optional config/split fields map directly to ``datasets.load_dataset``.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True, validate_assignment=True)
 
@@ -210,6 +215,9 @@ class DatasetInputSpec(StrictManifestModel):
     format: DatasetFormat
     location: StrictStr = Field(max_length=_MAX_LOCATION)
     revision: StrictStr | None = None
+    config_name: StrictStr | None = None
+    split: StrictStr = "train"
+    allow_downloads: StrictBool = False
     content_digest: StrictStr | None = None
     column_mapping: dict[str, str] = Field(default_factory=dict)
     row_count: StrictInt | None = Field(default=None, ge=0)
@@ -230,6 +238,26 @@ class DatasetInputSpec(StrictManifestModel):
         if value is None:
             return None
         return canonical_identifier(value, field_name="dataset revision")
+
+    @field_validator("config_name")
+    @classmethod
+    def _config_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _bounded_label(value, field_name="dataset config name", maximum=_MAX_LABEL)
+
+    @field_validator("split")
+    @classmethod
+    def _split(cls, value: str) -> str:
+        return _bounded_label(value, field_name="dataset split", maximum=_MAX_LABEL)
+
+    @model_validator(mode="after")
+    def _hub_options(self) -> Self:
+        if self.allow_downloads and self.format is not DatasetFormat.HF_DATASETS:
+            raise ValueError("allow_downloads is supported only for hf_datasets inputs")
+        if self.config_name is not None and self.format is not DatasetFormat.HF_DATASETS:
+            raise ValueError("config_name is supported only for hf_datasets inputs")
+        return self
 
     @field_validator("content_digest")
     @classmethod

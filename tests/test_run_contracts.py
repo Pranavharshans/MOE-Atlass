@@ -216,6 +216,10 @@ def test_dataset_descriptor_validates_bounds_and_freezes_mapping() -> None:
         dataset_input(location="")
     with pytest.raises(ValidationError, match="seed"):
         dataset_input(seed=-1)
+    with pytest.raises(ValidationError, match="allow_downloads"):
+        dataset_input(format=DatasetFormat.JSONL, allow_downloads=True)
+    with pytest.raises(ValidationError, match="config_name"):
+        dataset_input(format=DatasetFormat.JSONL, config_name="default")
 
 
 def test_data_fingerprint_is_deterministic_and_sensitive() -> None:

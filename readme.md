@@ -115,10 +115,10 @@ deliberately deferred.
   stay the export bundle's contract; see [storage](docs/storage.md).
 - `EXPERIMENTAL` bounded dataset reading: `read_dataset_rows()` turns
   `DatasetInputSpec` descriptors into deterministic frozen rows for
-  JSONL/CSV/Parquet/text and local HF-style snapshots under strict budgets,
-  with task-role column mappings and SHA-256-keyed deterministic
-  `plan_dataset_batches()` schedules; descriptors never fetch data and no
-  path reaches the network; see [runs](docs/runs.md).
+  JSONL/CSV/Parquet/text, local HF-style snapshots, and explicitly opted-in
+  streamed Hub splits under strict budgets, with task-role column mappings and
+  SHA-256-keyed deterministic `plan_dataset_batches()` schedules; see
+  [runs](docs/runs.md).
 - `EXPERIMENTAL` deterministic run-engine execution core:
   `execute_row_schedule()` drives a planned batch schedule through a
   caller-supplied row executor with per-row failure evidence, budgeted

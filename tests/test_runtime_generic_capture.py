@@ -266,6 +266,26 @@ def test_packed_payload_decodes_native_indices_and_scores() -> None:
     assert result.capability_notes == ()
 
 
+def test_ling_style_payload_preserves_scaled_weights_without_probability_claims() -> None:
+    # Ling-3.0-tiny emits (indices, weights, logits).  Its routed weights can
+    # include a model-specific scaling factor and therefore are not guaranteed
+    # to lie in the probability interval.
+    indices = [[3, 0]]
+    weights = [[1.4, 0.6]]
+    logits = [[1.0, 2.0, 3.0, 4.0]]
+    model = _HookedModel((indices, weights, logits))
+    result = run_structured_routing_forward(
+        model, _report(model), _tokens(1), {"input_ids": [[10]]}, max_events=32
+    )
+    layer0 = sorted(result.routing_events[:2], key=lambda event: event.rank)
+    assert layer0[0].router_logit == pytest.approx(4.0)
+    assert layer0[0].weight == pytest.approx(1.4)
+    assert layer0[1].router_logit == pytest.approx(1.0)
+    assert layer0[1].weight == pytest.approx(0.6)
+    assert all(event.probability is None for event in layer0)
+    assert any("retained as weights" in note for note in result.capability_notes)
+
+
 def test_tied_cutoff_scores_are_rejected() -> None:
     tied = [[0.9, 0.9, 0.5, 0.1]]
     model = _HookedModel(tied)

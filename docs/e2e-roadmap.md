@@ -24,16 +24,16 @@ and real data (`openai_humaneval` @ `7dce6050`).
 
 | # | Journey step | Status | Evidence |
 | --- | --- | --- | --- |
-| 1 | Load any HF model | PARTIAL | Universal load works; Ling required upstream-code shims (transformers 4.45-era remote code on transformers 5.15); `load_instance` rejects live `PretrainedConfig` objects (accepts plain config.json mappings) |
+| 1 | Load any HF model | WORKS* | Real Ling checkpoint loads through the local/HF Transformers path with task-aware `AutoModelForCausalLM` selection; `trust_remote_code` and immutable revisions remain explicit, and 24 GB GPUs need `device=auto`/bf16 placement for this 7.9B checkpoint |
 | 2 | Auto-discover arch/experts/routing | WORKS | Generic scanner found exact expert/top-k/shared counts on 3 foreign architectures (Ling 128/8/1, Instella 64/6/2) with zero per-model code |
-| 3 | HF dataset → rows → batches | WORKS | HumanEval read through `services.datasets` + `run_inputs` planning (164 rows → deterministic batches); hub download itself is caller-owned by contract |
-| 4 | Run model through dataset rows | MISSING | No real-model executor exists; `moeatlas.executors` entry-point group is empty and only fake executors are wired |
-| 5a | Routing capture | PARTIAL | Real forwards captured via caller-owned hooks because `RoutingCaptureSession` requires certified-family `AdapterInspection` |
+| 3 | HF dataset → rows → batches | WORKS* | Local snapshots remain deterministic/offline; Hub splits now stream through the optional `datasets` package only with descriptor-level `allow_downloads=true`, config, split, and revision |
+| 4 | Run model through dataset rows | WORKS* | Built-in `transformers-routing` executor ran a real Ling dataset row end to end (5 tokens, 920 routing events) and publishes the shard/catalog |
+| 5a | Routing capture | WORKS* | Generic structure-driven hooks capture foreign families; real Ling emits `(indices, weights, logits)` and scaled weights are retained without probability claims |
 | 5b | Per-layer expert activation capture | WORKS | `run_structured_expert_forward` captures per-invoked-expert norms from real hook plumbing; shards carry `experts.parquet` under store schema 2.0 with reopen/tamper validation; analysis publishes bounded activation summaries (real-checkpoint fidelity: final VM) |
-| 6 | Persist events to shards | WORKS | Real shard written (29,440 routing events); slow at ~1M-event scale (DuckDB row-by-row executemany); catalog sync is a manual second call |
-| 7 | Routing-load matrix | BLOCKED BY DESIGN | `aggregate_routing_load` demands an exact certified-family `AdapterInspection`; universal scan reports cannot enter analysis |
-| 8 | Heatmap render | BLOCKED BY DESIGN | Same inspection gate upstream; renderer itself is proven |
-| 9 | Local UI/frontend | PARTIAL | FastAPI server serves `/healthz`, `/api/workspace`, `/api/runs`, `/api/adapters`; no heatmap/artifact endpoints; React SPA does not exist in-repo |
+| 6 | Persist events to shards | WORKS* | Real shard/catalog persisted; the executor also stores an immutable universal inspection beside each run (large-run DuckDB write throughput remains unbenchmarked) |
+| 7 | Routing-load matrix | WORKS* | `aggregate_routing_load` accepts `UniversalRoutingInspection`; Ling produced a 23-layer × 128-expert matrix with 920 assignments |
+| 8 | Heatmap render | WORKS* | Static renderer and server-on-demand path both render the universal matrix; the validated Ling artifact was ~1.4 MB |
+| 9 | Local UI/frontend | WORKS* | FastAPI summary and heatmap endpoints now consume persisted universal inspections; the packaged dependency-free SPA serves those views |
 
 ## Roadmap
 
@@ -42,7 +42,7 @@ ship with model-free tests matching this repository's contract-test culture
 and keep `pytest -q`, `python -m unittest discover -s tests -t .`, and
 `ruff check src tests` green before merge.
 
-### Phase R1 — Universal analysis lane (steps 7–8)
+### Phase R1 — Universal analysis lane (steps 7–8) — landed 2026-08-22
 
 Unblock visualization for ANY discovered architecture.
 
@@ -55,7 +55,7 @@ Unblock visualization for ANY discovered architecture.
 - Acceptance: a shard produced from a non-certified model (Ling-class events)
   aggregates and renders all three metrics without synthetic fixtures.
 
-### Phase R2 — Real-model executor (step 4)
+### Phase R2 — Real-model executor (step 4) — landed 2026-08-22
 
 Make `moeatlas run` drive a genuine transformers model over planned batches.
 
@@ -84,7 +84,7 @@ Turn the `ExpertEvent` contract into runtime reality.
 - Acceptance: a real forward produces expert events end-to-end into storage
   with reopen/tamper validation.
 
-### Phase R4 — Serving surface (step 9)
+### Phase R4 — Serving surface (step 9) — landed 2026-08-22
 
 Expose artifacts over HTTP so the frontend has one API.
 
@@ -95,7 +95,7 @@ Expose artifacts over HTTP so the frontend has one API.
 - Acceptance: every artifact a run produces is fetchable from `moeatlas ui`
   without filesystem access.
 
-### Phase R5 — Frontend application
+### Phase R5 — Frontend application — landed 2026-08-22
 
 The local single-page app consuming R4.
 
@@ -108,14 +108,19 @@ The local single-page app consuming R4.
 - Acceptance: the four views work against a real VM-produced workspace;
   packaged assets served by `moeatlas ui`.
 
-### Phase R6 — Robust loading polish (step 1)
+### Phase R6 — Robust loading polish (step 1) — remaining hardening
 
-- R6.1 Accept live `PretrainedConfig` objects in `load_instance`
-  (`config.id2label object keys must be strings` bug).
-- R6.2 Document (and where cheap, automate) the HF download step feeding
-  dataset descriptors, keeping the descriptors themselves network-free.
+- R6.1 Keep config observation JSON-safe: integer JSON-object keys are
+  canonicalized and post-normalization collisions are rejected.
+- R6.2 Keep Hub dataset downloads explicit and bounded; immutable revision
+  evidence and large-dataset throughput remain follow-up validation work.
 - R6.3 Shard writer performance pass for ~1M-event captures (batch inserts)
   with identical byte-level manifests or a versioned schema bump.
+
+`WORKS*` means the model-free suite and the real Ling VM path both passed; it
+does not claim every architecture/task head or every GPU placement is
+certified. The VM result is a capability boundary, not a universal performance
+claim.
 
 ## Explicitly out of scope here
 

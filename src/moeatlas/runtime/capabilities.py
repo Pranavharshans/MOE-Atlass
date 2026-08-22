@@ -62,6 +62,7 @@ class RouterPayloadShape(str, Enum):
 
     LOGITS_TUPLE = "tuple_logits"
     SCORES_INDICES_TUPLE = "tuple_scores_indices"
+    INDICES_WEIGHTS_LOGITS_TUPLE = "tuple_indices_weights_logits"
     DICT_ARRAYS = "dict_arrays"
     ASSIGNMENT_INDICES = "assignment_indices"
 
@@ -79,6 +80,7 @@ class ScoreSemantics(str, Enum):
 
     LOGITS = "logits"
     PROBABILITIES = "probabilities"
+    WEIGHTS = "weights"
     NONE = "none"
 
     def __str__(self) -> str:
@@ -366,6 +368,10 @@ def _check_score_columns(event: RoutingEvent, semantics: ScoreSemantics) -> None
     if semantics is ScoreSemantics.PROBABILITIES and event.probability is None:
         raise RoutingDecodeError(
             "postcondition", "probability semantics require a finite probability"
+        )
+    if semantics is ScoreSemantics.WEIGHTS and event.weight is None:
+        raise RoutingDecodeError(
+            "postcondition", "weight semantics require a finite weight"
         )
 
 

@@ -18,7 +18,10 @@ the workspace catalog so ``/api/runs`` sees the run without manual steps.
 
 from __future__ import annotations
 
+import os
+import tempfile
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from ..core import validate_stable_identifier
@@ -58,6 +61,74 @@ def _materialize_ids(value: object) -> list[int]:
     if any(type(item) is not int or isinstance(item, bool) or item < 0 for item in ids):
         raise ValueError("tokenizer input_ids must be non-negative integers")
     return ids
+
+
+def _model_input_device(model: object) -> object | None:
+    """Resolve the device expected by a model's first input tensor."""
+
+    try:
+        device = getattr(model, "device", None)
+    except Exception:
+        device = None
+    if device is not None:
+        return device
+    try:
+        parameters = getattr(model, "parameters", None)
+        if callable(parameters):
+            first = next(iter(parameters()))
+            return getattr(first, "device", None)
+    except (StopIteration, Exception):
+        return None
+    return None
+
+
+def _move_model_inputs(model: object, encoding: dict[str, object]) -> dict[str, object]:
+    """Move tensor-like tokenizer fields without importing a model stack."""
+
+    device = _model_input_device(model)
+    if device is None:
+        return dict(encoding)
+    moved: dict[str, object] = {}
+    for key, value in encoding.items():
+        to = getattr(value, "to", None)
+        if callable(to):
+            placed = to(device)
+            moved[key] = value if placed is None else placed
+        else:
+            moved[key] = value
+    return moved
+
+
+def _publish_universal_inspection(workspace: object, run_key: str, report: object) -> None:
+    """Persist one immutable universal topology beside the routing shard."""
+
+    if not isinstance(workspace, str | Path):
+        raise TypeError("workspace must be a string or Path")
+    from ..adapters import build_universal_inspection
+
+    inspection = build_universal_inspection(report)
+    root = Path(workspace)
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError("workspace must be an existing non-symlink directory")
+    directory = root / "inspections"
+    if directory.exists() and directory.is_symlink():
+        raise RuntimeError("inspection directory must not be a symlink")
+    directory.mkdir(exist_ok=True)
+    target = directory / f"{run_key}.json"
+    payload = inspection.to_json().encode("utf-8")
+    if target.exists():
+        if target.is_symlink() or not target.is_file() or target.read_bytes() != payload:
+            raise RuntimeError("published universal inspection conflicts with the run")
+        return
+    fd, staged_name = tempfile.mkstemp(dir=str(directory), prefix=f".{run_key}.", suffix=".staging")
+    staged = Path(staged_name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+        os.replace(staged, target)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
 
 
 class TransformersRoutingExecutor:
@@ -141,6 +212,12 @@ class TransformersRoutingExecutor:
 
         sequence_id = f"row-{row_index}"
         token_events, encoding = self._encode(tokenizer, prompt, sequence_id)
+        try:
+            encoding = _move_model_inputs(loaded.model, encoding)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            raise RowFailure("execution", "model input placement failed") from None
         max_events = len(token_events) * len(targets) * targets[0].routed_top_k
         config = getattr(loaded.model, "config", None)
         try:
@@ -261,6 +338,9 @@ class TransformersRoutingExecutor:
             result,
             store_token_text=self._store_token_text,
         )
+        if self._report is None:
+            raise RuntimeError("routing discovery report was not retained for publication")
+        _publish_universal_inspection(workspace, self._run_key, self._report)
         rebuild_catalog(workspace, at=None)
         self._release()
         return receipt

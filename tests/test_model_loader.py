@@ -215,6 +215,26 @@ def test_invalid_resolution_quantization_and_local_path_fail_before_optional_imp
     assert imported == []
 
 
+def test_model_factory_selection_preserves_declared_task_heads() -> None:
+    assert (
+        model_loader._model_factory_name(
+            types.SimpleNamespace(architectures=["LingForCausalLM"])
+        )
+        == "AutoModelForCausalLM"
+    )
+    assert (
+        model_loader._model_factory_name(
+            types.SimpleNamespace(architectures=["T5ForConditionalGeneration"])
+        )
+        == "AutoModelForSeq2SeqLM"
+    )
+    assert (
+        model_loader._model_factory_name(types.SimpleNamespace(is_encoder_decoder=True))
+        == "AutoModelForSeq2SeqLM"
+    )
+    assert model_loader._model_factory_name(types.SimpleNamespace()) == "AutoModel"
+
+
 def test_huggingface_uses_resolved_revisions_audited_kwargs_and_observed_manifest(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

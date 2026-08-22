@@ -461,10 +461,14 @@ def decode_structured_payload(
     """Decode one opaque router hook payload into generic top-k event rows.
 
     Packed ``(logits, scores, indices)`` tuples use their native scores as
-    probabilities; flat ``[tokens, experts]`` logit matrices are reduced with
-    deterministic tie-rejecting top-k whose score columns follow the config's
-    declared ``score_function`` when present. The optional second return value
-    is a capability note describing evidence limits.
+    probabilities.  Ling-style ``(indices, weights, logits)`` tuples preserve
+    native weights separately and never relabel them as probabilities: router
+    implementations commonly apply a scaling factor, so a value above one is
+    valid weight evidence but not a probability claim. Flat ``[tokens,
+    experts]`` logit matrices are reduced with deterministic tie-rejecting
+    top-k whose score columns follow the config's declared ``score_function``
+    when present. The optional second return value is a capability note
+    describing evidence limits.
     """
 
     if type(payload) is tuple:
@@ -472,6 +476,64 @@ def decode_structured_payload(
             raise StructuredCaptureError(
                 "decode", "packed router payloads must contain exactly logits, scores, indices"
             )
+        # There are two widely used three-column contracts.  Do not infer the
+        # order from a family name or module path: integer first-column data is
+        # the unambiguous marker for Ling-style ``(indices, weights, logits)``;
+        # the historical packed contract starts with floating-point logits.
+        native_indices: list[list[int]] | None = None
+        try:
+            native_indices = _materialize_ints(payload[0])
+        except StructuredCaptureError:
+            pass
+        if native_indices is not None:
+            indices = native_indices
+            weights = _materialize_floats(payload[1])
+            logits = _materialize_floats(payload[2])
+            token_count = len(token_events)
+            if not (len(indices) == len(weights) == len(logits) == token_count):
+                raise StructuredCaptureError(
+                    "decode",
+                    "native router tuples must carry exactly one row per captured token",
+                )
+            top_k = target.routed_top_k
+            if len(indices[0]) < top_k or len(weights[0]) < top_k:
+                raise StructuredCaptureError(
+                    "decode", "native router tuples do not carry the discovered routed top-k"
+                )
+            events: list[RoutingEvent] = []
+            for position, token in enumerate(token_events):
+                for rank in range(top_k):
+                    native_index = indices[position][rank]
+                    if native_index >= len(target.expert_keys):
+                        raise StructuredCaptureError(
+                            "decode",
+                            "native expert index "
+                            f"{native_index} is outside the discovered universe",
+                        )
+                    weight = weights[position][rank]
+                    logit = (
+                        logits[position][native_index]
+                        if native_index < len(logits[position])
+                        else None
+                    )
+                    events.append(
+                        RoutingEvent(
+                            token_key=token.token_key,
+                            layer_key=target.layer_key,
+                            rank=rank,
+                            expert_key=target.expert_keys[native_index],
+                            router_logit=logit,
+                            probability=None,
+                            weight=weight,
+                            selected=True,
+                        )
+                    )
+            return (
+                tuple(events),
+                "native router weights were retained as weights; probability "
+                "normalization was not claimed",
+            )
+
         logits = _materialize_floats(payload[0])
         scores = _materialize_floats(payload[1])
         indices = _materialize_ints(payload[2])

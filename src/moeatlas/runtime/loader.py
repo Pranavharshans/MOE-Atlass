@@ -37,14 +37,34 @@ from .contracts import (
 
 
 def _normalize_json(value: Any, *, path: str = "config") -> Any:
-    """Defensively copy finite JSON data with deterministic object ordering."""
+    """Defensively copy finite JSON data with deterministic object ordering.
+
+    Transformers config objects may expose JSON-object keys as integers after
+    ``PretrainedConfig.to_dict()`` (for example ``id2label``).  JSON itself
+    represents those keys as strings, so canonical observation converts exact
+    integer keys to their JSON spelling while rejecting unsupported key types
+    and collisions instead of silently dropping data.
+    """
 
     if isinstance(value, Mapping):
         normalized: dict[str, Any] = {}
         for key, nested in value.items():
-            if not isinstance(key, str):
-                raise RuntimeValidationError(f"{path} object keys must be strings")
-            normalized[key] = _normalize_json(nested, path=f"{path}.{key}")
+            if type(key) is str:
+                normalized_key = key
+            elif type(key) is int:
+                normalized_key = str(key)
+            else:
+                raise RuntimeValidationError(
+                    f"{path} object keys must be strings or exact integers"
+                )
+            if normalized_key in normalized:
+                raise RuntimeValidationError(
+                    f"{path} object keys collide after JSON string normalization: "
+                    f"{normalized_key!r}"
+                )
+            normalized[normalized_key] = _normalize_json(
+                nested, path=f"{path}.{normalized_key}"
+            )
         return {key: normalized[key] for key in sorted(normalized)}
     if isinstance(value, list | tuple):
         return [_normalize_json(item, path=f"{path}[]") for item in value]

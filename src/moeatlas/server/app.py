@@ -25,6 +25,7 @@ _MAX_ARTIFACT_BYTES_CEILING = 100_000_000
 _DEFAULT_ARTIFACT_BYTES = 10_000_000
 
 _HEATMAP_DIRECTORY = "heatmaps"
+_INSPECTION_DIRECTORY = "inspections"
 
 _STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 
@@ -146,6 +147,24 @@ def create_app(
             return None
         return candidate
 
+    def _safe_inspection_document(workspace_root: Path, run_key: str) -> Path | None:
+        """Resolve one persisted topology document without following symlinks."""
+
+        root = workspace_root / _INSPECTION_DIRECTORY
+        candidate = root / f"{run_key}.json"
+        try:
+            if root.is_symlink() or not root.is_dir():
+                return None
+            if candidate.is_symlink() or not candidate.is_file():
+                return None
+            resolved_root = root.resolve()
+            resolved_candidate = candidate.resolve()
+        except OSError:
+            return None
+        if resolved_candidate.parent != resolved_root:
+            return None
+        return candidate
+
     @app.get("/healthz", response_model=HealthResponse)
     def healthz() -> HealthResponse:
         from .. import PRODUCT_NAME, __version__
@@ -238,18 +257,50 @@ def create_app(
     @app.get("/api/runs/{run_key}/summary", response_model=RunSummaryResponse)
     def run_summary(run_key: str) -> RunSummaryResponse:
         stable_run_key = _validated_run_key(run_key)
-        _catalog_entry(stable_run_key)
-        # Honest scope: a routing-load summary requires a caller-supplied
-        # adapter inspection document (the same bounded seam as the CLI
-        # heatmap command). The server owns no such document and never
-        # invents computation, so every run reports the typed unavailability.
+        workspace_path, _ = _catalog_entry(stable_run_key)
+        inspection_path = _safe_inspection_document(workspace_path, stable_run_key)
+        if inspection_path is None:
+            return RunSummaryResponse(
+                run_key=stable_run_key,
+                status="unavailable",
+                reason="published routing inspection is unavailable",
+            )
+        try:
+            from ..adapters import AdapterInspection, UniversalRoutingInspection
+            from ..analysis import aggregate_routing_load
+
+            document = inspection_path.read_bytes()
+            if len(document) > _DEFAULT_ARTIFACT_BYTES:
+                raise ValueError("inspection exceeds the serving byte budget")
+            try:
+                inspection = UniversalRoutingInspection.model_validate_json(document)
+            except Exception:
+                inspection = AdapterInspection.model_validate_json(document)
+            matrix = aggregate_routing_load(
+                workspace_path,
+                inspection,
+                run_key=stable_run_key,
+                max_routing_rows=1_000_000,
+                max_source_bytes=1_000_000_000,
+                max_matrix_cells=100_000,
+            )
+        except Exception:
+            return RunSummaryResponse(
+                run_key=stable_run_key,
+                status="unavailable",
+                reason="published routing inspection could not be analyzed",
+            )
         return RunSummaryResponse(
             run_key=stable_run_key,
-            status="unavailable",
-            reason=(
-                "routing-load summaries require a caller-supplied adapter "
-                "inspection document"
-            ),
+            status="available",
+            adapter_name=matrix.adapter_name,
+            adapter_version=matrix.adapter_version,
+            token_count=matrix.token_count,
+            assignment_count=matrix.assignment_count,
+            layer_count=len(matrix.layer_keys),
+            expert_count=len(matrix.expert_keys[0]),
+            routed_top_k=matrix.routed_top_k,
+            inspection_digest=matrix.inspection_digest,
         )
 
     @app.get("/api/runs/{run_key}/heatmap")
@@ -260,9 +311,38 @@ def create_app(
         workspace_path, _ = _catalog_entry(stable_run_key)
         candidate = _safe_heatmap_document(workspace_path, stable_run_key)
         if candidate is None:
-            raise HTTPException(
-                status_code=404, detail="run heatmap is not published"
-            )
+            inspection_path = _safe_inspection_document(workspace_path, stable_run_key)
+            if inspection_path is None:
+                raise HTTPException(status_code=404, detail="run heatmap is not published")
+            try:
+                from ..adapters import AdapterInspection, UniversalRoutingInspection
+                from ..analysis import aggregate_routing_load, render_routing_load_heatmap
+
+                document = inspection_path.read_bytes()
+                if len(document) > _DEFAULT_ARTIFACT_BYTES:
+                    raise ValueError("inspection exceeds the serving byte budget")
+                try:
+                    inspection = UniversalRoutingInspection.model_validate_json(document)
+                except Exception:
+                    inspection = AdapterInspection.model_validate_json(document)
+                matrix = aggregate_routing_load(
+                    workspace_path,
+                    inspection,
+                    run_key=stable_run_key,
+                    max_routing_rows=1_000_000,
+                    max_source_bytes=1_000_000_000,
+                    max_matrix_cells=100_000,
+                )
+                payload = render_routing_load_heatmap(
+                    matrix, metric="assignment_counts", max_cells=100_000
+                ).encode("utf-8")
+                if len(payload) > max_artifact_bytes:
+                    raise ValueError("run heatmap exceeds the serving byte budget")
+                return Response(content=payload, media_type="text/html; charset=utf-8")
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=404, detail="run heatmap is not published"
+                ) from exc
         try:
             size = candidate.stat().st_size
             if size > max_artifact_bytes:

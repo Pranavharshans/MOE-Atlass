@@ -11,7 +11,8 @@ sample/batch/shuffle/seed settings.
 
 Preparation is deterministic and bounded: canonical-JSON byte budgets for
 prompt rows, the reader's row/byte/file budgets for datasets, SHA-256-keyed
-schedules, and no clocks, randomness, network access, or model dependencies.
+schedules, and no clocks, randomness, or model dependencies. A Hub dataset
+may perform network I/O only when its descriptor explicitly opts into it.
 """
 
 from __future__ import annotations

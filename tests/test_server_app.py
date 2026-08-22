@@ -304,10 +304,7 @@ def test_summary_reports_typed_unavailability(workspace: Path) -> None:
     document = response.json()
     assert document["run_key"] == specification.run_key
     assert document["status"] == "unavailable"
-    assert document["reason"] == (
-        "routing-load summaries require a caller-supplied adapter "
-        "inspection document"
-    )
+    assert document["reason"] == "published routing inspection is unavailable"
 
     parsed = RunSummaryResponse.model_validate_json(response.content)
     assert parsed.status == "unavailable"

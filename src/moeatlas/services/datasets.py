@@ -9,12 +9,11 @@ deterministic batch schedules (sample caps, shuffles, batches) derived from
 SHA-256 ordering keys so results never depend on hash seeds, locales, or the
 platform random generator.
 
-Descriptors never fetch data: locations resolve against an explicit local
-base directory (or are absolute paths supplied by the caller), and
-``hf_datasets`` format means an existing local snapshot directory, never a
-network download. Reading performs no clock reads, no network access, and no
-model-runtime work; DuckDB is imported lazily at call time and only for
-Parquet members.
+Local locations resolve against an explicit base directory (or are absolute
+paths supplied by the caller). ``hf_datasets`` may also name a Hub repository,
+but only when its descriptor explicitly opts into downloads; that path uses a
+bounded streaming reader. Reading performs no clock reads or model-runtime
+work; DuckDB and the optional ``datasets`` package are imported lazily.
 """
 
 from __future__ import annotations
@@ -22,6 +21,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import itertools
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -321,6 +321,50 @@ def _snapshot_members(directory: Path) -> list[Path]:
     return members
 
 
+def _load_hf_rows(
+    descriptor: DatasetInputSpec,
+    *,
+    max_rows: int,
+    max_row_bytes: int,
+) -> list[dict[str, Any]]:
+    """Read a bounded prefix from a Hub dataset through ``datasets``."""
+
+    try:
+        from datasets import load_dataset
+    except ImportError as exc:  # pragma: no cover - dependency is VM-only
+        raise DatasetReadError(
+            "dependency",
+            "HF dataset loading requires the optional 'datasets' package",
+            cause=exc,
+        ) from exc
+
+    kwargs: dict[str, Any] = {
+        "path": descriptor.location,
+        "split": descriptor.split,
+        "streaming": True,
+    }
+    if descriptor.config_name is not None:
+        kwargs["name"] = descriptor.config_name
+    if descriptor.revision is not None:
+        kwargs["revision"] = descriptor.revision
+    try:
+        dataset = load_dataset(**kwargs)
+        rows: list[dict[str, Any]] = []
+        for number, value in enumerate(
+            itertools.islice(iter(dataset), max_rows + 1), start=1
+        ):
+            if not isinstance(value, Mapping) or not all(type(key) is str for key in value):
+                raise DatasetReadError(
+                    "format", f"HF dataset row {number} is not a string-keyed object"
+                )
+            rows.append(dict(value))
+    except DatasetReadError:
+        raise
+    except Exception as exc:
+        raise DatasetReadError("read", "HF dataset loading failed", cause=exc) from exc
+    return _bounded_rows(rows, max_rows, max_row_bytes)
+
+
 def read_dataset_rows(
     descriptor: DatasetInputSpec,
     *,
@@ -354,17 +398,29 @@ def read_dataset_rows(
     location = resolve_dataset_location(descriptor, base_directory=base_directory)
 
     if fmt is DatasetFormat.HF_DATASETS:
-        rows: list[dict[str, Any]] = []
-        for member in _snapshot_members(location):
-            remaining = max_rows - len(rows)
-            member_format = _DATA_SUFFIXES[member.suffix.lower()]
-            rows.extend(
-                _read_member(
-                    member, member_format, remaining, max_row_bytes, max_file_bytes, duckdb
-                )
+        if not location.exists() and not descriptor.allow_downloads:
+            raise DatasetReadError(
+                "read",
+                "dataset snapshot does not exist; set allow_downloads=True for Hub access",
             )
-            if len(rows) > max_rows:
-                raise DatasetReadError("budget", f"dataset exceeds the {max_rows} row budget")
+        if location.exists():
+            rows = []
+            for member in _snapshot_members(location):
+                remaining = max_rows - len(rows)
+                member_format = _DATA_SUFFIXES[member.suffix.lower()]
+                rows.extend(
+                    _read_member(
+                        member, member_format, remaining, max_row_bytes, max_file_bytes, duckdb
+                    )
+                )
+                if len(rows) > max_rows:
+                    raise DatasetReadError("budget", f"dataset exceeds the {max_rows} row budget")
+        else:
+            rows = _load_hf_rows(
+                descriptor,
+                max_rows=max_rows,
+                max_row_bytes=max_row_bytes,
+            )
     else:
         if location.is_dir():
             raise DatasetReadError("format", f"dataset location is a directory: {location}")
