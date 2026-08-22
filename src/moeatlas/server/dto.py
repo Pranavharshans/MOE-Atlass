@@ -44,6 +44,38 @@ class RunsResponse(_WireModel):
     entries: tuple[RunEntryResponse, ...] = Field(default_factory=tuple)
 
 
+class RoutingShardEntryResponse(_WireModel):
+    shard_key: str
+    relative_path: str
+    token_count: int
+    routing_count: int
+    token_text_stored: bool
+
+
+class RunDetailResponse(_WireModel):
+    run_key: str
+    state: str | None = None
+    attempt: int = 1
+    specification_fingerprint: str | None = None
+    token_text_policy: str | None = None
+    registered_at: str | None = None
+    updated_at: str | None = None
+    shards: tuple[RoutingShardEntryResponse, ...] = Field(default_factory=tuple)
+
+
+class RunSummaryResponse(_WireModel):
+    """Typed routing-load summary response.
+
+    The local server owns no adapter inspection document, so it can never
+    produce a summary itself; the fixed ``unavailable`` status and reason
+    keep that honest scope on the wire instead of inventing computation.
+    """
+
+    run_key: str
+    status: str
+    reason: str | None = None
+
+
 class AdapterEntryResponse(_WireModel):
     name: str
     version: str
@@ -64,7 +96,10 @@ __all__ = [
     "AdapterEntryResponse",
     "AdaptersResponse",
     "HealthResponse",
+    "RoutingShardEntryResponse",
+    "RunDetailResponse",
     "RunEntryResponse",
+    "RunSummaryResponse",
     "RunsResponse",
     "WorkspaceResponse",
 ]

@@ -21,6 +21,10 @@ SERVER_SCHEMA_VERSION = "1.0"
 """Schema version of the server wire contracts."""
 
 _MAX_RESULTS_CEILING = 10_000
+_MAX_ARTIFACT_BYTES_CEILING = 100_000_000
+_DEFAULT_ARTIFACT_BYTES = 10_000_000
+
+_HEATMAP_DIRECTORY = "heatmaps"
 
 
 class ServerDependencyError(RuntimeError):
@@ -34,11 +38,13 @@ def create_app(
     workspace: str | Path,
     *,
     max_results: int = 100,
+    max_artifact_bytes: int = _DEFAULT_ARTIFACT_BYTES,
 ) -> Any:
     """Build the local FastAPI application bound to one workspace.
 
     ``max_results`` bounds every run listing and must be a strict positive
-    integer within the ceiling. The workspace need not exist yet: endpoints
+    integer within the ceiling. ``max_artifact_bytes`` bounds every served
+    artifact read the same way. The workspace need not exist yet: endpoints
     report the fixed ``workspace is not initialized`` failure until the
     catalog is initialized.
     """
@@ -48,6 +54,12 @@ def create_app(
     if max_results <= 0 or max_results > _MAX_RESULTS_CEILING:
         raise ValueError(
             f"max_results must be between 1 and {_MAX_RESULTS_CEILING}"
+        )
+    if type(max_artifact_bytes) is not int or isinstance(max_artifact_bytes, bool):
+        raise TypeError("max_artifact_bytes must be an integer")
+    if max_artifact_bytes <= 0 or max_artifact_bytes > _MAX_ARTIFACT_BYTES_CEILING:
+        raise ValueError(
+            f"max_artifact_bytes must be between 1 and {_MAX_ARTIFACT_BYTES_CEILING}"
         )
     if not isinstance(workspace, str | Path):
         raise TypeError("workspace must be a string or Path")
@@ -62,8 +74,11 @@ def create_app(
         AdapterEntryResponse,
         AdaptersResponse,
         HealthResponse,
+        RoutingShardEntryResponse,
+        RunDetailResponse,
         RunEntryResponse,
         RunsResponse,
+        RunSummaryResponse,
         WorkspaceResponse,
     )
 
@@ -77,6 +92,57 @@ def create_app(
 
     def _not_initialized() -> HTTPException:
         return HTTPException(status_code=404, detail="workspace is not initialized")
+
+    def _unknown_run() -> HTTPException:
+        return HTTPException(status_code=404, detail="run is not registered")
+
+    def _validated_run_key(run_key: object) -> str:
+        from ..core.identity import validate_stable_identifier
+
+        try:
+            if type(run_key) is not str:
+                raise TypeError("run_key must be an exact string")
+            return validate_stable_identifier(run_key, field_name="run_key")
+        except Exception as exc:
+            raise _unknown_run() from exc
+
+    def _catalog_entry(run_key: str) -> tuple[Path, Any]:
+        from ..services import open_workspace
+
+        try:
+            snapshot = open_workspace(bound_workspace)
+        except Exception as exc:
+            raise _not_initialized() from exc
+        entry = next(
+            (e for e in snapshot.catalog.runs if e.run_key == run_key), None
+        )
+        if entry is None:
+            raise _unknown_run()
+        return snapshot.path, entry
+
+    def _safe_heatmap_document(workspace_root: Path, run_key: str) -> Path | None:
+        """Resolve one published heatmap document without following symlinks.
+
+        The managed ``heatmaps`` directory and the candidate document must be
+        real non-symlink entries whose canonical location stays inside the
+        workspace; anything else reads as absent so traversal and symlink
+        attacks never widen the served surface.
+        """
+
+        root = workspace_root / _HEATMAP_DIRECTORY
+        candidate = root / f"{run_key}.html"
+        try:
+            if root.is_symlink() or not root.is_dir():
+                return None
+            if candidate.is_symlink() or not candidate.is_file():
+                return None
+            resolved_root = root.resolve()
+            resolved_candidate = candidate.resolve()
+        except OSError:
+            return None
+        if resolved_candidate.parent != resolved_root:
+            return None
+        return candidate
 
     @app.get("/healthz", response_model=HealthResponse)
     def healthz() -> HealthResponse:
@@ -132,6 +198,90 @@ def create_app(
                 for entry in entries
             ),
         )
+
+    @app.get("/api/runs/{run_key}", response_model=RunDetailResponse)
+    def run_detail(run_key: str) -> RunDetailResponse:
+        from ..store.ports import reader_from_workspace
+
+        stable_run_key = _validated_run_key(run_key)
+        _, entry = _catalog_entry(stable_run_key)
+        try:
+            receipts = reader_from_workspace(bound_workspace).list_shards(
+                run_key=stable_run_key
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=404, detail="run shards are unavailable"
+            ) from exc
+        return RunDetailResponse(
+            run_key=entry.run_key,
+            state=entry.state,
+            attempt=entry.attempt,
+            specification_fingerprint=entry.specification_fingerprint,
+            token_text_policy=entry.token_text_policy,
+            registered_at=entry.registered_at,
+            updated_at=entry.updated_at,
+            shards=tuple(
+                RoutingShardEntryResponse(
+                    shard_key=receipt.shard_key,
+                    relative_path=receipt.relative_path,
+                    token_count=receipt.token_count,
+                    routing_count=receipt.routing_count,
+                    token_text_stored=receipt.token_text_stored,
+                )
+                for receipt in receipts
+            ),
+        )
+
+    @app.get("/api/runs/{run_key}/summary", response_model=RunSummaryResponse)
+    def run_summary(run_key: str) -> RunSummaryResponse:
+        stable_run_key = _validated_run_key(run_key)
+        _catalog_entry(stable_run_key)
+        # Honest scope: a routing-load summary requires a caller-supplied
+        # adapter inspection document (the same bounded seam as the CLI
+        # heatmap command). The server owns no such document and never
+        # invents computation, so every run reports the typed unavailability.
+        return RunSummaryResponse(
+            run_key=stable_run_key,
+            status="unavailable",
+            reason=(
+                "routing-load summaries require a caller-supplied adapter "
+                "inspection document"
+            ),
+        )
+
+    @app.get("/api/runs/{run_key}/heatmap")
+    def run_heatmap(run_key: str) -> Any:
+        from fastapi import Response
+
+        stable_run_key = _validated_run_key(run_key)
+        workspace_path, _ = _catalog_entry(stable_run_key)
+        candidate = _safe_heatmap_document(workspace_path, stable_run_key)
+        if candidate is None:
+            raise HTTPException(
+                status_code=404, detail="run heatmap is not published"
+            )
+        try:
+            size = candidate.stat().st_size
+            if size > max_artifact_bytes:
+                raise HTTPException(
+                    status_code=404,
+                    detail="run heatmap exceeds the serving byte budget",
+                )
+            with candidate.open("rb") as stream:
+                payload = stream.read(max_artifact_bytes + 1)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=404, detail="run heatmap is not published"
+            ) from exc
+        if len(payload) > max_artifact_bytes:
+            raise HTTPException(
+                status_code=404,
+                detail="run heatmap exceeds the serving byte budget",
+            )
+        return Response(content=payload, media_type="text/html; charset=utf-8")
 
     @app.get("/api/adapters", response_model=AdaptersResponse)
     def adapters() -> AdaptersResponse:
