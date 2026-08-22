@@ -339,7 +339,7 @@ def test_public_surface_and_matrix_field_order() -> None:
 def test_matrix_constructor_revalidates_formula_and_axes() -> None:
     valid = MixtralRoutingLoadMatrix(
         schema_version="1.0",
-        store_schema_version="1.0",
+        store_schema_version=STORE_SCHEMA_VERSION,
         event_schema_version="1.0",
         run_key="run-1",
         model_key="model:acme/mixtral@r1",
@@ -503,7 +503,7 @@ def test_source_budget_exact_boundaries_and_readonly_success(tmp_path: Path) -> 
     shard = workspace / receipt.relative_path
     source_bytes = sum(
         (shard / name).stat().st_size
-        for name in ("manifest.json", "tokens.parquet", "routing.parquet")
+        for name in ("manifest.json", "tokens.parquet", "routing.parquet", "experts.parquet")
     )
     before_tree = _tree_snapshot(workspace)
     before_bytes = {

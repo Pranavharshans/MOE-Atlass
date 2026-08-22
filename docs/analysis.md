@@ -434,3 +434,26 @@ observations only; it never by itself proves specialization, and real-model
 causal claims stay deferred to the validation ledger. These summaries are
 the content Evidence Cards' causality/stability sections carry; recipes and
 restoration guarantees live in [interventions](interventions.md).
+
+## Per-layer expert-activation summaries (R3.3)
+
+`summarize_expert_activity(workspace, *, run_key, layer_keys, expert_keys,
+max_expert_rows, max_source_bytes)` produces one canonical, frozen,
+round-trippable activation summary (`moeatlas.expert_activity_summary`,
+schema `1.0`) over the reopened shards of one run. Reading goes exclusively
+through the public storage query seam (`query_expert_activity`): every shard
+is revalidated — manifest identity, checksums, row identities, token links,
+conflicts, budgets — before aggregation, and no raw expert rows are retained
+anywhere; only per-cell aggregates survive.
+
+The summary reports, per layer and per discovered expert, the event count
+plus mean and max `contribution_norm` over measured events. Zero activity is
+accounted explicitly: universe cells whose experts never fired carry a zero
+count with null statistics and are counted in `inactive_expert_cells`,
+alongside `active_expert_cells` (the two always partition the layer × expert
+universe) and `total_event_count`. Because expert keys are opaque component
+identities, the caller supplies the layer universe (`layer_keys` plus one
+expert-key row per layer) exactly as the routing-load lane does; evidence
+outside that universe fails closed rather than being silently dropped. The
+value serializes deterministically via `to_json()` and restores exactly via
+`ExpertActivitySummary.from_json()`.

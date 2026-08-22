@@ -276,3 +276,39 @@ validation, or content-addressed shard identity on their own. Failures raise
 `budget`, `write`, and `publish`; receipts (`RunTableReceipt`,
 `RunTableFileEntry`) are strict dataclasses carrying the manifest digest and
 sorted file entries.
+
+## Expert-event shards (store schema 2.0)
+
+Writers now publish store schema `2.0` (`STORE_SCHEMA_VERSION`): every shard
+directory additionally contains `experts.parquet`, and the manifest gains one
+declared budget/count field `expert_count`. The physical table carries the
+identity columns (`store_schema_version`, `shard_key`, `event_index`,
+`schema_version`, `event_type`) plus `token_key`, `expert_key`,
+`input_norm`, `output_norm`, `contribution_norm`, `latency_ms`, and a
+canonically-encoded JSON `metadata` string (null when empty), all nullable
+norm/latency measurements, ZSTD-compressed like the routing tables. Expert
+events participate in everything their routing siblings do: file checksums
+and sizes are recorded in the manifest and verified on reopen; row identity,
+schema identity, finite-float measurement, and canonical-metadata validation
+run on reopen; token links are validated (`validate_expert_links`);
+`(token_key, expert_key)` pairs join shard conflict/idempotence sets so
+overlapping evidence is rejected exactly like overlapping tokens or routes;
+and expert rows are folded into the semantic content address, so a changed
+measurement changes the shard key and cannot silently replace a committed
+shard. `append_structured_shard(workspace, result, *, store_token_text=False,
+max_expert_events=65536)` writes structured results carrying expert events;
+the plain `append_routing_shard` lane keeps its exact signature and writes
+v2 shards with declared `expert_count: 0`.
+
+### Compatibility matrix
+
+| On-disk shard | Reopen | List/inventory | Query seams |
+| --- | --- | --- | --- |
+| `1.0` (legacy: 3 files, 11-key manifest) | accepted unchanged; rows must carry the legacy version, receipts report `1.0` | counted with zero expert events | assignment queries unchanged; expert queries contribute zero-activity records |
+| `2.0` (4 files, 12-key manifest with `expert_count`) | full expert-row validation and digest coverage | expert counts included in event/byte budgets | both assignment and expert queries |
+
+Readers decide by the manifest's `store_schema_version`, never by directory
+listing order; unsupported versions, mixed key sets, or version-mismatched
+row stamps are reopen failures. The semantic digest is computed against the
+shard's own manifest version, which is why genuine v1 shards re-digest to
+their historical keys bit-for-bit.

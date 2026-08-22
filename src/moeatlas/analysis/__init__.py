@@ -41,6 +41,12 @@ from .evidence_cards import (
     StabilitySection,
     TaskAssociationSection,
 )
+from .expert_activity import (
+    EXPERT_ACTIVITY_SUMMARY_SCHEMA_VERSION,
+    ExpertActivitySummary,
+    LayerExpertActivity,
+    summarize_expert_activity,
+)
 from .expert_similarity import (
     EXPERT_SIMILARITY_SCHEMA_VERSION,
     ExpertSimilarity,
@@ -112,6 +118,10 @@ __all__ = [
     "analyze_causal_evidence",
     "EVIDENCE_CARD_SCHEMA_VERSION",
     "EVIDENCE_TIERS",
+    "EXPERT_ACTIVITY_SUMMARY_SCHEMA_VERSION",
+    "ExpertActivitySummary",
+    "LayerExpertActivity",
+    "summarize_expert_activity",
     "EXPERT_SIMILARITY_SCHEMA_VERSION",
     "ExpertSimilarity",
     "ExpertSimilarityError",
