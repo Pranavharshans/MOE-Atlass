@@ -34,6 +34,9 @@ machinery, so keys are stable across processes and hash seeds.
 
 Input descriptors are identity only:
 
+Descriptors never fetch data by themselves; the later read step may access a
+Hub repository only when `allow_downloads=true` is explicitly set.
+
 - `PromptInputSpec` is either chat messages (`ChatMessage(role, content)`) or
   raw text, never both.
 - `DatasetInputSpec` describes JSONL/CSV/Parquet/text/iterable/HF-style data by
