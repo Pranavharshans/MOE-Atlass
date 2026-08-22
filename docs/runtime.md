@@ -359,6 +359,32 @@ aggregate, and visualization boundaries. Feature 28 accepts Qwen3.5 and
 future-family inspections through the complete structural routing-universe
 contract; checkpoint/GPU certification remains deferred to the final VM.
 
+## Structure-driven generic capture (model-family-agnostic)
+
+`run_structured_routing_forward(model, report, token_events, model_kwargs, *,
+max_events, config=None)` in `moeatlas.runtime.generic_capture` turns the
+caller-owned hook pattern into a product seam for foreign families. It
+discovers router modules purely from a static `[STRUCTURE]` `DiscoveryReport`
+(router candidates bind one same-index MoE layer and the report's strict
+`expert_count`/`routed_top_k` facts drive every count), attaches passive
+forward hooks through the existing `HookManager`, and decodes each router
+payload generically against the discovered expert universe — no adapter name,
+module-path convention, or certified descriptor anywhere.
+
+Two payload forms decode today: packed `(logits, scores, indices)` tuples use
+their native scores as probabilities, and flat `[tokens, experts]` logit
+matrices reduce through deterministic tie-rejecting top-k. Score
+normalization follows the model config where determinable (`score_function`
+of softmax or sigmoid); otherwise raw logits are recorded and a capability
+note travels with the result. The complete-event budget
+`len(token_events) * len(targets) * routed_top_k` is checked before hooks
+exist; every router must fire exactly once and every token must receive every
+layer's full rank schedule, or nothing publishes. Tensor-like conversion stays
+fixed to `detach() -> cpu() -> float() -> tolist()` for scores and
+`detach() -> cpu() -> tolist()` for integer indices. The module imports no
+model stack; real checkpoint and payload equivalence remain deferred to the
+final VM phase.
+
 ## Routing decode capabilities (model-free)
 
 `moeatlas.runtime.capabilities` is the model-neutral seam between the shared

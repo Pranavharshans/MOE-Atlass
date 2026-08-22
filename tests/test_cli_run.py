@@ -19,7 +19,7 @@ def _echo_executor(*, row_index: int, batch_index: int, values):
 
 @pytest.fixture()
 def fake_executor(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(cli_module, "_load_executor", lambda name: _echo_executor)
+    monkeypatch.setattr(cli_module, "_load_executor", lambda name, plan: _echo_executor)
 
 
 @pytest.fixture()
