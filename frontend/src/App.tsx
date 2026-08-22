@@ -18,7 +18,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 
-type NavigationItem = "analysis" | "discovery" | "runs" | "settings";
+type NavigationItem = "analysis" | "discovery" | "run" | "runs" | "settings";
 type RunnerMode = "local" | "remote";
 type HubKind = "model" | "dataset";
 type SearchState = "idle" | "loading" | "ready" | "unavailable";
@@ -35,6 +35,16 @@ type SourceDraft = {
 type RunnerDraft = {
   mode: RunnerMode;
   endpoint: string;
+};
+
+type RunDraft = {
+  mode: "generation" | "teacher_forced";
+  sampleCap: string;
+  batchSize: string;
+  maxNewTokens: string;
+  tokenTextPolicy: "redacted" | "stored";
+  allowExport: boolean;
+  retainRawPayloads: boolean;
 };
 
 type HubSuggestion = {
@@ -57,9 +67,20 @@ const DEFAULT_SOURCES: SourceDraft = {
 
 const DEFAULT_RUNNER: RunnerDraft = { mode: "local", endpoint: "" };
 
+const DEFAULT_RUN: RunDraft = {
+  mode: "generation",
+  sampleCap: "128",
+  batchSize: "1",
+  maxNewTokens: "128",
+  tokenTextPolicy: "redacted",
+  allowExport: true,
+  retainRawPayloads: false,
+};
+
 const NAVIGATION: Array<{ id: NavigationItem; label: string; icon: Icon }> = [
   { id: "analysis", label: "Analysis", icon: Plus },
   { id: "discovery", label: "Discover", icon: GitBranch },
+  { id: "run", label: "Run", icon: Lightning },
   { id: "runs", label: "Runs", icon: Pulse },
   { id: "settings", label: "Settings", icon: GearSix },
 ];
@@ -478,8 +499,73 @@ function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
           <section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Resource envelope</p><Database size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Weights</dt><dd>not measured</dd></div><div><dt>Accelerator</dt><dd>{runner.mode === "local" ? "local probe" : "provider probe"}</dd></div><div><dt>Rows</dt><dd>bounded later</dd></div><div><dt>Capture</dt><dd>off</dd></div></dl></section>
           <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Evidence rule</p></div><p className="mt-4 text-xs leading-5 text-muted">Discovery can report topology and router seams. It must not label routing as captured until a real forward produces validated events.</p></section>
           <button type="button" className="button-primary w-full justify-between" onClick={stagePreflight}>{staged ? "Preflight staged" : "Stage runtime preflight"}<ArrowRight size={16} weight="bold" /></button>
+          {staged ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("run")}>Configure run <ArrowRight size={16} /></button> : null}
           {staged ? <p className="rounded-xl border border-cyan/25 bg-cyan/[0.06] p-3 text-xs leading-5 text-cyan" role="status">Intent is saved locally. No model, dataset, or GPU process was started by this browser action.</p> : null}
         </aside>
+      </div>
+    </div>
+  );
+}
+
+function validatePositiveSetting(value: string, label: string, maximum: number): string | null {
+  if (!value.trim()) return `${label} is required.`;
+  if (!/^\d+$/.test(value.trim()) || Number(value) < 1 || Number(value) > maximum) return `${label} must be an integer between 1 and ${maximum}.`;
+  return null;
+}
+
+function RunConfigPage({ runner, onNavigate }: { runner: RunnerDraft; onNavigate: (item: NavigationItem) => void }) {
+  const [sources] = useState<SourceDraft>(() => ({ ...DEFAULT_SOURCES, ...readStored<Partial<SourceDraft>>("moeatlas-analysis-sources", {}) }));
+  const [run, setRun] = useState<RunDraft>(() => ({ ...DEFAULT_RUN, ...readStored<Partial<RunDraft>>("moeatlas-run", {}) }));
+  const [staged, setStaged] = useState(() => window.localStorage.getItem("moeatlas-run-staged") === "true");
+  const modelError = validateHubId(sources.modelId, "Model ID");
+  const datasetError = validateHubId(sources.datasetId, "Dataset ID");
+  const sampleError = validatePositiveSetting(run.sampleCap, "Sample cap", 1_000_000);
+  const batchError = validatePositiveSetting(run.batchSize, "Batch size", 4096);
+  const tokenError = validatePositiveSetting(run.maxNewTokens, "Max new tokens", 1_000_000);
+  const ready = !modelError && !datasetError && !sampleError && !batchError && !tokenError;
+
+  function update(field: keyof RunDraft, value: string | boolean) {
+    setRun((current) => ({ ...current, [field]: value } as RunDraft));
+    setStaged(false);
+  }
+
+  function stageRun() {
+    if (!ready) return;
+    window.localStorage.setItem("moeatlas-run", JSON.stringify(run));
+    window.localStorage.setItem("moeatlas-runner", JSON.stringify(runner));
+    window.localStorage.setItem("moeatlas-run-staged", "true");
+    setStaged(true);
+  }
+
+  if (modelError || datasetError) {
+    return (
+      <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Lightning size={21} /></div><h1 className="mt-5 font-display text-3xl font-semibold tracking-[-0.04em] text-white">No run inputs.</h1><p className="mt-3 max-w-[43ch] text-center text-sm leading-6 text-muted">Return to analysis and bind a model and dataset before configuring execution.</p><button type="button" className="button-primary mt-6" onClick={() => onNavigate("analysis")}>Back to analysis <ArrowRight size={16} weight="bold" /></button></section>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Run / Configure</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Set the capture budget.</h1><p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">Keep sampling, row limits, and privacy choices explicit. Staging this contract does not start the model or open a remote connection.</p></div><div className="research-header-meta"><StatusDot tone={ready ? "good" : "warn"} /><span>{staged ? "Run staged" : ready ? "Ready to stage" : "Invalid budget"}</span></div></header>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
+        <main className="space-y-5">
+          <section className="research-card">
+            <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Execution budget</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Rows and generation</h2></div><Lightning size={19} className="text-signal" /></div>
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+              <label className="field-label" htmlFor="sample-cap">Sample cap<input id="sample-cap" className={`input-control mt-2 ${sampleError ? "input-control-error" : ""}`} value={run.sampleCap} onChange={(event) => update("sampleCap", event.target.value)} inputMode="numeric" /></label>
+              <label className="field-label" htmlFor="batch-size">Batch size<input id="batch-size" className={`input-control mt-2 ${batchError ? "input-control-error" : ""}`} value={run.batchSize} onChange={(event) => update("batchSize", event.target.value)} inputMode="numeric" /></label>
+              <label className="field-label" htmlFor="max-new-tokens">Max new tokens<input id="max-new-tokens" className={`input-control mt-2 ${tokenError ? "input-control-error" : ""}`} value={run.maxNewTokens} onChange={(event) => update("maxNewTokens", event.target.value)} inputMode="numeric" /></label>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3"><p className={`field-hint ${sampleError ? "field-hint-error" : ""}`}>{sampleError ?? "Rows are bounded before execution."}</p><p className={`field-hint ${batchError ? "field-hint-error" : ""}`}>{batchError ?? "Schedule remains deterministic."}</p><p className={`field-hint ${tokenError ? "field-hint-error" : ""}`}>{tokenError ?? "Generation budget is recorded."}</p></div>
+            <div className="mt-6"><span className="field-label">Run mode</span><div className="mt-2 inline-flex rounded-xl border border-line bg-ink p-1" role="group" aria-label="Run mode"><button type="button" className={`runner-tab ${run.mode === "generation" ? "runner-tab-active" : ""}`} aria-pressed={run.mode === "generation"} onClick={() => update("mode", "generation")}>Generation</button><button type="button" className={`runner-tab ${run.mode === "teacher_forced" ? "runner-tab-active" : ""}`} aria-pressed={run.mode === "teacher_forced"} onClick={() => update("mode", "teacher_forced")}>Teacher-forced</button></div></div>
+          </section>
+          <section className="research-card">
+            <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Evidence and privacy</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">What may be retained</h2></div><ShieldCheck size={19} className="text-cyan" /></div>
+            <div className="mt-6"><span className="field-label">Token text</span><div className="mt-2 inline-flex rounded-xl border border-line bg-ink p-1" role="group" aria-label="Token text policy"><button type="button" className={`runner-tab ${run.tokenTextPolicy === "redacted" ? "runner-tab-active" : ""}`} aria-pressed={run.tokenTextPolicy === "redacted"} onClick={() => update("tokenTextPolicy", "redacted")}>Redacted (default)</button><button type="button" className={`runner-tab ${run.tokenTextPolicy === "stored" ? "runner-tab-active" : ""}`} aria-pressed={run.tokenTextPolicy === "stored"} onClick={() => update("tokenTextPolicy", "stored")}>Store token text</button></div></div>
+            <div className="mt-5 space-y-2"><label className="toggle-row"><input className="check-control" type="checkbox" checked={run.allowExport} onChange={(event) => update("allowExport", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Allow artifact export</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Keep export available for validated run artifacts.</span></span></label><label className="toggle-row"><input className="check-control" type="checkbox" checked={run.retainRawPayloads} onChange={(event) => update("retainRawPayloads", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Retain raw router payloads</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Opt in only when payload inspection is necessary.</span></span></label></div>
+          </section>
+          <section className="research-card"><div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Worker boundary</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Execution handoff</h2></div><WifiHigh size={19} className="text-cyan" /></div><div className="mt-5 flex flex-wrap items-center gap-3"><span className="runtime-pill"><StatusDot />{runner.mode === "local" ? "This machine" : "Provider VM"}</span>{runner.mode === "remote" ? <span className="font-mono text-[0.65rem] text-muted">{runner.endpoint.trim() || "in-VM console"}</span> : <span className="text-xs text-muted">Local accelerator is resolved by the runtime.</span>}</div><p className="mt-4 text-xs leading-5 text-muted">Remote execution uses the provider’s exposed HTTP path or an in-VM console. There is no browser-side SSH feature.</p></section>
+        </main>
+        <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Run contract</p><GitBranch size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Model</dt><dd>{sources.modelId}</dd></div><div><dt>Dataset</dt><dd>{sources.datasetId}</dd></div><div><dt>Rows</dt><dd>{run.sampleCap}</dd></div><div><dt>Batch</dt><dd>{run.batchSize}</dd></div><div><dt>Mode</dt><dd>{run.mode.replace("_", " ")}</dd></div><div><dt>Tokens</dt><dd>{run.tokenTextPolicy}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">State boundary</p></div><p className="mt-4 text-xs leading-5 text-muted">A staged contract is durable UI intent. Live progress starts only when the executor accepts it and publishes run records.</p></section><button type="button" className="button-primary w-full justify-between" disabled={!ready} onClick={stageRun}>{staged ? "Run contract staged" : "Stage run contract"}<ArrowRight size={16} weight="bold" /></button>{staged ? <p className="rounded-xl border border-cyan/25 bg-cyan/[0.06] p-3 text-xs leading-5 text-cyan" role="status">The configuration is saved locally. No model or dataset has been loaded by this browser action.</p> : null}</aside>
       </div>
     </div>
   );
@@ -519,7 +605,7 @@ function SettingsPage({ runner, setRunner }: { runner: RunnerDraft; setRunner: (
 export function App() {
   const [active, setActive] = useState<NavigationItem>("analysis");
   const [runner, setRunner] = useState<RunnerDraft>(() => readStored("moeatlas-runner", DEFAULT_RUNNER));
-  const content = active === "analysis" ? <AnalysisPage runner={runner} setRunner={setRunner} onNavigate={setActive} /> : active === "discovery" ? <DiscoveryPage onNavigate={setActive} /> : active === "runs" ? <RunsPage /> : <SettingsPage runner={runner} setRunner={setRunner} />;
+  const content = active === "analysis" ? <AnalysisPage runner={runner} setRunner={setRunner} onNavigate={setActive} /> : active === "discovery" ? <DiscoveryPage onNavigate={setActive} /> : active === "run" ? <RunConfigPage runner={runner} onNavigate={setActive} /> : active === "runs" ? <RunsPage /> : <SettingsPage runner={runner} setRunner={setRunner} />;
 
   return (
     <div className="app-shell min-h-screen">
