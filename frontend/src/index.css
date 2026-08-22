@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0c1113;
+  --color-panel: #12191c;
+  --color-panel-strong: #172125;
+  --color-line: rgba(214, 231, 233, 0.1);
+  --color-line-bright: rgba(214, 231, 233, 0.18);
+  --color-muted: #91a2a6;
+  --color-signal: #ff8e4a;
+  --color-cyan: #78d5d1;
+  --font-display: "Avenir Next", "Helvetica Neue", ui-sans-serif, sans-serif;
+  --font-sans: "Avenir Next", "Helvetica Neue", ui-sans-serif, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+  font-family: "Avenir Next", "Helvetica Neue", ui-sans-serif, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
+  background: #0c1113;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: #0c1113;
+  color: #f2f6f4;
+  line-height: 1.45;
+}
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+::selection { background: rgba(255, 142, 74, 0.35); color: #fff; }
+
+.app-shell {
+  background:
+    radial-gradient(circle at 72% -10%, rgba(120, 213, 209, 0.09), transparent 30rem),
+    radial-gradient(circle at 12% 18%, rgba(255, 142, 74, 0.05), transparent 24rem),
+    #0c1113;
+}
+
+.hero-grid {
+  background-color: #12191c;
+  background-image:
+    linear-gradient(rgba(214, 231, 233, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 231, 233, 0.045) 1px, transparent 1px),
+    radial-gradient(circle at 75% 50%, rgba(120, 213, 209, 0.13), transparent 23rem);
+  background-size: 42px 42px, 42px 42px, auto;
+}
+
+.hero-orbit { position: absolute; right: 3%; top: 50%; width: min(38vw, 33rem); aspect-ratio: 1; transform: translateY(-50%); opacity: 0.9; }
+.hero-orbit-ring { position: absolute; inset: 12%; border: 1px solid rgba(120, 213, 209, 0.22); border-radius: 50%; transform: rotate(-21deg) skewX(-12deg); }
+.hero-orbit-ring-two { inset: 25%; border-style: dashed; border-color: rgba(255, 142, 74, 0.45); transform: rotate(38deg) skewX(18deg); }
+.hero-orbit-core { position: absolute; inset: 42%; display: grid; place-items: center; border: 1px solid rgba(255, 142, 74, 0.6); border-radius: 50%; background: rgba(255, 142, 74, 0.09); box-shadow: 0 0 55px rgba(255, 142, 74, 0.18); }
+.hero-orbit-core span { width: 0.55rem; height: 0.55rem; border-radius: 999px; background: #ff8e4a; box-shadow: 0 0 16px rgba(255, 142, 74, 0.9); }
+.hero-orbit-label { position: absolute; padding: 0.35rem 0.55rem; border: 1px solid rgba(214, 231, 233, 0.14); border-radius: 0.45rem; background: rgba(12, 17, 19, 0.8); color: #91a2a6; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.hero-orbit-label-top { right: 10%; top: 18%; }
+.hero-orbit-label-bottom { bottom: 18%; left: 8%; }
+
+.label-caps { font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+.status-dot { display: inline-block; width: 0.44rem; height: 0.44rem; border-radius: 999px; background: #78d5d1; box-shadow: 0 0 10px rgba(120, 213, 209, 0.9); }
+.status-dot-quiet { background: #91a2a6; box-shadow: none; }
+.status-dot-warn { background: #ffb454; box-shadow: 0 0 10px rgba(255, 180, 84, 0.8); }
+.profile-chip, .runtime-pill { display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid rgba(120, 213, 209, 0.22); border-radius: 999px; background: rgba(120, 213, 209, 0.06); padding: 0.45rem 0.7rem; color: #c9d9d9; font-size: 0.7rem; }
+.runtime-pill { border-color: rgba(214, 231, 233, 0.13); background: rgba(214, 231, 233, 0.04); }
+.button-primary, .button-secondary, .icon-button, .nav-item { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; transition: transform 180ms ease-out, border-color 180ms ease-out, background 180ms ease-out, color 180ms ease-out; }
+.button-primary { min-height: 2.75rem; border: 1px solid #ff8e4a; border-radius: 0.75rem; background: #ff8e4a; padding: 0.65rem 1rem; color: #16100b; font-size: 0.78rem; font-weight: 700; }
+.button-primary:hover { transform: translateY(-1px); background: #ffa26c; }
+.button-secondary { min-height: 2.75rem; border: 1px solid rgba(214, 231, 233, 0.16); border-radius: 0.75rem; background: rgba(214, 231, 233, 0.035); padding: 0.65rem 1rem; color: #dce8e7; font-size: 0.78rem; font-weight: 600; }
+.button-secondary:hover { transform: translateY(-1px); border-color: rgba(120, 213, 209, 0.45); background: rgba(120, 213, 209, 0.08); color: #fff; }
+.icon-button { min-width: 2.75rem; min-height: 2.75rem; border: 1px solid rgba(214, 231, 233, 0.13); border-radius: 0.75rem; background: rgba(214, 231, 233, 0.035); color: #91a2a6; }
+.icon-button:hover { border-color: rgba(120, 213, 209, 0.45); color: #78d5d1; }
+.nav-item { width: 100%; min-height: 2.75rem; justify-content: flex-start; border: 1px solid transparent; border-radius: 0.75rem; padding: 0.65rem 0.75rem; color: #91a2a6; font-size: 0.78rem; font-weight: 600; }
+.nav-item:hover { background: rgba(214, 231, 233, 0.04); color: #f2f6f4; }
+.nav-item-active { border-color: rgba(255, 142, 74, 0.2); background: rgba(255, 142, 74, 0.09); color: #ffb38b; }
+.workflow-marker { display: grid; width: 2rem; height: 2rem; flex-shrink: 0; place-items: center; border: 1px solid rgba(214, 231, 233, 0.14); border-radius: 0.65rem; color: #91a2a6; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.62rem; }
+.workflow-marker-active { border-color: rgba(255, 142, 74, 0.55); background: rgba(255, 142, 74, 0.12); color: #ffb38b; }
+.empty-surface { display: grid; min-height: 55vh; place-items: center; align-content: center; border: 1px dashed rgba(214, 231, 233, 0.15); border-radius: 2rem; padding: 3rem 1.5rem; text-align: center; }
+
+@media (max-width: 900px) {
+  .hero-orbit { right: -16%; width: 24rem; opacity: 0.45; }
+}
+
+@media (max-width: 640px) {
+  .hero-orbit { display: none; }
+  .hero-grid { background-size: 30px 30px, 30px 30px, auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
