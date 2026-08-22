@@ -50,6 +50,24 @@ The application is built with documentation routes disabled
 (`docs_url=None`, `redoc_url=None`, `openapi_url=None`) so no unbounded
 schema surface is exposed.
 
+## Static frontend
+
+`create_app()` mounts the packaged single-page frontend from
+`moeatlas/server/static/` at `/` **after** every API route, so `/healthz`
+and `/api/*` always take precedence. The assets are dependency-free vanilla
+HTML/CSS/JS: no npm/node build chain, no CDN links, and no external
+resources of any kind (the repo stays offline-first). Static responses are
+served with `Cache-Control: no-store` so local development always observes
+freshly served bytes; API responses are untouched by that header. The mount
+is skipped when the static directory is absent (for example in stripped
+installations), which leaves the pure-API surface unchanged.
+
+The frontend is hash-routed (`#/workspace`, `#/runs`, `#/runs/{run_key}`,
+`#/heatmap[/{run_key}]`) and consumes only the read-only endpoints above.
+Every fetch failure renders an inline error banner; heatmap documents are
+embedded as-is via an iframe because they are strict-CSP, no-JavaScript
+static artifacts.
+
 ## Local launch
 
 `moeatlas ui WORKSPACE` serves the bound workspace on
@@ -61,7 +79,8 @@ workspace, and stops cleanly on Ctrl-C.
 
 ## Honest scope
 
-The React/TypeScript single-page UI and browser end-to-end tests from the
-PRD are recorded as deferred release-engineering evidence in
-`model-validation-ledger.md`; the read-only API above is the contract they
-will consume. Nothing here claims UI parity before that work lands.
+The dependency-free local single-page UI described above is served by the
+same `moeatlas ui WORKSPACE` command; the browser end-to-end tests from the
+PRD remain recorded as deferred release-engineering evidence in
+`model-validation-ledger.md`. The read-only API above is the contract the
+frontend consumes. Nothing here claims UI parity beyond the shipped views.

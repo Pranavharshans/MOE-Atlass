@@ -65,7 +65,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-moeatlas = ["py.typed"]
+moeatlas = ["py.typed", "server/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
