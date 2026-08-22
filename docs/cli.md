@@ -83,7 +83,10 @@ destination is refused unless `--force` is supplied.
 The output destination is preflighted before the inspection file, workspace,
 or optional store dependency is touched. The inspection must be a regular
 non-symlink file and is read at most `--max-inspection-bytes` bytes before
-strict `AdapterInspection` validation. The command calls bounded aggregation
+strict validation. Both certified `AdapterInspection` documents and universal
+structure inspections (the `universal_routing_inspection` manifest type
+derived from a `[STRUCTURE]` discovery report) are accepted through the same
+flag; see [analysis](analysis.md). The command calls bounded aggregation
 and rendering exactly once, then reuses the existing atomic report writer;
 that writer is the existing `write_report_atomic()` path;
 `--force` is passed only to that writer. Success writes no stdout and emits
@@ -152,8 +155,9 @@ Feature 30 rendering, then reuses the atomic report writer. The two run keys
 must differ and are checked before budget parsing or output preflight. All
 four budgets are required canonical positive decimal integers; the output must
 use the exact lowercase `.html` suffix with `--force` semantics identical to
-the heatmap command. The inspection read is the same bounded non-symlink
-strict `AdapterInspection` path. Success emits only
+the heatmap command. The inspection read is the same bounded non-symlink path
+and accepts both certified `AdapterInspection` documents and universal
+structure inspections. Success emits only
 `saved routing comparison to <path>` on stderr.
 
 Failures reuse the fixed stage messages: missing or uncommitted runs report
