@@ -167,6 +167,29 @@ This is an `EXPERIMENTAL` export primitive, not a workspace/catalog/query
 subsystem; it never reads shards, aggregates, renders, or interprets. MV-01
 through MV-08 remain deferred.
 
+## Universal structure inspections
+
+Phase R1 unblocks the analysis lane for any architecture:
+`aggregate_routing_load()` accepts, alongside a certified
+`AdapterInspection`, a universal structure inspection —
+`moeatlas.adapters.build_universal_inspection(report)` derives a strict
+`UniversalRoutingInspection` from one exact `[STRUCTURE]` discovery report
+using only model-neutral structural evidence (semantic kinds, routing flags,
+contiguous layer/expert indices, and the `expert_count`/`routed_top_k`
+facts). The document marks its own provenance as `universal`, carries the
+architecture family and scanner version, fixes the layout tag to the
+`packed` equivalent (generic scans do not certify a native indexing layout),
+and binds the layer/expert axes with a canonical SHA-256 `axes_digest` that
+is re-verified on every import. It round-trips through canonical JSON like
+every other artifact here.
+
+Both lanes produce the identical matrix contract; universal documents report
+adapter identity as the fixed `universal` marker plus the scanner version,
+so downstream artifacts never present generic evidence as certified adapter
+evidence. Adapter-declared universes (`declared_universe`) remain a
+certified-inspection capability; passing one with a universal document fails
+at the inspection stage before any source work.
+
 ## Declared routing universes
 
 `aggregate_routing_load()` accepts an optional `declared_universe`: the

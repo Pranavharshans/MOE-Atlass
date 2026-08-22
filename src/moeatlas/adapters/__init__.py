@@ -32,6 +32,12 @@ from .registry import (
     discover_entry_point_records,
     match_adapters_for_family,
 )
+from .universal import (
+    UNIVERSAL_ROUTING_INSPECTION_SCHEMA_VERSION,
+    UniversalLayerUniverse,
+    UniversalRoutingInspection,
+    build_universal_inspection,
+)
 from .universe import (
     ROUTING_UNIVERSE_SCHEMA_VERSION,
     LayerRoutingUniverse,
@@ -74,4 +80,8 @@ __all__ = [
     "Qwen3_5MoeStaticAdapter",
     "AdapterProbePlanError",
     "build_routing_probe_plan",
+    "UNIVERSAL_ROUTING_INSPECTION_SCHEMA_VERSION",
+    "UniversalLayerUniverse",
+    "UniversalRoutingInspection",
+    "build_universal_inspection",
 ]

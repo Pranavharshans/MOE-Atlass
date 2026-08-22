@@ -115,12 +115,15 @@ def build_parser() -> argparse.ArgumentParser:
             "canonical positive decimal integers."
         ),
         epilog=(
-            "The inspection is a caller-created AdapterInspection.to_json() document; "
-            "all four budgets are required canonical positive decimals; --output must "
-            "use the exact lowercase .html suffix. Existing output requires --force "
-            "and publication reuses write_report_atomic(). The optional DuckDB store "
-            "extra is required for committed routing shards; no model, browser, "
-            "network, cache, or generation path is used."
+            "The inspection is a caller-created AdapterInspection.to_json() "
+            "document or a universal structure inspection derived from a "
+            "[STRUCTURE] discovery report (manifest_type "
+            "\"universal_routing_inspection\"); all four budgets are required "
+            "canonical positive decimals; --output must use the exact lowercase "
+            ".html suffix. Existing output requires --force and publication "
+            "reuses write_report_atomic(). The optional DuckDB store extra is "
+            "required for committed routing shards; no model, browser, network, "
+            "cache, or generation path is used."
         ),
     )
     heatmap.add_argument("workspace", metavar="WORKSPACE")
@@ -179,13 +182,16 @@ def build_parser() -> argparse.ArgumentParser:
             "All budgets are required canonical positive decimal integers."
         ),
         epilog=(
-            "The inspection is a caller-created AdapterInspection.to_json() document; "
-            "all four budgets are required canonical positive decimals; the two run "
-            "keys must differ; --output must use the exact lowercase .html suffix. "
-            "Existing output requires --force and publication reuses "
-            "write_report_atomic(). The optional DuckDB store extra is required for "
-            "committed routing shards; no model, browser, network, cache, or "
-            "generation path is used."
+            "The inspection is a caller-created AdapterInspection.to_json() "
+            "document or a universal structure inspection derived from a "
+            "[STRUCTURE] discovery report (manifest_type "
+            "\"universal_routing_inspection\"); all four budgets are required "
+            "canonical positive decimals; the two run keys must differ; "
+            "--output must use the exact lowercase .html suffix. Existing "
+            "output requires --force and publication reuses "
+            "write_report_atomic(). The optional DuckDB store extra is required "
+            "for committed routing shards; no model, browser, network, cache, "
+            "or generation path is used."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -520,13 +526,24 @@ def _read_heatmap_inspection(raw_path: object, max_bytes: int):
         raise _HeatmapInputError("inspection exceeds --max-inspection-bytes")
 
     try:
-        from .adapters import AdapterInspection
+        from .adapters import AdapterInspection, UniversalRoutingInspection
 
+        marker = None
+        try:
+            document = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            document = None
+        if type(document) is dict:
+            marker = document.get("manifest_type")
+        if marker == "universal_routing_inspection":
+            return UniversalRoutingInspection.from_json(payload)
         return AdapterInspection.from_json(payload)
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as exc:
-        raise _HeatmapInputError("inspection is not a valid AdapterInspection document") from exc
+        raise _HeatmapInputError(
+            "inspection is not a valid AdapterInspection or universal inspection document"
+        ) from exc
 
 
 def _run_heatmap_analysis(
