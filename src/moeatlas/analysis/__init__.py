@@ -82,6 +82,7 @@ from .routing_compare import (
 )
 from .routing_heatmap import (
     ROUTING_HEATMAP_SCHEMA_VERSION,
+    render_compact_routing_load_heatmap,
     render_mixtral_routing_load_heatmap,
     render_routing_load_heatmap,
 )
@@ -178,6 +179,7 @@ __all__ = [
     "aggregate_routing_load",
     "aggregate_mixtral_routing_load",
     "ROUTING_HEATMAP_SCHEMA_VERSION",
+    "render_compact_routing_load_heatmap",
     "render_routing_load_heatmap",
     "render_mixtral_routing_load_heatmap",
 ]

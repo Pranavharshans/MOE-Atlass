@@ -1125,16 +1125,19 @@ def create_app(
     def run_heatmap(
         run_key: str,
         metric: str = Query(default="assignment_counts"),
+        view: str = Query(default="report"),
     ) -> Any:
         from fastapi import Response
 
         stable_run_key = _validated_run_key(run_key)
         if metric not in {"assignment_counts", "assignment_shares", "load_ratios"}:
             raise HTTPException(status_code=400, detail="unsupported heatmap metric")
+        if view not in {"report", "compact"}:
+            raise HTTPException(status_code=400, detail="unsupported heatmap view")
         workspace_path, _ = _catalog_entry(stable_run_key)
         candidate = (
             _safe_heatmap_document(workspace_path, stable_run_key)
-            if metric == "assignment_counts"
+            if metric == "assignment_counts" and view == "report"
             else None
         )
         if candidate is None:
@@ -1142,13 +1145,21 @@ def create_app(
             if inspection_path is None:
                 raise HTTPException(status_code=404, detail="run heatmap is not published")
             try:
-                from ..analysis import render_routing_load_heatmap
+                from ..analysis import (
+                    render_compact_routing_load_heatmap,
+                    render_routing_load_heatmap,
+                )
 
                 document = inspection_path.read_bytes()
                 if len(document) > _DEFAULT_ARTIFACT_BYTES:
                     raise ValueError("inspection exceeds the serving byte budget")
                 matrix = _load_matrix(workspace_path, stable_run_key)
-                payload = render_routing_load_heatmap(
+                renderer = (
+                    render_compact_routing_load_heatmap
+                    if view == "compact"
+                    else render_routing_load_heatmap
+                )
+                payload = renderer(
                     matrix, metric=metric, max_cells=100_000
                 ).encode("utf-8")
                 if len(payload) > max_artifact_bytes:

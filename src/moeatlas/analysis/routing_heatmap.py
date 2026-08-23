@@ -244,6 +244,136 @@ def render_routing_load_heatmap(
     return "\n".join(lines) + "\n"
 
 
+def render_compact_routing_load_heatmap(
+    matrix: RoutingLoadMatrix,
+    *,
+    metric: str,
+    max_cells: int,
+) -> str:
+    """Render the complete matrix as an adaptive, viewport-contained HTML document."""
+
+    if type(metric) is not str:
+        raise TypeError("metric must be an exact string")
+    if metric not in _METRICS:
+        raise ValueError("metric must be assignment_counts, assignment_shares, or load_ratios")
+    _strict_positive_cells(max_cells)
+    if type(matrix) is not RoutingLoadMatrix:
+        raise TypeError("matrix must be an exact RoutingLoadMatrix")
+    fresh = _fresh_matrix(matrix)
+    layer_count = len(fresh.layer_keys)
+    expert_count = len(fresh.expert_keys[0])
+    cells = layer_count * expert_count
+    if cells > max_cells:
+        raise ValueError("matrix cells exceed max_cells")
+
+    metric_definition, value_kind = _METRICS[metric]
+    values = getattr(fresh, metric)
+    maximum = max(max(row) for row in values)
+    density = (
+        "ultra"
+        if cells > 4_096 or expert_count > 128
+        else "dense"
+        if cells > 256
+        else "readable"
+    )
+    document_title = f"MoEAtlas — compact routing heatmap — {fresh.run_key}"
+
+    lines = [
+        "<!doctype html>",
+        '<html lang="en">',
+        "<head>",
+        '  <meta charset="utf-8">',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1">',
+        '  <meta name="moeatlas-routing-heatmap-schema" content="1.0">',
+        f'  <meta http-equiv="Content-Security-Policy" content="{_CSP}">',
+        '  <meta name="referrer" content="no-referrer">',
+        f"  <title>{_escape(document_title)}</title>",
+        "  <style>",
+        '    :root { color-scheme: dark; font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }',  # noqa: E501
+        "    * { box-sizing: border-box; }",
+        "    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #0d1011; color: #b8c1c5; }",  # noqa: E501
+        "    body { padding: clamp(0.35rem, 1vw, 0.7rem); }",
+        "    main { display: flex; width: 100%; height: 100%; min-width: 0; flex-direction: column; gap: 0.4rem; }",  # noqa: E501
+        "    .matrix-meta { display: flex; min-height: 1.5rem; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: clamp(0.52rem, 0.7vw, 0.68rem); }",  # noqa: E501
+        "    .matrix-meta strong { color: #e5e9ea; font-weight: 600; }",
+        "    .scale { display: flex; align-items: center; gap: 0.2rem; white-space: nowrap; }",
+        "    .scale i { width: clamp(0.42rem, 0.8vw, 0.75rem); height: 0.5rem; border: 1px solid rgba(255,255,255,0.05); }",  # noqa: E501
+        "    .table-wrap { min-width: 0; min-height: 0; flex: 1; overflow: hidden; border: 1px solid #30383d; background: #111416; }",  # noqa: E501
+        "    table { width: 100%; height: 100%; table-layout: fixed; border-collapse: collapse; font-variant-numeric: tabular-nums; }",  # noqa: E501
+        "    caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }",  # noqa: E501
+        "    th, td { min-width: 0; overflow: hidden; border-right: 1px solid rgba(8,12,14,0.28); border-bottom: 1px solid rgba(8,12,14,0.28); padding: 0; text-align: center; }",  # noqa: E501
+        "    thead { height: clamp(1rem, 4.5%, 1.6rem); }",
+        "    thead th { background: #171c1e; color: #7e8a90; font-size: clamp(0.36rem, 0.55vw, 0.58rem); font-weight: 500; }",  # noqa: E501
+        "    .corner, tbody th { width: clamp(1.75rem, 4.5vw, 3.2rem); }",
+        "    tbody th { background: #171c1e; color: #7e8a90; font-size: clamp(0.38rem, 0.58vw, 0.6rem); font-weight: 500; }",  # noqa: E501
+        "    td { position: relative; color: #0c1518; font-size: clamp(0.34rem, 0.62vw, 0.62rem); line-height: 1; outline: none; }",  # noqa: E501
+        "    td:hover, td:focus-visible { z-index: 2; outline: 2px solid #f0d495; outline-offset: -1px; filter: brightness(1.18); }",  # noqa: E501
+        "    .dense .cell-value, .ultra .cell-value { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }",  # noqa: E501
+        "    .ultra thead th span, .ultra tbody th span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }",  # noqa: E501
+        "    .heat-0 { background: #171c20; } .heat-1 { background: #1b3039; } .heat-2 { background: #205060; } .heat-3 { background: #237184; } .heat-4 { background: #2b91a0; } .heat-5 { background: #56a99f; } .heat-6 { background: #8ab589; } .heat-7 { background: #c2bb68; } .heat-8 { background: #e2ad55; }",  # noqa: E501
+        "    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }",  # noqa: E501
+        "  </style>",
+        "</head>",
+        "<body>",
+        f'  <main class="{density}">',
+        '    <div class="matrix-meta">',
+        f"      <span><strong>{_escape(layer_count)} layers × {_escape(expert_count)} experts</strong> · {_escape(metric)} · max {_escape(_format_value(metric, maximum))}</span>",  # noqa: E501
+        '      <span class="scale" aria-label="Relative heat scale, zero through maximum">0',
+        *[f'        <i class="heat-{index}"></i>' for index in range(9)],
+        "        max</span>",
+        "    </div>",
+        '    <div class="table-wrap">',
+        f'      <table aria-label="Complete routing matrix for {layer_count} layers and {expert_count} experts">',  # noqa: E501
+        f"        <caption>{_escape(metric_definition)} Exact values and component identities are available on cell focus or hover.</caption>",  # noqa: E501
+        "        <thead><tr>",
+        '          <th class="corner" scope="col"><span>Layer</span></th>',
+    ]
+    for expert_position, expert_key in enumerate(fresh.expert_keys[0]):
+        escaped_key = _escape(expert_key)
+        lines.append(
+            f'          <th scope="col" title="Expert {expert_position} · {escaped_key}" '
+            f'aria-label="Expert {expert_position} {escaped_key}">'
+            f"<span>E{expert_position}</span></th>"
+        )
+    lines.extend(("        </tr></thead>", "        <tbody>"))
+
+    for row_position, layer_key in enumerate(fresh.layer_keys):
+        layer_index = fresh.layer_indices[row_position]
+        escaped_layer = _escape(layer_key)
+        lines.append("          <tr>")
+        lines.append(
+            f'            <th scope="row" title="Layer {layer_index} · {escaped_layer}" '
+            f'aria-label="Layer {layer_index} {escaped_layer}"><span>L{layer_index}</span></th>'
+        )
+        for expert_position, expert_key in enumerate(fresh.expert_keys[row_position]):
+            value = values[row_position][expert_position]
+            heat = _heat_bin(float(value), float(maximum))
+            visible = _format_value(metric, value)
+            accessible = _escape(
+                f"Layer {layer_index} {layer_key}; Expert {expert_position} {expert_key}; "
+                f"{metric} {visible}"
+            )
+            lines.append(
+                f'            <td class="heat-{heat}" data-heat="{heat}" tabindex="0" '
+                f'aria-label="{accessible}" title="{accessible}"><span class="cell-value">'
+                f"{_escape(visible)}</span></td>"
+            )
+        lines.append("          </tr>")
+
+    lines.extend(
+        (
+            "        </tbody>",
+            "      </table>",
+            "    </div>",
+            f'    <span class="sr-only">Global maximum: {_escape(maximum)} {_escape(value_kind)}. Heat intensity is relative within this run.</span>',  # noqa: E501
+            "  </main>",
+            "</body>",
+            "</html>",
+        )
+    )
+    return "\n".join(lines) + "\n"
+
+
 # Preserve the historical spelling as an identity alias.  It is deliberately
 # not a family-specific renderer, so all families share one byte-stable HTML
 # contract.
@@ -251,6 +381,7 @@ render_mixtral_routing_load_heatmap = render_routing_load_heatmap
 
 __all__ = [
     "ROUTING_HEATMAP_SCHEMA_VERSION",
+    "render_compact_routing_load_heatmap",
     "render_routing_load_heatmap",
     "render_mixtral_routing_load_heatmap",
 ]

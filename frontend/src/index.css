@@ -230,7 +230,7 @@ button:disabled { cursor: not-allowed; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; }
 .metric-card { min-width: 0; border: 1px solid #282e32; border-radius: 3px; background: #111416; padding: 0.8rem; }
 .metric-card p:nth-child(2) { font-size: 1.05rem; }
-.heatmap-frame-react { display: block; width: 100%; height: 31rem; border: 1px solid #30383d; border-radius: 2px; background: #fff; }
+.heatmap-frame-react { display: block; width: 100%; height: clamp(30rem, 58vw, 43rem); border: 1px solid #30383d; border-radius: 2px; background: #0d1011; }
 .empty-surface { display: grid; min-height: 38vh; place-items: center; align-content: center; border: 1px dashed #3b454b; border-radius: 3px; padding: 2.5rem 1.5rem; text-align: center; }
 .empty-heatmap { display: grid; min-height: 31rem; place-items: center; align-content: center; border: 1px dashed #3b454b; border-radius: 2px; text-align: center; }
 

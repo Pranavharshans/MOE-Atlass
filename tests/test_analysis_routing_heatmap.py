@@ -17,6 +17,7 @@ from moeatlas.analysis import (
     ROUTING_HEATMAP_SCHEMA_VERSION,
     MixtralRoutingLoadMatrix,
     RoutingLoadMatrix,
+    render_compact_routing_load_heatmap,
     render_mixtral_routing_load_heatmap,
     render_routing_load_heatmap,
 )
@@ -136,12 +137,82 @@ def _tiny_positive_matrix() -> MixtralRoutingLoadMatrix:
     )
 
 
+def _sized_matrix(layer_count: int, expert_count: int) -> RoutingLoadMatrix:
+    counts = tuple((1, *(0 for _ in range(expert_count - 1))) for _ in range(layer_count))
+    shares = tuple((1.0, *(0.0 for _ in range(expert_count - 1))) for _ in range(layer_count))
+    ratios = tuple(
+        (float(expert_count), *(0.0 for _ in range(expert_count - 1)))
+        for _ in range(layer_count)
+    )
+    return RoutingLoadMatrix(
+        schema_version="1.0",
+        store_schema_version=STORE_SCHEMA_VERSION,
+        event_schema_version=EVENT_SCHEMA_VERSION,
+        run_key=f"run-{layer_count}x{expert_count}",
+        model_key="model:acme/large-moe@r1",
+        adapter_name="universal",
+        adapter_version="1.0",
+        inspection_digest="sha256:" + "4" * 64,
+        layout="packed",
+        shard_keys=(_shard("7"),),
+        token_count=1,
+        assignment_count=layer_count,
+        routed_top_k=1,
+        layer_keys=tuple(_hex_component(10_000 + index) for index in range(layer_count)),
+        layer_indices=tuple(range(layer_count)),
+        expert_keys=tuple(
+            tuple(
+                _hex_component(20_000 + layer * expert_count + expert)
+                for expert in range(expert_count)
+            )
+            for layer in range(layer_count)
+        ),
+        assignment_counts=counts,
+        assignment_shares=shares,
+        load_ratios=ratios,
+    )
+
+
 def test_public_surface_signature_and_schema() -> None:
     assert ROUTING_HEATMAP_SCHEMA_VERSION == "1.0"
     signature = inspect.signature(render_mixtral_routing_load_heatmap)
     assert tuple(signature.parameters) == ("matrix", "metric", "max_cells")
     assert signature.parameters["metric"].kind is inspect.Parameter.KEYWORD_ONLY
     assert signature.parameters["max_cells"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_compact_renderer_contains_complete_adaptive_matrix_without_scroll() -> None:
+    rendered = render_compact_routing_load_heatmap(
+        _matrix(), metric="assignment_counts", max_cells=8
+    )
+    assert rendered.count("<td ") == 8
+    assert rendered.count('scope="col"') == 5
+    assert rendered.count('scope="row"') == 2
+    assert 'aria-label="Complete routing matrix for 2 layers and 4 experts"' in rendered
+    assert "table-layout: fixed" in rendered
+    assert "overflow: hidden" in rendered
+    assert 'tabindex="0"' in rendered
+    assert "Exact values and component identities are available on cell focus or hover." in rendered
+    assert "overflow-x: auto" not in rendered
+    assert '<main class="readable">' in rendered
+
+
+@pytest.mark.parametrize(
+    "layer_count,expert_count,density",
+    [(17, 17, "dense"), (17, 241, "ultra")],
+)
+def test_compact_renderer_adapts_to_larger_model_dimensions(
+    layer_count: int, expert_count: int, density: str
+) -> None:
+    cell_count = layer_count * expert_count
+    rendered = render_compact_routing_load_heatmap(
+        _sized_matrix(layer_count, expert_count),
+        metric="assignment_counts",
+        max_cells=cell_count,
+    )
+    assert rendered.count("<td ") == cell_count
+    assert f'<main class="{density}">' in rendered
+    assert f"{layer_count} layers × {expert_count} experts" in rendered
 
 
 @pytest.mark.parametrize("layout", ["legacy_indexed", "packed"])

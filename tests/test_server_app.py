@@ -348,6 +348,49 @@ def test_heatmap_serves_published_document(workspace: Path) -> None:
     assert published.exists()
 
 
+def test_heatmap_rejects_unknown_view(workspace: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    run_key = _register_simple_run(workspace, "run-1")
+    http = TestClient(create_app(workspace))
+    response = http.get(f"/api/runs/{run_key}/heatmap", params={"view": "wide"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "unsupported heatmap view"
+
+
+@_STORE_REQUIRED
+def test_compact_heatmap_renders_complete_matrix_instead_of_published_report(
+    workspace: Path,
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from moeatlas.services import record_run_record
+    from moeatlas.store import append_routing_shard
+    from tests.test_run_lifecycle import record as _make_record
+    from tests.test_runtime_routing_forward import _run
+
+    result, _, inspection = _run(token_count=2)
+    receipt = append_routing_shard(workspace, result)
+    record_run_record(workspace, _make_record(run_key=receipt.run_key), at="t0")
+    inspection_directory = workspace / "inspections"
+    inspection_directory.mkdir(exist_ok=True)
+    (inspection_directory / f"{receipt.run_key}.json").write_text(
+        inspection.to_json(), encoding="utf-8"
+    )
+    _publish_heatmap(workspace, receipt.run_key, _HEATMAP_BODY)
+
+    http = TestClient(create_app(workspace))
+    response = http.get(
+        f"/api/runs/{receipt.run_key}/heatmap",
+        params={"metric": "assignment_counts", "view": "compact"},
+    )
+    assert response.status_code == 200
+    assert response.content != _HEATMAP_BODY
+    assert "Complete routing matrix" in response.text
+    assert "table-layout: fixed" in response.text
+    assert "overflow-x: auto" not in response.text
+
+
 def test_heatmap_absent_document_is_typed_404(workspace: Path) -> None:
     from fastapi.testclient import TestClient
 
