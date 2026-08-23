@@ -189,9 +189,8 @@ class JobManager:
         except BaseException as exc:  # workers must never take down the server thread
             with self._lock:
                 failure_stage = job.progress.get("stage") or "failed"
-                job.state = "failed"
-                job.error = self._safe_error(exc)
-                job.progress = {
+                failure_error = self._safe_error(exc)
+                failure_progress = {
                     **job.progress,
                     "stage": "failed",
                     "message": "Worker failed; inspect the server log for details",
@@ -220,6 +219,14 @@ class JobManager:
                     exception_message=isolated_failure.safe_message,
                     traceback_text=isolated_failure.traceback_text,
                 )
+            # Publish the failed wire state only after its diagnostic record is
+            # visible. A client that observes ``state=failed`` can therefore
+            # immediately read the typed failure instead of a stale
+            # submitted/started entry.
+            with self._lock:
+                job.state = "failed"
+                job.error = failure_error
+                job.progress = failure_progress
         finally:
             # A failed optional-runtime load can leave reserved CUDA blocks in
             # the long-lived server process even when the worker has returned.
