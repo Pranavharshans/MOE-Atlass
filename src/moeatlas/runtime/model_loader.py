@@ -332,6 +332,48 @@ def _model_factory_name(config: object) -> str:
     return "AutoModel"
 
 
+def _declared_model_loaders(transformers: Any, config: object) -> tuple[Callable[..., Any], ...]:
+    """Resolve safe built-in model classes declared by the loaded config.
+
+    Composite and multimodal checkpoints frequently use
+    ``ForConditionalGeneration`` without being encoder-decoder models.  Their
+    concrete Transformers class is the authoritative factory; suffix-based
+    AutoModel guessing is only a compatibility fallback for older and custom
+    configurations.
+    """
+
+    try:
+        architectures = getattr(config, "architectures", None)
+    except Exception:
+        architectures = None
+    if not isinstance(architectures, list | tuple):
+        return ()
+    loaders: list[Callable[..., Any]] = []
+    for name in architectures:
+        if (
+            not isinstance(name, str)
+            or not name.isidentifier()
+            or name.startswith("_")
+            or len(name) > 128
+        ):
+            continue
+        try:
+            factory = getattr(transformers, name)
+            loader = getattr(factory, "from_pretrained")
+        except Exception:
+            continue
+        if callable(loader) and loader not in loaders:
+            loaders.append(loader)
+    return tuple(loaders)
+
+
+def _model_loader(transformers: Any, config: object) -> Callable[..., Any]:
+    declared = _declared_model_loaders(transformers, config)
+    if declared:
+        return declared[0]
+    return _require_factory(transformers, _model_factory_name(config))
+
+
 def _load_transformers(
     plan: LoadingPlan,
     *,
@@ -363,7 +405,7 @@ def _load_transformers(
         stack.add_object(loaded_config)
         tokenizer = _call_stage("tokenizer", tokenizer_loader, tokenizer_target, **common_tokenizer)
         stack.add_object(tokenizer)
-        model_loader = _require_factory(transformers, _model_factory_name(loaded_config))
+        model_loader = _model_loader(transformers, loaded_config)
         model = _call_stage(
             "model",
             model_loader,

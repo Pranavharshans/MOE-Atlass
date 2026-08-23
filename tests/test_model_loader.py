@@ -235,6 +235,52 @@ def test_model_factory_selection_preserves_declared_task_heads() -> None:
     assert model_loader._model_factory_name(types.SimpleNamespace()) == "AutoModel"
 
 
+def test_declared_transformers_class_precedes_ambiguous_conditional_auto_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+    module = _fake_transformers(calls, close_log)
+
+    class Qwen3_5MoeForConditionalGeneration:
+        @staticmethod
+        def from_pretrained(target: str, **kwargs: Any) -> _FakeModel:
+            calls.append(("declared-model", target, kwargs))
+            return _FakeModel(kwargs["config"], close_log)
+
+    module.Qwen3_5MoeForConditionalGeneration = Qwen3_5MoeForConditionalGeneration
+    _install_fake(monkeypatch, module)
+    monkeypatch.setattr(
+        _FakeConfig,
+        "architectures",
+        ["Qwen3_5MoeForConditionalGeneration"],
+        raising=False,
+    )
+
+    result = load_huggingface(_plan())
+    assert calls[2][0] == "declared-model"
+    result.close()
+
+
+@pytest.mark.parametrize(
+    "architectures",
+    [["_PrivateModel"], ["not-a-python-identifier"], [1], None],
+)
+def test_invalid_or_unavailable_declared_classes_fall_back_to_safe_auto_model(
+    monkeypatch: pytest.MonkeyPatch,
+    architectures: object,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+    module = _fake_transformers(calls, close_log)
+    _install_fake(monkeypatch, module)
+    monkeypatch.setattr(_FakeConfig, "architectures", architectures, raising=False)
+
+    result = load_huggingface(_plan())
+    assert calls[2][0] == "model"
+    result.close()
+
+
 def test_huggingface_uses_resolved_revisions_audited_kwargs_and_observed_manifest(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
