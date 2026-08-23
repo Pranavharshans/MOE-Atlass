@@ -87,6 +87,12 @@ from .loader import load_custom, load_instance
 from .mixtral_routing import MixtralRoutingDecoder
 from .model_loader import load_huggingface, load_local
 from .prompt_prefill import MixtralPromptPrefillError, run_mixtral_prompt_prefill
+from .qualification import (
+    RUNTIME_QUALIFICATION_SCHEMA_VERSION,
+    RuntimeQualification,
+    RuntimeQualificationError,
+    qualify_huggingface_runtime,
+)
 from .qwen3_5_routing import Qwen3_5RoutingDecoder
 from .resource_admission import (
     RESOURCE_ADMISSION_SCHEMA_VERSION,
@@ -154,6 +160,10 @@ __all__ = [
     "RoutingForwardResult",
     "MixtralPromptPrefillError",
     "Qwen3_5RoutingDecoder",
+    "RUNTIME_QUALIFICATION_SCHEMA_VERSION",
+    "RuntimeQualification",
+    "RuntimeQualificationError",
+    "qualify_huggingface_runtime",
     "run_qwen3_5_routing_forward",
     "PendingRuntimeCleanup",
     "RuntimeArtifacts",

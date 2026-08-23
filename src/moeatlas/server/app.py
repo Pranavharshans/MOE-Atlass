@@ -179,7 +179,13 @@ def _discovery_worker(
 ) -> Any:
     """Resolve, load, and scan one model without touching the browser thread."""
 
-    from ..runtime import admit_huggingface_model, classify_capture_support, load_and_scan
+    from ..runtime import (
+        RuntimeQualificationError,
+        admit_huggingface_model,
+        classify_capture_support,
+        load_and_scan,
+        qualify_huggingface_runtime,
+    )
     from ..services.model_resolution import resolve_huggingface_plan_with_metadata
     from .jobs import JobOutcome
 
@@ -199,6 +205,17 @@ def _discovery_worker(
         trust_remote_code=bool(payload.get("trust_remote_code", False)),
         allow_downloads=bool(payload.get("allow_downloads", True)),
     )
+    report_progress(
+        stage="qualify",
+        completed=0,
+        total=1,
+        message="Checking model runtime requirements before weight loading",
+    )
+    qualification = qualify_huggingface_runtime(plan)
+    if not qualification.ready:
+        missing = list(qualification.missing_packages) + list(qualification.missing_imports)
+        detail = ", ".join(missing) if missing else "remote-code permission"
+        raise RuntimeQualificationError(f"model runtime is incompatible: {detail}")
     report_progress(
         stage="resources",
         completed=0,
@@ -233,6 +250,7 @@ def _discovery_worker(
             "plan_id": plan.plan_id,
             "security_warnings": list(plan.security_warnings),
             "resource_admission": resource_admission.to_dict(),
+            "runtime_qualification": qualification.to_dict(),
             "repository_size_bytes": hub_metadata.repository_size_bytes,
             "capture_support": capture_support.to_dict(),
             "report": _json_document(discovery),
@@ -269,7 +287,11 @@ def _run_worker(
         RunSpecification,
         TokenTextPolicy,
     )
-    from ..runtime import admit_huggingface_model
+    from ..runtime import (
+        RuntimeQualificationError,
+        admit_huggingface_model,
+        qualify_huggingface_runtime,
+    )
     from ..services.datasets import read_dataset_rows
     from ..services.model_resolution import (
         resolve_huggingface_dataset_revision,
@@ -296,6 +318,17 @@ def _run_worker(
         allow_downloads=bool(payload.get("allow_downloads", True)),
     )
     allow_downloads = bool(payload.get("allow_downloads", True))
+    report_progress(
+        stage="qualify",
+        completed=0,
+        total=1,
+        message="Checking model runtime requirements before weight loading",
+    )
+    qualification = qualify_huggingface_runtime(plan)
+    if not qualification.ready:
+        missing = list(qualification.missing_packages) + list(qualification.missing_imports)
+        detail = ", ".join(missing) if missing else "remote-code permission"
+        raise RuntimeQualificationError(f"model runtime is incompatible: {detail}")
     report_progress(
         stage="resources",
         completed=0,
@@ -681,6 +714,7 @@ def _run_worker(
             "resolved_model_revision": model_provenance.model_revision,
             "resolved_dataset_revision": dataset_revision,
             "resource_admission": resource_admission.to_dict(),
+            "runtime_qualification": qualification.to_dict(),
             "repository_size_bytes": hub_metadata.repository_size_bytes,
         }
         if recipe is not None and intervention_outcome is not None:
