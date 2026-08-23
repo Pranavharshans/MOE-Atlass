@@ -200,14 +200,18 @@ def test_capture_routing_requires_an_exact_boolean() -> None:
 
 
 def test_capture_mismatch_surfaces_as_execution_evidence(fake_loader) -> None:
-    from moeatlas.runtime import StructuredCaptureError
-
     silent_model = _HookedModel(_flat_logits(2), skip_paths=("layers.1.router",))
     fake_loader["loaded"] = _loaded(_loading_plan(), model=silent_model)
     executor = TransformersRoutingExecutor(_loading_plan())
     executor.bind_run_key("run:" + "0" * 64)
-    with pytest.raises(StructuredCaptureError, match="did not fire"):
+    with pytest.raises(RowFailure) as excinfo:
         executor(row_index=0, batch_index=0, values={"prompt": "hi"})
+    assert excinfo.value.kind == "execution"
+    assert (
+        excinfo.value.message
+        == "structured routing capture failed at events: routers did not fire during "
+        "the forward: ['layers.1.router']"
+    )
 
 
 def test_loader_is_closed_when_executor_discovery_fails(fake_loader, monkeypatch) -> None:

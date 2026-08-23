@@ -426,8 +426,12 @@ class TransformersRoutingExecutor:
                 )
 
             result = self._timed_forward(loaded.model, captured_forward)
-        except StructuredCaptureError:
-            raise
+        except StructuredCaptureError as exc:
+            # StructuredCaptureError messages are deliberately bounded and
+            # stage-labelled. Preserve that safe diagnostic as row evidence
+            # instead of letting the run engine collapse it to the exception
+            # class name alone.
+            raise RowFailure("execution", str(exc)) from None
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as exc:

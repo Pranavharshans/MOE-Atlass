@@ -997,7 +997,13 @@ def run_structured_expert_forward(
 
     expert_events: list[ExpertEvent] = []
     for target in sorted(expert_targets, key=lambda item: item.layer_index):
-        norms = fired_by_layer[target.layer_key][target.component_key]
+        # Sparse dispatch executes only experts selected by at least one token.
+        # The completeness check above already proves that every selected
+        # expert fired, so an absent entry here is a valid inactive expert,
+        # not a missing-capture error.
+        norms = fired_by_layer.get(target.layer_key, {}).get(target.component_key)
+        if norms is None:
+            continue
         selected_tokens = [
             event.token_key
             for event in routing

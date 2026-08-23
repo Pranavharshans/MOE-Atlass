@@ -258,6 +258,28 @@ def test_full_forward_produces_linked_routing_and_expert_events() -> None:
         assert event.metadata["invocation_token_count"] == 2
 
 
+def test_inactive_sparse_experts_do_not_fail_activity_capture() -> None:
+    """Real sparse MoEs invoke selected experts, not the entire universe."""
+
+    inactive = tuple(
+        f"layers.{layer}.experts.{expert}"
+        for layer in range(2)
+        for expert in (2, 3)
+    )
+    model = _ExpertHookedModel(_flat_logits(), skip_paths=inactive)
+
+    result = run_structured_expert_forward(
+        model, scan_report(model), _tokens(1), {}, max_events=32
+    )
+
+    # Flat logits select experts 0 and 1 at both layers. Experts 2 and 3 are
+    # valid inactive cells and therefore produce neither hooks nor events.
+    assert len(result.routing_events) == 1 * 2 * 2
+    assert len(result.expert_events) == 1 * 2 * 2
+    selected = {event.expert_key for event in result.routing_events}
+    assert {event.expert_key for event in result.expert_events} == selected
+
+
 def test_matching_shapes_record_contribution_norms() -> None:
     model = _ExpertHookedModel(
         _flat_logits(),
