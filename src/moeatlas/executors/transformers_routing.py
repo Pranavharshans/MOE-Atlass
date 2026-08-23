@@ -30,16 +30,28 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
-from ..core import stable_digest, validate_stable_identifier
+from ..core import ComponentKind, stable_digest, validate_stable_identifier
 from ..discovery import DiscoveryReport, scan
 from ..events import EVENT_SCHEMA_VERSION, ExpertEvent, RoutingEvent, TokenEvent, TokenPhase
 from ..loading import HuggingFaceSource, LoadingPlan, LocalSource
-from ..probe import ProbeResolutionError
+from ..probe import (
+    CaptureMode,
+    CapturePolicy,
+    HookBinding,
+    HookManager,
+    HookPoint,
+    ProbeLevel,
+    ProbePlan,
+    ProbeResolutionError,
+    ProbeTarget,
+    ReductionPolicy,
+)
 from ..runtime.contracts import LoadedModel
 from ..runtime.generic_capture import (
     StructuredCaptureError,
     StructuredRouterTarget,
     StructuredRoutingForwardResult,
+    decode_structured_payload,
     run_structured_expert_forward,
     run_structured_routing_forward,
     structured_router_targets,
@@ -55,6 +67,9 @@ _PROMPT_FAILURE = "row values must carry a non-empty string 'prompt'"
 _TOKENIZER_MISSING_FAILURE = "loaded model did not resolve a tokenizer"
 _LOAD_FAILURE = "model loading failed before execution"
 _RUN_KEY_FAILURE = "executor run key was not bound before execution"
+_GENERATION_CAPTURE_FAILURE = (
+    "model generation does not expose a compatible top-level forward pre-hook"
+)
 
 
 def _safe_validation_error(exc: Exception) -> str:
@@ -508,6 +523,267 @@ class TransformersRoutingExecutor:
                 elapsed = (time.perf_counter() - started) * 1000.0
                 self._generation_timings_ms.append(elapsed)
 
+    def _tokens_for_generation_step(
+        self,
+        tokenizer: object,
+        ids: list[int],
+        positions: list[int],
+        *,
+        sequence_id: str,
+        prompt_token_count: int,
+    ) -> tuple[TokenEvent, ...]:
+        """Build canonical token identities for one observed generation forward."""
+
+        if self._run_key is None:
+            raise StructuredCaptureError("generation", _RUN_KEY_FAILURE)
+        if len(ids) != len(positions):
+            raise StructuredCaptureError(
+                "generation", "generation input positions do not match input token ids"
+            )
+        converter = getattr(tokenizer, "convert_ids_to_tokens", None)
+        if not callable(converter):
+            raise StructuredCaptureError(
+                "generation", "tokenizer does not expose convert_ids_to_tokens"
+            )
+        pieces = converter(ids)
+        if isinstance(pieces, str) and len(ids) == 1:
+            pieces = [pieces]
+        if (
+            type(pieces) is not list
+            or len(pieces) != len(ids)
+            or any(type(piece) is not str for piece in pieces)
+        ):
+            raise StructuredCaptureError(
+                "generation", "generated token pieces must be an exact string list"
+            )
+        return tuple(
+            TokenEvent.model_validate(
+                {
+                    "run_key": self._run_key,
+                    "sequence_id": sequence_id,
+                    "token_pos": position,
+                    "token_id": token_id,
+                    "token_text": piece,
+                    "phase": (
+                        TokenPhase.PREFILL.value
+                        if position < prompt_token_count
+                        else TokenPhase.DECODE.value
+                    ),
+                }
+            )
+            for token_id, piece, position in zip(ids, pieces, positions, strict=True)
+        )
+
+    def _generate_with_routing_capture(
+        self,
+        model: object,
+        tokenizer: object,
+        encoding: Mapping[str, object],
+        prompt_tokens: tuple[TokenEvent, ...],
+        targets: tuple[StructuredRouterTarget, ...],
+        *,
+        sequence_id: str,
+        config: object,
+    ) -> tuple[StructuredRoutingForwardResult, list[int], str | None]:
+        """Trace every model forward used by deterministic generation.
+
+        A top-level pre-hook binds each router invocation to the exact input
+        tokens of that generation step. Cached decode calls normally carry one
+        token; uncached implementations may replay the full prefix, in which
+        case only positions not already published are retained. The final
+        generated token has no subsequent model forward and therefore has no
+        routing row, which is recorded explicitly in the capability notes.
+        """
+
+        generate = getattr(model, "generate", None)
+        register_pre_hook = getattr(model, "register_forward_pre_hook", None)
+        if not callable(generate) or not callable(register_pre_hook):
+            raise StructuredCaptureError("generation", _GENERATION_CAPTURE_FAILURE)
+        prompt_ids = [token.token_id for token in prompt_tokens]
+        if not prompt_ids:
+            raise StructuredCaptureError("generation", "generation prompt is empty")
+        top_k = targets[0].routed_top_k
+        max_events = (len(prompt_ids) + self._max_new_tokens) * len(targets) * top_k
+        target_paths = {target.module_path for target in targets}
+        published_positions: set[int] = set()
+        observed_tokens: list[TokenEvent] = []
+        observed_routes: list[RoutingEvent] = []
+        notes: set[str] = {"generation_routing_excludes_terminal_output_token"}
+        current_tokens: tuple[TokenEvent, ...] = ()
+        current_new_keys: set[str] = set()
+        current_paths: set[str] = set()
+        forward_index = 0
+
+        def finish_step() -> None:
+            if not current_tokens:
+                return
+            missing = sorted(target_paths.difference(current_paths))
+            if missing:
+                raise StructuredCaptureError(
+                    "generation", f"routers did not fire during generation forward: {missing}"
+                )
+
+        def before_forward(
+            _module: object, args: tuple[object, ...], kwargs: Mapping[str, object]
+        ) -> None:
+            nonlocal current_tokens, current_new_keys, current_paths, forward_index
+            finish_step()
+            input_ids = kwargs.get("input_ids")
+            if input_ids is None and args:
+                input_ids = args[0]
+            if input_ids is None:
+                raise StructuredCaptureError(
+                    "generation", "generation forward did not expose input_ids"
+                )
+            try:
+                ids = _materialize_ids(input_ids)
+            except Exception as exc:
+                raise StructuredCaptureError(
+                    "generation", "generation input_ids must be shaped exactly (1, N)"
+                ) from exc
+            if forward_index == 0:
+                if ids != prompt_ids:
+                    raise StructuredCaptureError(
+                        "generation", "first generation forward does not match the prompt ids"
+                    )
+                positions = list(range(len(ids)))
+            elif len(ids) == 1:
+                positions = [max(published_positions, default=len(prompt_ids) - 1) + 1]
+            else:
+                positions = list(range(len(ids)))
+                if ids[: len(prompt_ids)] != prompt_ids:
+                    raise StructuredCaptureError(
+                        "generation", "uncached generation replay does not match the prompt ids"
+                    )
+            current_tokens = self._tokens_for_generation_step(
+                tokenizer,
+                ids,
+                positions,
+                sequence_id=sequence_id,
+                prompt_token_count=len(prompt_ids),
+            )
+            fresh = tuple(
+                token for token in current_tokens if token.token_pos not in published_positions
+            )
+            if not fresh:
+                raise StructuredCaptureError(
+                    "generation", "generation forward did not introduce a new routed token"
+                )
+            current_new_keys = {token.token_key for token in fresh}
+            observed_tokens.extend(fresh)
+            published_positions.update(token.token_pos for token in fresh)
+            current_paths = set()
+            forward_index += 1
+
+        def callback_for(target: StructuredRouterTarget):
+            def callback(_module: object, _inputs: object, output: object) -> None:
+                if not current_tokens:
+                    raise StructuredCaptureError(
+                        "generation", "router fired before the generation input was observed"
+                    )
+                if target.module_path in current_paths:
+                    raise StructuredCaptureError(
+                        "generation",
+                        f"router {target.module_path!r} fired more than once in one forward",
+                    )
+                events, note = decode_structured_payload(
+                    output,
+                    target=target,
+                    token_events=current_tokens,
+                    config=config,
+                )
+                filtered = [event for event in events if event.token_key in current_new_keys]
+                expected = len(current_new_keys) * target.routed_top_k
+                if len(filtered) != expected:
+                    raise StructuredCaptureError(
+                        "generation", "generation router payload did not cover new token positions"
+                    )
+                observed_routes.extend(filtered)
+                current_paths.add(target.module_path)
+                if note:
+                    notes.add(note)
+
+            return callback
+
+        plan = ProbePlan(
+            level=ProbeLevel.ROUTING,
+            hook_points=(HookPoint.FORWARD,),
+            targets=tuple(
+                ProbeTarget(
+                    module_path=target.module_path,
+                    component_key=target.component_key,
+                    component_kind=ComponentKind.ROUTER,
+                )
+                for target in targets
+            ),
+            capture=CapturePolicy(mode=CaptureMode.STATS, reduction=ReductionPolicy.COUNTS),
+        )
+        callbacks = {
+            HookBinding(target.module_path, HookPoint.FORWARD): callback_for(target)
+            for target in targets
+        }
+        manager = HookManager(model, plan, callbacks)
+        pre_handle: object | None = None
+        generated: object = None
+        self._synchronize_cuda(model)
+        started = time.perf_counter()
+        try:
+            manager.__enter__()
+            try:
+                pre_handle = register_pre_hook(before_forward, with_kwargs=True)
+            except TypeError as exc:
+                raise StructuredCaptureError("generation", _GENERATION_CAPTURE_FAILURE) from exc
+            if not callable(getattr(pre_handle, "remove", None)):
+                raise StructuredCaptureError(
+                    "generation", "generation pre-hook did not return a removable handle"
+                )
+            torch = sys.modules.get("torch")
+            inference_mode = getattr(torch, "inference_mode", None) if torch is not None else None
+            context = inference_mode() if callable(inference_mode) else nullcontext()
+            with context:
+                generated = generate(
+                    **dict(encoding),
+                    max_new_tokens=self._max_new_tokens,
+                    do_sample=False,
+                )
+            finish_step()
+        finally:
+            if pre_handle is not None:
+                try:
+                    pre_handle.remove()  # type: ignore[union-attr]
+                except Exception:
+                    pass
+            try:
+                manager.close()
+            finally:
+                self._synchronize_cuda(model)
+        if forward_index == 0:
+            raise StructuredCaptureError("generation", "model.generate performed no model forward")
+        elapsed = (time.perf_counter() - started) * 1000.0
+        self._forward_timings_ms.append(elapsed)
+        self._generation_timings_ms.append(elapsed)
+        if len(observed_routes) > max_events:
+            raise StructuredCaptureError(
+                "generation", "generation routing exceeded its event budget"
+            )
+        generated_ids = _materialize_ids(
+            getattr(generated, "sequences", generated)
+        )
+        continuation = generated_ids[len(prompt_ids) :]
+        decode = getattr(tokenizer, "decode", None)
+        text = (
+            decode(continuation, skip_special_tokens=True)
+            if continuation and callable(decode)
+            else None
+        )
+        result = StructuredRoutingForwardResult(
+            output=generated,
+            token_events=tuple(observed_tokens),
+            routing_events=tuple(observed_routes),
+            capability_notes=tuple(sorted(notes)),
+        )
+        return result, continuation, text if isinstance(text, str) else None
+
     def _output_evidence(
         self,
         model: object,
@@ -517,11 +793,14 @@ class TransformersRoutingExecutor:
         *,
         prompt_token_count: int,
         reference: object,
+        captured_generation: tuple[list[int], str | None] | None = None,
     ) -> dict[str, Any]:
         generation_before = len(self._generation_timings_ms)
         generated_ids: list[int] = []
         generated_text: str | None = None
-        if self._mode == "generation":
+        if captured_generation is not None:
+            generated_ids, generated_text = captured_generation
+        elif self._mode == "generation":
             generated_ids, generated_text = self._generate_output(
                 model,
                 tokenizer,
@@ -546,7 +825,11 @@ class TransformersRoutingExecutor:
             ),
             "generation_ms": (
                 self._generation_timings_ms[-1]
-                if len(self._generation_timings_ms) > generation_before
+                if self._generation_timings_ms
+                and (
+                    captured_generation is not None
+                    or len(self._generation_timings_ms) > generation_before
+                )
                 else None
             ),
             "score_name": None,
@@ -604,51 +887,79 @@ class TransformersRoutingExecutor:
             targets = structured_router_targets(self._report)
             max_events = len(token_events) * len(targets) * targets[0].routed_top_k
             config = getattr(loaded.model, "config", None)
+            captured_generation: tuple[list[int], str | None] | None = None
 
-            def captured_forward() -> StructuredRoutingForwardResult:
-                if self._capture_expert_activity:
-                    try:
-                        return run_structured_expert_forward(
-                            loaded.model,
-                            self._report,
-                            token_events,
-                            dict(encoding),
-                            max_events=max_events,
-                            max_expert_events=max_events,
-                            config=config,
-                        )
-                    except (ProbeResolutionError, StructuredCaptureError):
-                        # Routing remains valid evidence when a family dispatches
-                        # experts through an opaque fused kernel.  Retry the
-                        # routing-only capture and carry the limitation as a
-                        # capability note rather than claiming activations.
-                        result = run_structured_routing_forward(
-                            loaded.model,
-                            self._report,
-                            token_events,
-                            dict(encoding),
-                            max_events=max_events,
-                            config=config,
-                        )
-                        return StructuredRoutingForwardResult(
-                            output=result.output,
-                            token_events=result.token_events,
-                            routing_events=result.routing_events,
-                            capability_notes=(
-                                *result.capability_notes,
-                                "expert_activity_unavailable",
-                            ),
-                        )
-                return run_structured_routing_forward(
+            if self._mode == "generation" and callable(getattr(loaded.model, "generate", None)):
+                result, generated_ids, generated_text = self._generate_with_routing_capture(
                     loaded.model,
-                    self._report,
+                    tokenizer,
+                    encoding,
                     token_events,
-                    dict(encoding),
-                    max_events=max_events,
+                    targets,
+                    sequence_id=sequence_id,
                     config=config,
                 )
+                captured_generation = (generated_ids, generated_text)
+                if self._capture_expert_activity:
+                    result = StructuredRoutingForwardResult(
+                        output=result.output,
+                        token_events=result.token_events,
+                        routing_events=result.routing_events,
+                        capability_notes=tuple(
+                            sorted(
+                                {
+                                    *result.capability_notes,
+                                    "generation_expert_activity_unavailable",
+                                }
+                            )
+                        ),
+                    )
+            else:
 
-            result = self._timed_forward(loaded.model, captured_forward)
+                def captured_forward() -> StructuredRoutingForwardResult:
+                    if self._capture_expert_activity:
+                        try:
+                            return run_structured_expert_forward(
+                                loaded.model,
+                                self._report,
+                                token_events,
+                                dict(encoding),
+                                max_events=max_events,
+                                max_expert_events=max_events,
+                                config=config,
+                            )
+                        except (ProbeResolutionError, StructuredCaptureError):
+                            # Routing remains valid evidence when a family dispatches
+                            # experts through an opaque fused kernel.  Retry the
+                            # routing-only capture and carry the limitation as a
+                            # capability note rather than claiming activations.
+                            result = run_structured_routing_forward(
+                                loaded.model,
+                                self._report,
+                                token_events,
+                                dict(encoding),
+                                max_events=max_events,
+                                config=config,
+                            )
+                            return StructuredRoutingForwardResult(
+                                output=result.output,
+                                token_events=result.token_events,
+                                routing_events=result.routing_events,
+                                capability_notes=(
+                                    *result.capability_notes,
+                                    "expert_activity_unavailable",
+                                ),
+                            )
+                    return run_structured_routing_forward(
+                        loaded.model,
+                        self._report,
+                        token_events,
+                        dict(encoding),
+                        max_events=max_events,
+                        config=config,
+                    )
+
+                result = self._timed_forward(loaded.model, captured_forward)
         except StructuredCaptureError as exc:
             # StructuredCaptureError messages are deliberately bounded and
             # stage-labelled. Preserve that safe diagnostic as row evidence
@@ -673,6 +984,7 @@ class TransformersRoutingExecutor:
             result.output,
             prompt_token_count=len(result.token_events),
             reference=values.get("reference"),
+            captured_generation=captured_generation,
         )
         return {
             "schema_version": EXECUTOR_RESULT_SCHEMA_VERSION,
@@ -680,6 +992,15 @@ class TransformersRoutingExecutor:
             "prompt": prompt,
             "sequence_id": sequence_id,
             "token_count": len(result.token_events),
+            "prefill_token_count": sum(
+                token.phase is TokenPhase.PREFILL for token in result.token_events
+            ),
+            "decode_token_count": sum(
+                token.phase is TokenPhase.DECODE for token in result.token_events
+            ),
+            "routing_scope": (
+                "actual_generation" if captured_generation is not None else "single_forward"
+            ),
             "routing_event_count": len(result.routing_events),
             "capability_notes": sorted(result.capability_notes),
             "forward_ms": self._forward_timings_ms[-1],

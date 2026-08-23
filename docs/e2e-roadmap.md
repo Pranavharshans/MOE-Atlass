@@ -123,6 +123,21 @@ deliberately has no SSH onboarding page.
 - R6.3 Shard writer performance pass for ~1M-event captures (batch inserts)
   with identical byte-level manifests or a versioned schema bump.
 
+### Phase R7 — Generation-bound routing evidence — landed 2026-08-23
+
+- R7.1 Capture routing from the same deterministic `generate()` call that
+  produces the persisted output digest; do not run a second prompt-only
+  forward and present it as generation evidence.
+- R7.2 Persist prompt-processing and answer-generation token phases in one
+  ordered run shard. Cached one-token decode and uncached prefix replay both
+  retain only newly routed token positions.
+- R7.3 Record that the terminal output token has no subsequent model forward,
+  and downgrade expert-activity evidence explicitly when generation-time
+  expert hooks are unavailable.
+- Acceptance: a model-free generate loop proves one call sequence produces
+  both the output and the phase-labelled routing events, with all temporary
+  hooks removed after success.
+
 `WORKS*` means the model-free suite and the real Ling VM path both passed; it
 does not claim every architecture/task head or every GPU placement is
 certified. The VM result is a capability boundary, not a universal performance

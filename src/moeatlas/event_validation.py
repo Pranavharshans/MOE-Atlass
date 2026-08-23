@@ -19,8 +19,8 @@ def fresh_token_events(
     fresh_events: list[TokenEvent] = []
     seen: set[str] = set()
     run_key: str | None = None
-    phase: object | None = None
     sequence_id: str | None = None
+    decode_started = False
     for event in value:
         if type(event) is not TokenEvent:
             raise TypeError("token_events must contain exact TokenEvent objects")
@@ -32,12 +32,15 @@ def fresh_token_events(
         seen.add(fresh.token_key)
         if run_key is None:
             run_key = fresh.run_key
-            phase = fresh.phase
             sequence_id = fresh.sequence_id
-        elif fresh.run_key != run_key or fresh.phase != phase:
-            raise ValueError("token_events must share one run_key and phase")
+        elif fresh.run_key != run_key:
+            raise ValueError("token_events must share one run_key")
         elif strict_sequence and fresh.sequence_id != sequence_id:
-            raise ValueError("token_events must share one run_key, sequence_id, and phase")
+            raise ValueError("token_events must share one run_key and sequence_id")
+        if fresh.phase.value == "decode":
+            decode_started = True
+        elif decode_started and strict_sequence:
+            raise ValueError("prefill tokens cannot follow decode tokens")
         if strict_sequence and fresh.token_pos != len(fresh_events):
             raise ValueError("token_events must contain one contiguous canonical sequence 0..N-1")
         fresh_events.append(fresh)

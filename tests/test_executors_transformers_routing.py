@@ -51,6 +51,63 @@ class _FakeTokenizer:
     def convert_ids_to_tokens(self, ids: list[int]) -> list[str]:
         return [f"t{value}" for value in ids]
 
+    def decode(self, ids: list[int], **kwargs: object) -> str:
+        del kwargs
+        return " ".join(f"t{value}" for value in ids)
+
+
+class _PreHookHandle:
+    def __init__(self, owner: _GeneratingModel, callback: object) -> None:
+        self.owner = owner
+        self.callback = callback
+
+    def remove(self) -> None:
+        if self.callback in self.owner.pre_callbacks:
+            self.owner.pre_callbacks.remove(self.callback)
+
+
+class _GeneratingModel(_HookedModel):
+    """Torch-free generate loop that exposes cached one-token decode calls."""
+
+    def __init__(self) -> None:
+        super().__init__(_flat_logits(2))
+        self.pre_callbacks: list[object] = []
+
+    def register_forward_pre_hook(
+        self, callback: object, *, with_kwargs: bool = False
+    ) -> _PreHookHandle:
+        assert with_kwargs is True
+        self.pre_callbacks.append(callback)
+        return _PreHookHandle(self, callback)
+
+    def __call__(self, **kwargs: object) -> object:
+        for callback in tuple(self.pre_callbacks):
+            callback(self, (), kwargs)
+        ids = kwargs["input_ids"]
+        count = len(ids[0])  # type: ignore[index]
+        for path in self.fire_paths:
+            self.payload_by_path[path] = _flat_logits(count)
+        return super().__call__(**kwargs)
+
+    def generate(
+        self,
+        *,
+        input_ids: list[list[int]],
+        max_new_tokens: int,
+        do_sample: bool,
+        **kwargs: object,
+    ) -> list[list[int]]:
+        assert do_sample is False
+        prompt = list(input_ids[0])
+        current = [list(prompt)]
+        generated: list[int] = []
+        for index in range(max_new_tokens):
+            self(input_ids=current, **kwargs)
+            token_id = 80 + index
+            generated.append(token_id)
+            current = [[token_id]]
+        return [prompt + generated]
+
 
 def _loaded(plan, model=None, tokenizer=None):
     return LoadedModel(
@@ -228,6 +285,45 @@ def test_native_forward_mode_skips_capture_and_reports_timing(fake_loader) -> No
 def test_capture_routing_requires_an_exact_boolean() -> None:
     with pytest.raises(TypeError, match="capture_routing must be an exact bool"):
         TransformersRoutingExecutor(_loading_plan(), capture_routing=1)  # type: ignore[arg-type]
+
+
+def test_generation_output_and_routing_come_from_the_same_model_calls(fake_loader) -> None:
+    model = _GeneratingModel()
+    fake_loader["loaded"] = _loaded(_loading_plan(), model=model)
+    executor = TransformersRoutingExecutor(
+        _loading_plan(),
+        store_token_text=True,
+        capture_expert_activity=True,
+        max_new_tokens=3,
+    )
+    executor.bind_run_key("run-generation")
+
+    result = executor(row_index=0, batch_index=0, values={"prompt": "ab"})
+
+    assert model.calls == 3
+    assert result["output_mode"] == "generated"
+    assert result["output_token_count"] == 3
+    assert result["output_preview"] == "t80 t81 t82"
+    assert isinstance(result["generation_ms"], float)
+    assert result["token_count"] == 4
+    assert result["prefill_token_count"] == 2
+    assert result["decode_token_count"] == 2
+    assert result["routing_scope"] == "actual_generation"
+    assert result["routing_event_count"] == 16
+    assert [event.phase.value for event in executor._token_events] == [
+        "prefill",
+        "prefill",
+        "decode",
+        "decode",
+    ]
+    assert "generation_routing_excludes_terminal_output_token" in result["capability_notes"]
+    assert "generation_expert_activity_unavailable" in result["capability_notes"]
+    assert model.pre_callbacks == []
+    assert all(
+        node.callbacks == []
+        for _path, node in model.named_modules()
+        if hasattr(node, "callbacks")
+    )
 
 
 def test_capture_mismatch_surfaces_as_execution_evidence(fake_loader) -> None:
