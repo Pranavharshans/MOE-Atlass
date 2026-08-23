@@ -38,8 +38,11 @@ from moeatlas.interventions.studies import (
 )
 from moeatlas.interventions.transformers import (
     ExpertInterventionTarget,
+    InterventionCapabilityReport,
+    InterventionSupportTier,
     TransformersExpertInterventionCapability,
     TransformersInterventionError,
+    classify_intervention_capability,
     intervention_targets,
     parse_intervention_target,
 )
@@ -53,6 +56,7 @@ __all__ = [
     "INTERVENTION_STUDY_SCHEMA_VERSION",
     "InterventionBudget",
     "InterventionBudgetError",
+    "InterventionCapabilityReport",
     "InterventionCapability",
     "InterventionEngineError",
     "InterventionEvidenceError",
@@ -60,10 +64,12 @@ __all__ = [
     "InterventionOutcome",
     "InterventionRecipe",
     "InterventionStudyError",
+    "InterventionSupportTier",
     "ExpertInterventionTarget",
     "TransformersExpertInterventionCapability",
     "TransformersInterventionError",
     "intervention_targets",
+    "classify_intervention_capability",
     "build_intervention_evidence",
     "build_intervention_study",
     "publish_intervention_evidence",

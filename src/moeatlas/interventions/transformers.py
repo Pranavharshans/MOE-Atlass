@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
+from moeatlas.core import ComponentKind
 from moeatlas.discovery import DiscoveryReport
 from moeatlas.interventions.recipes import InterventionOperation, InterventionRecipe
 from moeatlas.runtime.generic_capture import StructuredCaptureError, structured_expert_targets
@@ -22,6 +24,39 @@ _TARGET = re.compile(r"^layer:(0|[1-9][0-9]*)/expert:(0|[1-9][0-9]*)$")
 
 class TransformersInterventionError(RuntimeError):
     """Safe failure for unsupported or invalid live expert interventions."""
+
+
+class InterventionSupportTier(str, Enum):
+    """How a discovered implementation can be manipulated safely."""
+
+    EXPOSED_EXPERTS = "exposed_experts"
+    PACKED_OR_FUSED = "packed_or_fused"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class InterventionCapabilityReport:
+    """Model-neutral, evidence-bound intervention support declaration."""
+
+    tier: InterventionSupportTier
+    operations: tuple[InterventionOperation, ...]
+    target_count: int
+    target_format: str | None
+    reason: str
+
+    @property
+    def live_supported(self) -> bool:
+        return bool(self.operations)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "live_supported": self.live_supported,
+            "operations": [operation.value for operation in self.operations],
+            "reason": self.reason,
+            "target_count": self.target_count,
+            "target_format": self.target_format,
+            "tier": self.tier.value,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +112,50 @@ def intervention_targets(report: DiscoveryReport) -> tuple[ExpertInterventionTar
             "model does not expose independently hookable routed experts"
         )
     return tuple(resolved)
+
+
+def classify_intervention_capability(report: DiscoveryReport) -> InterventionCapabilityReport:
+    """Declare intervention support without guessing packed tensor semantics."""
+
+    if type(report) is not DiscoveryReport:
+        raise TypeError("report must be an exact DiscoveryReport")
+    try:
+        targets = intervention_targets(report)
+    except TransformersInterventionError:
+        targets = ()
+    if targets:
+        return InterventionCapabilityReport(
+            tier=InterventionSupportTier.EXPOSED_EXPERTS,
+            operations=(InterventionOperation.ABLATE, InterventionOperation.SCALE),
+            target_count=len(targets),
+            target_format="layer:N/expert:M",
+            reason="routed experts are independently exposed as hookable modules",
+        )
+    has_moe = report.facts.expert_count is not None or any(
+        component.kind in {ComponentKind.MOE_LAYER, ComponentKind.EXPERT_CONTAINER}
+        for component in report.components
+    )
+    has_container = any(
+        component.kind is ComponentKind.EXPERT_CONTAINER for component in report.components
+    )
+    if has_moe and has_container:
+        return InterventionCapabilityReport(
+            tier=InterventionSupportTier.PACKED_OR_FUSED,
+            operations=(),
+            target_count=0,
+            target_format=None,
+            reason=(
+                "experts are packed or fused; no independently validated manipulation seam "
+                "was discovered"
+            ),
+        )
+    return InterventionCapabilityReport(
+        tier=InterventionSupportTier.UNAVAILABLE,
+        operations=(),
+        target_count=0,
+        target_format=None,
+        reason="no routed expert intervention targets were discovered",
+    )
 
 
 def _scale_output(output: object, factor: float) -> object:
@@ -205,8 +284,11 @@ def parse_intervention_target(label: str) -> tuple[int, int]:
 
 __all__ = [
     "ExpertInterventionTarget",
+    "InterventionCapabilityReport",
+    "InterventionSupportTier",
     "TransformersExpertInterventionCapability",
     "TransformersInterventionError",
     "intervention_targets",
+    "classify_intervention_capability",
     "parse_intervention_target",
 ]

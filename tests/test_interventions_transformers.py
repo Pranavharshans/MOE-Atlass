@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import pytest
 
+from moeatlas.core import ComponentKind
 from moeatlas.interventions import (
     InterventionOperation,
     InterventionRecipe,
+    InterventionSupportTier,
     TransformersExpertInterventionCapability,
     TransformersInterventionError,
+    classify_intervention_capability,
     intervention_targets,
     run_intervention,
 )
@@ -41,6 +44,15 @@ def test_inventory_exposes_stable_layer_expert_coordinates() -> None:
     assert targets[0].label == "layer:0/expert:0"
     assert targets[-1].label == "layer:1/expert:3"
     assert targets[0].module_path == "layers.0.experts.0"
+
+
+def test_capability_report_declares_exposed_expert_operations() -> None:
+    capability = classify_intervention_capability(scan_report(_model()))
+
+    assert capability.tier is InterventionSupportTier.EXPOSED_EXPERTS
+    assert [operation.value for operation in capability.operations] == ["ablate", "scale"]
+    assert capability.target_count == 8
+    assert capability.live_supported is True
 
 
 def test_ablation_hooks_are_exercised_and_always_removed() -> None:
@@ -97,3 +109,30 @@ def test_inventory_rejects_reports_without_independent_experts() -> None:
     report = scan_report(DenseModel())
     with pytest.raises(TransformersInterventionError, match="independently hookable"):
         intervention_targets(report)
+    capability = classify_intervention_capability(report)
+    assert capability.tier is InterventionSupportTier.UNAVAILABLE
+    assert capability.live_supported is False
+
+
+def test_packed_experts_are_reported_without_false_live_support() -> None:
+    report = scan_report(_model())
+    packed = report.model_copy(
+        update={
+            "candidates": [
+                candidate
+                for candidate in report.candidates
+                if candidate.kind is not ComponentKind.EXPERT
+            ],
+            "components": [
+                component
+                for component in report.components
+                if component.kind is not ComponentKind.EXPERT
+            ],
+        }
+    )
+
+    capability = classify_intervention_capability(packed)
+
+    assert capability.tier is InterventionSupportTier.PACKED_OR_FUSED
+    assert capability.operations == ()
+    assert "no independently validated" in capability.reason

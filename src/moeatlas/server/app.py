@@ -235,7 +235,10 @@ def _discovery_worker(
     if cancel.is_set():
         return JobOutcome({"status": "cancelled", "plan_id": plan.plan_id}, "cancelled")
     discovery = load_and_scan(plan)
+    from ..interventions import classify_intervention_capability
+
     capture_support = classify_capture_support(discovery)
+    intervention_capability = classify_intervention_capability(discovery)
     report_progress(
         stage="discover", completed=1, total=1, message="Static architecture scan complete"
     )
@@ -253,6 +256,7 @@ def _discovery_worker(
             "runtime_qualification": qualification.to_dict(),
             "repository_size_bytes": hub_metadata.repository_size_bytes,
             "capture_support": capture_support.to_dict(),
+            "intervention_capability": intervention_capability.to_dict(),
             "report": _json_document(discovery),
         },
         "completed",
