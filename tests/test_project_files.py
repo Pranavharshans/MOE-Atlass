@@ -121,21 +121,30 @@ class ProjectFilesTests(unittest.TestCase):
         self.assertIn("No model files are downloaded", ledger)
         self.assertIn("final VM", ledger)
 
-    def test_roadmap_preserves_authority_status_and_no_download_policy(self) -> None:
+    def test_readme_and_active_roadmap_describe_the_current_product(self) -> None:
+        readme = (ROOT / "readme.md").read_text()
         roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         for term in (
-            "Status: in progress",
-            "MoEAtlas PRD",
-            "Architecture",
-            "model-validation ledger",
-            "model-free complete",
-            "VM/GPU deferred",
-            "kickbacks-v2.vsix",
-            "append_routing_shard",
-            "public structural result protocol",
+            "Status: active",
+            "only active product roadmap",
+            "compatibility certification",
+            "packed and fused expert interventions",
+            "router interventions",
+            "research validity and usability",
+            "validation ledger",
         ):
             with self.subTest(term=term):
                 self.assertIn(term, roadmap)
+        for term in (
+            "not a universal inference engine",
+            "What works",
+            "Compatibility boundary",
+            "Start the research console",
+            "Evidence policy",
+            "Current roadmap",
+        ):
+            with self.subTest(term=term):
+                self.assertIn(term, readme)
 
     def test_run_contracts_docs_preserve_identity_and_lifecycle_anchors(self) -> None:
         runs_doc = (ROOT / "docs" / "runs.md").read_text()
@@ -246,8 +255,7 @@ class ProjectFilesTests(unittest.TestCase):
         adapter_docs = (ROOT / "docs" / "adapters.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
-        for document in (adapter_docs, architecture, ledger, readme):
+        for document in (adapter_docs, architecture, ledger):
             self.assertIn("qwen3_5_moe", document)
             self.assertIn("router_logits", document)
             self.assertIn("router_scores", document)
@@ -264,18 +272,15 @@ class ProjectFilesTests(unittest.TestCase):
     def test_shared_expert_capture_rule_is_model_neutral(self) -> None:
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         runtime = (ROOT / "docs" / "runtime.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
-        for document in (architecture, runtime, readme):
+        for document in (architecture, runtime):
             self.assertIn("shared", document.lower())
         self.assertIn("model-neutral", architecture)
         self.assertIn("expert_keys", runtime)
-        self.assertIn("non-routed metadata", readme)
 
     def test_prompt_prefill_docs_and_surface_are_present(self) -> None:
         runtime = (ROOT / "docs" / "runtime.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         source = (ROOT / "src" / "moeatlas" / "runtime" / "__init__.py").read_text()
         for text, terms in (
             (
@@ -305,15 +310,6 @@ class ProjectFilesTests(unittest.TestCase):
                     "Status: deferred",
                     "115 focused cases",
                     "Prompts, paths",
-                ),
-            ),
-            (
-                readme,
-                (
-                    "append_mixtral_routing_shard",
-                    "list_mixtral_routing_runs",
-                    "aggregate_mixtral_routing_load",
-                    "render_mixtral_routing_load_heatmap",
                 ),
             ),
             (source, ("MixtralPromptPrefillError", "run_mixtral_prompt_prefill")),
@@ -387,7 +383,6 @@ class ProjectFilesTests(unittest.TestCase):
         visualization = (ROOT / "docs" / "visualization.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 cli,
@@ -426,7 +421,6 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("Feature 22", "moeatlas heatmap WORKSPACE", "exactly once")),
             (ledger, ("Feature 22", "canonical decimal", "non-symlink", "exactly-once")),
-            (readme, ("moeatlas heatmap WORKSPACE", "atomic publication")),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -446,13 +440,12 @@ class ProjectFilesTests(unittest.TestCase):
         cli = (ROOT / "docs" / "cli.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 storage,
                 (
                     "Feature 23",
-                    "list_mixtral_routing_runs",
+                    "list_routing_runs",
                     "max_event_rows",
                     "max_source_bytes",
                     "mixtral_routing_run_inventory",
@@ -479,20 +472,22 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("Feature 23", "routing-run inventory", "latest-run")),
             (ledger, ("Feature 23", "declared/actual event budgets", "atomic JSON CLI")),
-            (readme, ("moeatlas routing-runs WORKSPACE", "run registry")),
         ):
             for term in terms:
                 with self.subTest(term=term):
                     self.assertIn(term, document)
         source = (ROOT / "src" / "moeatlas" / "store" / "routing_shards.py").read_text()
+        inventory_source = (
+            ROOT / "src" / "moeatlas" / "store" / "routing_inventory.py"
+        ).read_text()
         for term in (
             "ROUTING_RUN_INVENTORY_SCHEMA_VERSION",
             "RoutingRunInventoryError",
-            "MixtralRoutingRunSummary",
-            "MixtralRoutingRunInventory",
-            "list_mixtral_routing_runs",
+            "RoutingRunSummary",
+            "RoutingRunInventory",
         ):
             self.assertIn(term, source)
+        self.assertIn("list_routing_runs", inventory_source)
         cli_source = (ROOT / "src" / "moeatlas" / "cli.py").read_text()
         for term in (
             "_preflight_routing_runs_output",
@@ -542,7 +537,6 @@ class ProjectFilesTests(unittest.TestCase):
         probe = (ROOT / "docs" / "probe.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 runtime,
@@ -574,7 +568,6 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("RoutingCaptureSession", "retained-event quota")),
             (ledger, ("Feature 16", "RoutingCaptureSession", "MV-03")),
-            (readme, ("RoutingCaptureSession", "RoutingEvent", "certification")),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -613,7 +606,6 @@ class ProjectFilesTests(unittest.TestCase):
         adapters = (ROOT / "docs" / "adapters.md").read_text()
         discovery = (ROOT / "docs" / "discovery.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 adapters,
@@ -653,15 +645,6 @@ class ProjectFilesTests(unittest.TestCase):
                     "STRUCTURE",
                 ),
             ),
-            (
-                readme,
-                (
-                    "Qwen3MoeStaticAdapter()",
-                    "legacy_indexed",
-                    "Qwen2/Qwen3.5",
-                    "STRUCTURE-only",
-                ),
-            ),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -679,7 +662,6 @@ class ProjectFilesTests(unittest.TestCase):
         probe = (ROOT / "docs" / "probe.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 adapters,
@@ -717,7 +699,6 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("family-neutral", "ROUTING")),
             (ledger, ("Feature 15", "adapter-inspection-to-routing-plan", "MV-03")),
-            (readme, ("AdapterInspection", "family-neutral reduced")),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -734,7 +715,6 @@ class ProjectFilesTests(unittest.TestCase):
         adapters = (ROOT / "docs" / "adapters.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 runtime,
@@ -767,7 +747,6 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("MixtralRoutingDecoder", "one-forward", "MV-03", "MV-08")),
             (ledger, ("Feature 17", "MixtralRoutingDecoder", "MV-03", "MV-08")),
-            (readme, ("MixtralRoutingDecoder", "EXPERIMENTAL", "MV-03", "MV-08")),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -783,7 +762,6 @@ class ProjectFilesTests(unittest.TestCase):
         runtime = (ROOT / "docs" / "runtime.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 runtime,
@@ -827,10 +805,6 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (ledger, ("Feature 18", "run_mixtral_routing_forward", "MV-03", "MV-08")),
-            (
-                readme,
-                ("run_mixtral_routing_forward", "caller-tokenized", "frozen", "one model forward"),
-            ),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -839,7 +813,7 @@ class ProjectFilesTests(unittest.TestCase):
         exports = (ROOT / "src" / "moeatlas" / "runtime" / "__init__.py").read_text()
         for term in (
             "RoutingForwardResult",
-            "MixtralRoutingForwardResult",
+            "RoutingForwardResult",
             "run_mixtral_routing_forward",
             "run_qwen3_5_routing_forward",
         ):
@@ -851,13 +825,12 @@ class ProjectFilesTests(unittest.TestCase):
         storage = (ROOT / "docs" / "storage.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 storage,
                 (
-                    "append_mixtral_routing_shard",
-                    "list_mixtral_routing_shards",
+                    "append_routing_shard",
+                    "list_routing_shards",
                     "Feature 18",
                     "tokens.parquet",
                     "routing.parquet",
@@ -885,7 +858,6 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("Feature 19", "ST-01", "ST-04", "MV-01 through MV-08")),
             (ledger, ("Feature 19", "ST-01", "ST-04", "does not change MV-01/MV-08")),
-            (readme, ("routing-shard", "storage", "workspace/catalog")),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -896,8 +868,8 @@ class ProjectFilesTests(unittest.TestCase):
             "STORE_SCHEMA_VERSION",
             "RoutingShardError",
             "RoutingShardReceipt",
-            "append_mixtral_routing_shard",
-            "list_mixtral_routing_shards",
+            "append_routing_shard",
+            "list_routing_shards",
         ):
             self.assertIn(term, source)
             self.assertIn(term, exports)
@@ -906,7 +878,6 @@ class ProjectFilesTests(unittest.TestCase):
         storage = (ROOT / "docs" / "storage.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 storage,
@@ -933,7 +904,6 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("run-evidence export bundle",)),
             (ledger, ("does not change MV-01/MV-08",)),
-            (readme, ("export_run_bundle",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -957,9 +927,7 @@ class ProjectFilesTests(unittest.TestCase):
         storage = (ROOT / "docs" / "storage.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         workspace_doc = (ROOT / "docs" / "workspace.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 storage,
@@ -975,9 +943,7 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("assignment-query seam",)),
             (workspace_doc, ("query_assignments",)),
-            (roadmap, ("query_routing_run_assignments",)),
             (ledger, ("Routing-run assignment query seam",)),
-            (readme, ("query_routing_run_assignments",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1013,9 +979,7 @@ class ProjectFilesTests(unittest.TestCase):
         storage = (ROOT / "docs" / "storage.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         workspace_doc = (ROOT / "docs" / "workspace.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 storage,
@@ -1031,9 +995,7 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("export_run_tables",)),
             (workspace_doc, ("export_run_tables",)),
-            (roadmap, ("export_run_tables",)),
             (ledger, ("Tabular run exports",)),
-            (readme, ("export_run_tables",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1060,9 +1022,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_dataset_reader_docs_and_surface_are_present(self) -> None:
         runs_doc = (ROOT / "docs" / "runs.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 runs_doc,
@@ -1078,9 +1038,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.services.datasets",)),
-            (roadmap, ("read_dataset_rows",)),
             (ledger, ("Bounded dataset reading service",)),
-            (readme, ("read_dataset_rows",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1110,9 +1068,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_run_engine_docs_and_surface_are_present(self) -> None:
         runs_doc = (ROOT / "docs" / "runs.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 runs_doc,
@@ -1127,9 +1083,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.services.run_engine",)),
-            (roadmap, ("execute_row_schedule",)),
             (ledger, ("Deterministic run-engine execution core",)),
-            (readme, ("execute_row_schedule",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1168,9 +1122,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_run_input_preparation_docs_and_surface_are_present(self) -> None:
         runs_doc = (ROOT / "docs" / "runs.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 runs_doc,
@@ -1183,9 +1135,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.services.run_inputs",)),
-            (roadmap, ("prepare_input_rows",)),
             (ledger, ("Run input preparation service",)),
-            (readme, ("prepare_input_rows",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1218,9 +1168,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_run_service_docs_and_surface_are_present(self) -> None:
         runs_doc = (ROOT / "docs" / "runs.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 runs_doc,
@@ -1236,9 +1184,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.services.run_service",)),
-            (roadmap, ("execute_specification",)),
             (ledger, ("Headless run-engine service surface",)),
-            (readme, ("execute_specification",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1278,9 +1224,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_task_association_docs_and_surface_are_present(self) -> None:
         analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 analysis_doc,
@@ -1294,9 +1238,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.analysis.task_association",)),
-            (roadmap, ("analyze_task_association",)),
             (ledger, ("Task association metrics",)),
-            (readme, ("analyze_task_association",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1332,9 +1274,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_evidence_card_docs_and_surface_are_present(self) -> None:
         analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 analysis_doc,
@@ -1347,9 +1287,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.analysis.evidence_cards",)),
-            (roadmap, ("EvidenceCard",)),
             (ledger, ("Evidence Cards",)),
-            (readme, ("EvidenceCard()",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1385,9 +1323,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_routing_agreement_docs_and_surface_are_present(self) -> None:
         analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 analysis_doc,
@@ -1401,9 +1337,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.analysis.routing_agreement",)),
-            (roadmap, ("analyze_routing_agreement",)),
             (ledger, ("Prompt-vs-rollout routing agreement",)),
-            (readme, ("analyze_routing_agreement()",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1441,9 +1375,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_association_stability_docs_and_surface_are_present(self) -> None:
         analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 analysis_doc,
@@ -1456,9 +1388,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.analysis.association_stability",)),
-            (roadmap, ("analyze_association_stability",)),
             (ledger, ("Cross-run association stability",)),
-            (readme, ("analyze_association_stability()",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1495,9 +1425,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_router_margin_docs_and_surface_are_present(self) -> None:
         analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 analysis_doc,
@@ -1511,9 +1439,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.analysis.router_margin",)),
-            (roadmap, ("analyze_router_margin",)),
             (ledger, ("Router margin",)),
-            (readme, ("analyze_router_margin()",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1549,9 +1475,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_route_churn_docs_and_surface_are_present(self) -> None:
         analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 analysis_doc,
@@ -1565,9 +1489,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.analysis.route_churn",)),
-            (roadmap, ("analyze_route_churn",)),
             (ledger, ("Route churn",)),
-            (readme, ("analyze_route_churn()",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1603,9 +1525,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_corouting_docs_and_surface_are_present(self) -> None:
         analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 analysis_doc,
@@ -1619,9 +1539,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.analysis.corouting",)),
-            (roadmap, ("summarize_co_routing",)),
             (ledger, ("Co-routing graphs",)),
-            (readme, ("summarize_co_routing()",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1657,9 +1575,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_expert_similarity_docs_and_surface_are_present(self) -> None:
         analysis_doc = (ROOT / "docs" / "analysis.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 analysis_doc,
@@ -1673,9 +1589,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("moeatlas.analysis.expert_similarity",)),
-            (roadmap, ("analyze_expert_similarity",)),
             (ledger, ("Expert similarity",)),
-            (readme, ("analyze_expert_similarity()",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1711,9 +1625,7 @@ class ProjectFilesTests(unittest.TestCase):
     def test_adapter_registry_docs_and_surface_are_present(self) -> None:
         adapters_doc = (ROOT / "docs" / "adapters.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 adapters_doc,
@@ -1727,9 +1639,7 @@ class ProjectFilesTests(unittest.TestCase):
                 ),
             ),
             (architecture, ("entry-point plugin registry",)),
-            (roadmap, ("collect_adapter_registry()",)),
             (ledger, ("Adapter plugin registry",)),
-            (readme, ("collect_adapter_registry()",)),
             (
                 (ROOT / "docs" / "cli.md").read_text(),
                 (
@@ -1788,9 +1698,7 @@ class ProjectFilesTests(unittest.TestCase):
 
     def test_server_docs_and_surface_are_present(self) -> None:
         server_doc = (ROOT / "docs" / "server.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 server_doc,
@@ -1806,9 +1714,7 @@ class ProjectFilesTests(unittest.TestCase):
                     "deferred release-engineering evidence",
                 ),
             ),
-            (roadmap, ("create_app()", "moeatlas ui WORKSPACE")),
             (ledger, ("Local server and UI launch",)),
-            (readme, ("moeatlas.server.create_app()",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1856,10 +1762,8 @@ class ProjectFilesTests(unittest.TestCase):
 
     def test_intervention_docs_and_surface_are_present(self) -> None:
         interventions_doc = (ROOT / "docs" / "interventions.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 interventions_doc,
@@ -1875,10 +1779,8 @@ class ProjectFilesTests(unittest.TestCase):
                     "restore",
                 ),
             ),
-            (roadmap, ("run_intervention()", "InterventionRecipe")),
             (architecture, ("moeatlas.interventions",)),
             (ledger, ("Intervention mechanics",)),
-            (readme, ("moeatlas.interventions",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -1920,7 +1822,6 @@ class ProjectFilesTests(unittest.TestCase):
                 analysis_doc,
                 ("analyze_causal_evidence", "moeatlas.causal_evidence", "CausalPair"),
             ),
-            (roadmap, ("analyze_causal_evidence", "moeatlas.causal_evidence")),
             (ledger, ("Causal evidence summaries",)),
         ):
             for term in terms:
@@ -1950,7 +1851,6 @@ class ProjectFilesTests(unittest.TestCase):
 
     def test_retention_docs_and_surface_are_present(self) -> None:
         workspace_doc = (ROOT / "docs" / "workspace.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
         for document, terms in (
             (
@@ -1962,7 +1862,6 @@ class ProjectFilesTests(unittest.TestCase):
                     "evaluation, not deletion",
                 ),
             ),
-            (roadmap, ("evaluate_retention()", "moeatlas.retention_report")),
             (ledger, ("Retention evaluation",)),
         ):
             for term in terms:
@@ -2053,9 +1952,7 @@ class ProjectFilesTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(path.is_file(), path)
         audit = (ROOT / "docs" / "prd-audit.md").read_text()
-        roadmap = (ROOT / "docs" / "roadmap.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 audit,
@@ -2067,9 +1964,7 @@ class ProjectFilesTests(unittest.TestCase):
                     "model-free complete, certification blocked on infrastructure",
                 ),
             ),
-            (roadmap, ("prd-audit",)),
             (ledger, ("Final model-free PRD audit",)),
-            (readme, ("prd-audit",)),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -2085,14 +1980,13 @@ class ProjectFilesTests(unittest.TestCase):
         storage = (ROOT / "docs" / "storage.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 analysis,
                 (
                     "Feature 20",
-                    "aggregate_mixtral_routing_load",
-                    "MixtralRoutingLoadMatrix",
+                    "aggregate_routing_load",
+                    "RoutingLoadMatrix",
                     "legacy_indexed",
                     "packed",
                     "max_routing_rows",
@@ -2110,7 +2004,6 @@ class ProjectFilesTests(unittest.TestCase):
             (storage, ("Feature 20", "does not alter shard bytes")),
             (architecture, ("Feature 20", "inspection-published", "ST-04")),
             (ledger, ("Feature 20", "zero-count experts", "ST-04 remains deferred")),
-            (readme, ("aggregate_mixtral_routing_load", "analysis")),
         ):
             for term in terms:
                 with self.subTest(term=term):
@@ -2120,8 +2013,8 @@ class ProjectFilesTests(unittest.TestCase):
         for term in (
             "ROUTING_LOAD_SCHEMA_VERSION",
             "RoutingLoadError",
-            "MixtralRoutingLoadMatrix",
-            "aggregate_mixtral_routing_load",
+            "RoutingLoadMatrix",
+            "aggregate_routing_load",
         ):
             self.assertIn(term, source)
             self.assertIn(term, exports)
@@ -2130,13 +2023,12 @@ class ProjectFilesTests(unittest.TestCase):
         visualization = (ROOT / "docs" / "visualization.md").read_text()
         architecture = (ROOT / "docs" / "architecture.md").read_text()
         ledger = (ROOT / "docs" / "model-validation-ledger.md").read_text()
-        readme = (ROOT / "readme.md").read_text()
         for document, terms in (
             (
                 visualization,
                 (
                     "Feature 21",
-                    "render_mixtral_routing_load_heatmap",
+                    "render_routing_load_heatmap",
                     "assignment_counts",
                     "assignment_shares",
                     "load_ratios",
@@ -2162,14 +2054,13 @@ class ProjectFilesTests(unittest.TestCase):
             ),
             (architecture, ("Feature 21", "static HTML heatmap", "heat bins")),
             (ledger, ("Feature 21", "heat-0..8", "MV-01 through MV-08")),
-            (readme, ("render_mixtral_routing_load_heatmap", "visualization")),
         ):
             for term in terms:
                 with self.subTest(term=term):
                     self.assertIn(term, document)
         source = (ROOT / "src" / "moeatlas" / "analysis" / "routing_heatmap.py").read_text()
         exports = (ROOT / "src" / "moeatlas" / "analysis" / "__init__.py").read_text()
-        for term in ("ROUTING_HEATMAP_SCHEMA_VERSION", "render_mixtral_routing_load_heatmap"):
+        for term in ("ROUTING_HEATMAP_SCHEMA_VERSION", "render_routing_load_heatmap"):
             self.assertIn(term, source)
             self.assertIn(term, exports)
 

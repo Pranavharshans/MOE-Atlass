@@ -30,7 +30,7 @@ from pydantic import (
 
 from ..core import StrictManifestModel, VersionedManifest, validate_stable_identifier
 from ..runs import RunState
-from .routing_shards import list_routing_runs
+from .routing_inventory import list_routing_runs
 
 WORKSPACE_CATALOG_SCHEMA_VERSION = "1.0"
 CATALOG_MAX_RUNS = 10_000

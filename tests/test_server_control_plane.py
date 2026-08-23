@@ -332,7 +332,7 @@ def test_isolated_model_crash_fails_one_job_and_next_job_still_runs(tmp_path: Pa
 
 def test_export_honors_persisted_privacy_policy(tmp_path: Path) -> None:
     from moeatlas.runs.specs import PrivacyPolicy, RunSpecification
-    from moeatlas.server.app import _publish_run_policy
+    from moeatlas.server.workers import _publish_run_policy
     from moeatlas.services import register_run
 
     workspace = tmp_path / "workspace"

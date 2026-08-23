@@ -15,10 +15,8 @@ import pytest
 import moeatlas.analysis.routing_heatmap as heatmap
 from moeatlas.analysis import (
     ROUTING_HEATMAP_SCHEMA_VERSION,
-    MixtralRoutingLoadMatrix,
     RoutingLoadMatrix,
     render_compact_routing_load_heatmap,
-    render_mixtral_routing_load_heatmap,
     render_routing_load_heatmap,
 )
 from moeatlas.events import EVENT_SCHEMA_VERSION
@@ -33,7 +31,7 @@ def _shard(digit: str) -> str:
     return "shard:" + digit * 64
 
 
-def _matrix(layout: str = "legacy_indexed") -> MixtralRoutingLoadMatrix:
+def _matrix(layout: str = "legacy_indexed") -> RoutingLoadMatrix:
     layer_keys = (_component("a"), _component("b"))
     expert_keys = (
         (_component("c"), _component("d"), _component("e"), _component("f")),
@@ -42,7 +40,7 @@ def _matrix(layout: str = "legacy_indexed") -> MixtralRoutingLoadMatrix:
     counts = ((0, 2, 0, 2), (1, 1, 1, 1))
     shares = ((0.0, 0.5, 0.0, 0.5), (0.25, 0.25, 0.25, 0.25))
     ratios = ((0.0, 2.0, 0.0, 2.0), (1.0, 1.0, 1.0, 1.0))
-    return MixtralRoutingLoadMatrix(
+    return RoutingLoadMatrix(
         schema_version="1.0",
         store_schema_version=STORE_SCHEMA_VERSION,
         event_schema_version=EVENT_SCHEMA_VERSION,
@@ -68,7 +66,7 @@ def _matrix(layout: str = "legacy_indexed") -> MixtralRoutingLoadMatrix:
 def _render(
     metric: str = "assignment_counts", matrix: object | None = None, *, max_cells: int = 8
 ) -> str:
-    return render_mixtral_routing_load_heatmap(
+    return render_routing_load_heatmap(
         _matrix() if matrix is None else matrix,
         metric=metric,
         max_cells=max_cells,
@@ -79,7 +77,7 @@ def _hex_component(value: int) -> str:
     return f"component:{value:064x}"
 
 
-def _many_layer_matrix() -> MixtralRoutingLoadMatrix:
+def _many_layer_matrix() -> RoutingLoadMatrix:
     layer_keys = tuple(_hex_component(100 + index) for index in range(11))
     expert_keys = tuple(
         tuple(_hex_component(1000 + layer * 4 + expert) for expert in range(4))
@@ -88,7 +86,7 @@ def _many_layer_matrix() -> MixtralRoutingLoadMatrix:
     counts = tuple((0, 2, 0, 2) for _ in range(11))
     shares = tuple((0.0, 0.5, 0.0, 0.5) for _ in range(11))
     ratios = tuple((0.0, 2.0, 0.0, 2.0) for _ in range(11))
-    return MixtralRoutingLoadMatrix(
+    return RoutingLoadMatrix(
         schema_version="1.0",
         store_schema_version=STORE_SCHEMA_VERSION,
         event_schema_version=EVENT_SCHEMA_VERSION,
@@ -111,8 +109,8 @@ def _many_layer_matrix() -> MixtralRoutingLoadMatrix:
     )
 
 
-def _tiny_positive_matrix() -> MixtralRoutingLoadMatrix:
-    return MixtralRoutingLoadMatrix(
+def _tiny_positive_matrix() -> RoutingLoadMatrix:
+    return RoutingLoadMatrix(
         schema_version="1.0",
         store_schema_version=STORE_SCHEMA_VERSION,
         event_schema_version=EVENT_SCHEMA_VERSION,
@@ -175,7 +173,7 @@ def _sized_matrix(layer_count: int, expert_count: int) -> RoutingLoadMatrix:
 
 def test_public_surface_signature_and_schema() -> None:
     assert ROUTING_HEATMAP_SCHEMA_VERSION == "1.0"
-    signature = inspect.signature(render_mixtral_routing_load_heatmap)
+    signature = inspect.signature(render_routing_load_heatmap)
     assert tuple(signature.parameters) == ("matrix", "metric", "max_cells")
     assert signature.parameters["metric"].kind is inspect.Parameter.KEYWORD_ONLY
     assert signature.parameters["max_cells"].kind is inspect.Parameter.KEYWORD_ONLY
@@ -353,48 +351,48 @@ def test_metric_definitions_and_global_heat_formula_are_visible() -> None:
 @pytest.mark.parametrize("bad", [None, 1, True, "assignment_counts ", "counts"])
 def test_metric_validation_is_first_and_exact(bad: object) -> None:
     with pytest.raises((TypeError, ValueError)):
-        render_mixtral_routing_load_heatmap(_matrix(), metric=bad, max_cells=8)  # type: ignore[arg-type]
+        render_routing_load_heatmap(_matrix(), metric=bad, max_cells=8)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("bad", [None, True, 1.0, "8", 0, -1])
 def test_max_cells_validation_follows_metric(bad: object) -> None:
     with pytest.raises((TypeError, ValueError)):
-        render_mixtral_routing_load_heatmap(_matrix(), metric="assignment_counts", max_cells=bad)  # type: ignore[arg-type]
+        render_routing_load_heatmap(_matrix(), metric="assignment_counts", max_cells=bad)  # type: ignore[arg-type]
 
 
 def test_exact_matrix_type_and_fresh_revalidation() -> None:
     with pytest.raises(TypeError):
-        render_mixtral_routing_load_heatmap(object(), metric="assignment_counts", max_cells=8)
-    subclass = type("MatrixSubclass", (MixtralRoutingLoadMatrix,), {})
+        render_routing_load_heatmap(object(), metric="assignment_counts", max_cells=8)
+    subclass = type("MatrixSubclass", (RoutingLoadMatrix,), {})
     with pytest.raises(TypeError):
-        render_mixtral_routing_load_heatmap(
+        render_routing_load_heatmap(
             subclass(
                 **{
                     field: getattr(_matrix(), field)
-                    for field in MixtralRoutingLoadMatrix.__dataclass_fields__
+                    for field in RoutingLoadMatrix.__dataclass_fields__
                 }
             ),
             metric="assignment_counts",
             max_cells=8,
         )
 
-    invalid = object.__new__(MixtralRoutingLoadMatrix)
-    for field in MixtralRoutingLoadMatrix.__dataclass_fields__:
+    invalid = object.__new__(RoutingLoadMatrix)
+    for field in RoutingLoadMatrix.__dataclass_fields__:
         object.__setattr__(invalid, field, getattr(_matrix(), field))
     object.__setattr__(invalid, "assignment_counts", ((0, 2, 0, 1), (1, 1, 1, 1)))
     with pytest.raises((TypeError, ValueError)):
-        render_mixtral_routing_load_heatmap(invalid, metric="assignment_counts", max_cells=8)
+        render_routing_load_heatmap(invalid, metric="assignment_counts", max_cells=8)
 
 
 def test_cell_budget_is_after_fresh_matrix_validation() -> None:
     with pytest.raises(ValueError, match="matrix cells"):
-        render_mixtral_routing_load_heatmap(_matrix(), metric="assignment_counts", max_cells=7)
-    invalid = object.__new__(MixtralRoutingLoadMatrix)
-    for field in MixtralRoutingLoadMatrix.__dataclass_fields__:
+        render_routing_load_heatmap(_matrix(), metric="assignment_counts", max_cells=7)
+    invalid = object.__new__(RoutingLoadMatrix)
+    for field in RoutingLoadMatrix.__dataclass_fields__:
         object.__setattr__(invalid, field, getattr(_matrix(), field))
     object.__setattr__(invalid, "assignment_counts", ((0, 0, 0, 0), (0, 0, 0, 0)))
     with pytest.raises((TypeError, ValueError)):
-        render_mixtral_routing_load_heatmap(invalid, metric="assignment_counts", max_cells=1)
+        render_routing_load_heatmap(invalid, metric="assignment_counts", max_cells=1)
 
 
 def test_quote_aware_escaping_is_present_in_renderer_source() -> None:
@@ -406,10 +404,10 @@ def test_quote_aware_escaping_is_present_in_renderer_source() -> None:
 def test_fresh_string_and_input_field_identities_are_preserved() -> None:
     matrix = _matrix()
     field_ids = {
-        field: id(getattr(matrix, field)) for field in MixtralRoutingLoadMatrix.__dataclass_fields__
+        field: id(getattr(matrix, field)) for field in RoutingLoadMatrix.__dataclass_fields__
     }
     original_fields = {
-        field: getattr(matrix, field) for field in MixtralRoutingLoadMatrix.__dataclass_fields__
+        field: getattr(matrix, field) for field in RoutingLoadMatrix.__dataclass_fields__
     }
     rendered = _render(matrix=matrix)
     second = _render(matrix=matrix)
@@ -439,9 +437,9 @@ def test_equivalent_redacted_and_nonredacted_matrices_have_equal_table_values() 
 
 
 def test_hostile_dynamic_strings_are_quote_escaped(monkeypatch: pytest.MonkeyPatch) -> None:
-    hostile = object.__new__(MixtralRoutingLoadMatrix)
+    hostile = object.__new__(RoutingLoadMatrix)
     base = _matrix()
-    for field in MixtralRoutingLoadMatrix.__dataclass_fields__:
+    for field in RoutingLoadMatrix.__dataclass_fields__:
         object.__setattr__(hostile, field, getattr(base, field))
     object.__setattr__(hostile, "run_key", "<run>&\"'")
     object.__setattr__(hostile, "layer_keys", ("<layer>&\"'", base.layer_keys[1]))
@@ -554,10 +552,10 @@ def test_ast_has_no_runtime_or_external_surface() -> None:
                 assert not node.func.attr.lower().startswith("on")
 
 
-def test_neutral_renderer_and_historical_mixtral_name_are_identity_aliases() -> None:
-    assert MixtralRoutingLoadMatrix is RoutingLoadMatrix
-    assert render_mixtral_routing_load_heatmap is render_routing_load_heatmap
+def test_neutral_renderer_public_surface_has_no_legacy_mixtral_aliases() -> None:
+    assert not hasattr(heatmap, "MixtralRoutingLoadMatrix")
+    assert not hasattr(heatmap, "render_mixtral_routing_load_heatmap")
     matrix = _matrix()
-    assert render_routing_load_heatmap(
+    assert "<!doctype html>" in render_routing_load_heatmap(
         matrix, metric="load_ratios", max_cells=100
-    ) == render_mixtral_routing_load_heatmap(matrix, metric="load_ratios", max_cells=100)
+    ).lower()

@@ -14,7 +14,6 @@ import pytest
 from moeatlas.adapters import build_routing_probe_plan
 from moeatlas.probe import ProbeResolutionError
 from moeatlas.runtime import (
-    MixtralRoutingForwardResult,
     RoutingCaptureError,
     RoutingForwardResult,
     run_mixtral_routing_forward,
@@ -157,17 +156,19 @@ def _run(
 
 
 def test_public_api_and_result_dataclass_contract() -> None:
-    assert RoutingForwardResult is MixtralRoutingForwardResult
+    import moeatlas.runtime.routing_forward as routing_forward
+
+    assert not hasattr(routing_forward, "MixtralRoutingForwardResult")
     assert RoutingForwardResult.__name__ == "RoutingForwardResult"
-    assert MixtralRoutingForwardResult.__slots__ == (
+    assert RoutingForwardResult.__slots__ == (
         "output",
         "token_events",
         "routing_events",
     )
-    fields = MixtralRoutingForwardResult.__dataclass_fields__
+    fields = RoutingForwardResult.__dataclass_fields__
     assert tuple(fields) == ("output", "token_events", "routing_events")
     assert fields["output"].repr is False
-    assert MixtralRoutingForwardResult.__dataclass_params__.eq is False
+    assert RoutingForwardResult.__dataclass_params__.eq is False
     signature = inspect.signature(run_mixtral_routing_forward)
     assert tuple(signature.parameters) == (
         "model",
@@ -203,7 +204,7 @@ def test_result_is_frozen_identity_equal_false_and_output_caller_owned() -> None
     result, _, _ = _run("legacy", token_count=1)
     with pytest.raises(FrozenInstanceError):
         result.output = object()
-    duplicate = MixtralRoutingForwardResult(
+    duplicate = RoutingForwardResult(
         result.output, result.token_events, result.routing_events
     )
     assert duplicate is not result
@@ -469,7 +470,7 @@ def test_result_event_inputs_are_fresh_copies() -> None:
         result_event is not source_event
         for result_event, source_event in zip(result.token_events, tokens, strict=True)
     )
-    duplicate = MixtralRoutingForwardResult(
+    duplicate = RoutingForwardResult(
         result.output, result.token_events, result.routing_events
     )
     assert all(
@@ -513,7 +514,7 @@ def test_result_rejects_invalid_links_missing_tokens_duplicates_and_unselected()
     valid, _, _ = _run("legacy", token_count=1)
     route = valid.routing_events[0]
     with pytest.raises(ValueError, match="supplied token"):
-        MixtralRoutingForwardResult(
+        RoutingForwardResult(
             valid.output,
             valid.token_events,
             (
@@ -522,11 +523,11 @@ def test_result_rejects_invalid_links_missing_tokens_duplicates_and_unselected()
             ),
         )
     with pytest.raises(ValueError, match="represented"):
-        MixtralRoutingForwardResult(valid.output, _tokens(2), valid.routing_events)
+        RoutingForwardResult(valid.output, _tokens(2), valid.routing_events)
     with pytest.raises(ValueError, match="unique"):
-        MixtralRoutingForwardResult(valid.output, valid.token_events, (route, route))
+        RoutingForwardResult(valid.output, valid.token_events, (route, route))
     with pytest.raises(ValueError, match="selected"):
-        MixtralRoutingForwardResult(
+        RoutingForwardResult(
             valid.output,
             valid.token_events,
             (route.model_copy(update={"selected": False}), *valid.routing_events[1:]),
@@ -538,7 +539,7 @@ def test_result_rejects_nondeterministic_layer_order() -> None:
     routes = list(valid.routing_events)
     routes[1], routes[2] = routes[2], routes[1]
     with pytest.raises(ValueError, match="deterministic"):
-        MixtralRoutingForwardResult(valid.output, valid.token_events, tuple(routes))
+        RoutingForwardResult(valid.output, valid.token_events, tuple(routes))
 
 
 def test_source_ast_has_no_optional_or_dynamic_imports() -> None:

@@ -25,7 +25,6 @@ except ImportError:  # pragma: no cover - exercised only without the store extra
 
 import moeatlas.store.routing_shards as storage
 from moeatlas.runtime import (
-    MixtralRoutingForwardResult,
     RoutingForwardResult,
     run_qwen3_5_routing_forward,
 )
@@ -33,9 +32,9 @@ from moeatlas.store import (
     STORE_SCHEMA_VERSION,
     RoutingShardError,
     RoutingShardReceipt,
-    append_mixtral_routing_shard,
-    list_mixtral_routing_runs,
-    list_mixtral_routing_shards,
+    append_routing_shard,
+    list_routing_runs,
+    list_routing_shards,
 )
 
 from .fixtures.qwen3_5_moe import Qwen3_5MoeHookableForConditionalGeneration
@@ -94,8 +93,8 @@ def test_qwen35_result_round_trips_through_historical_store_surface(tmp_path: Pa
     workspace = _workspace(tmp_path)
     result = _qwen_result()
     assert type(result) is RoutingForwardResult
-    receipt = append_mixtral_routing_shard(workspace, result)
-    reopened = list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+    receipt = append_routing_shard(workspace, result)
+    reopened = list_routing_shards(workspace, run_key=receipt.run_key)
     assert len(reopened) == 1
     assert reopened[0].shard_key == receipt.shard_key
     assert reopened[0].created is False
@@ -108,10 +107,10 @@ def test_qwen35_result_round_trips_through_historical_store_surface(tmp_path: Pa
         "routing.parquet",
         "experts.parquet",
     }
-    again = append_mixtral_routing_shard(workspace, result)
+    again = append_routing_shard(workspace, result)
     assert again.created is False
     assert again.shard_key == receipt.shard_key
-    inventory = list_mixtral_routing_runs(
+    inventory = list_routing_runs(
         workspace,
         max_runs=2,
         max_shards=2,
@@ -194,7 +193,7 @@ def test_dependency_is_lazy_and_safe_without_duckdb(
 
     monkeypatch.setattr(builtins, "__import__", blocked_import)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "dependency"
     assert not (workspace / "routing").exists()
 
@@ -203,7 +202,7 @@ def test_dependency_is_lazy_and_safe_without_duckdb(
 def test_public_append_list_reopen_and_idempotence(layout: str, tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result(layout)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     assert isinstance(receipt, RoutingShardReceipt)
     assert receipt.schema_version == STORE_SCHEMA_VERSION
     assert receipt.created is True
@@ -224,10 +223,10 @@ def test_public_append_list_reopen_and_idempotence(layout: str, tmp_path: Path) 
         )
         assert all(stat.S_IMODE(path.stat().st_mode) == 0o700 for path in managed_directories)
         assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in shard.iterdir())
-    again = append_mixtral_routing_shard(workspace, result)
+    again = append_routing_shard(workspace, result)
     assert again.created is False
     assert again.shard_key == receipt.shard_key
-    listed = list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+    listed = list_routing_shards(workspace, run_key=receipt.run_key)
     assert listed == (again,)
 
 
@@ -235,8 +234,8 @@ def test_quote_unicode_space_workspace_round_trip(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace 'quoted' — 演示 with spaces"
     workspace.mkdir()
     result, _, _ = _run_result("packed", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
-    assert list_mixtral_routing_shards(workspace, run_key=receipt.run_key)[0].shard_key == (
+    receipt = append_routing_shard(workspace, result)
+    assert list_routing_shards(workspace, run_key=receipt.run_key)[0].shard_key == (
         receipt.shard_key
     )
 
@@ -244,7 +243,7 @@ def test_quote_unicode_space_workspace_round_trip(tmp_path: Path) -> None:
 def test_exact_manifest_and_physical_schemas_and_values(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result, store_token_text=True)
+    receipt = append_routing_shard(workspace, result, store_token_text=True)
     manifest = _manifest(receipt, workspace)
     assert (workspace / receipt.relative_path / "manifest.json").read_bytes().endswith(b"\n")
     assert set(manifest) == {
@@ -378,11 +377,11 @@ def test_exact_manifest_and_physical_schemas_and_values(tmp_path: Path) -> None:
 def test_redaction_is_explicit_and_content_addressed(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result("legacy", token_count=1)
-    redacted = append_mixtral_routing_shard(workspace, result)
+    redacted = append_routing_shard(workspace, result)
     stored_parent = tmp_path / "stored"
     stored_parent.mkdir()
     stored_workspace = _workspace(stored_parent)
-    stored = append_mixtral_routing_shard(stored_workspace, result, store_token_text=True)
+    stored = append_routing_shard(stored_workspace, result, store_token_text=True)
     assert redacted.shard_key != stored.shard_key
     assert _manifest(redacted, workspace)["token_text_stored"] is False
     connection = duckdb.connect(database=":memory:")
@@ -398,15 +397,15 @@ def test_redaction_is_explicit_and_content_addressed(tmp_path: Path) -> None:
 def test_conflict_duplicate_identity_and_multiple_runs(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result("legacy", token_count=1)
-    first = append_mixtral_routing_shard(workspace, result)
+    first = append_routing_shard(workspace, result)
     changed_route = result.routing_events[0].model_copy(update={"router_logit": 99.0})
-    changed = MixtralRoutingForwardResult(
+    changed = RoutingForwardResult(
         result.output,
         result.token_events,
         (changed_route, *result.routing_events[1:]),
     )
     with pytest.raises(RoutingShardError) as conflict:
-        append_mixtral_routing_shard(workspace, changed)
+        append_routing_shard(workspace, changed)
     assert conflict.value.stage == "conflict"
     other_result, _, _ = _run_result("legacy", token_count=1)
     from moeatlas.events import TokenEvent
@@ -426,22 +425,22 @@ def test_conflict_duplicate_identity_and_multiple_runs(tmp_path: Path) -> None:
         route.model_copy(update={"token_key": other_tokens[0].token_key})
         for route in other_result.routing_events
     )
-    other = MixtralRoutingForwardResult(other_result.output, other_tokens, other_routes)
-    second = append_mixtral_routing_shard(workspace, other)
+    other = RoutingForwardResult(other_result.output, other_tokens, other_routes)
+    second = append_routing_shard(workspace, other)
     assert second.created is True
     assert second.run_key == "run-2"
     assert tuple(
-        item.shard_key for item in list_mixtral_routing_shards(workspace, run_key=first.run_key)
+        item.shard_key for item in list_routing_shards(workspace, run_key=first.run_key)
     ) == (first.shard_key,)
     assert tuple(
-        item.shard_key for item in list_mixtral_routing_shards(workspace, run_key=second.run_key)
+        item.shard_key for item in list_routing_shards(workspace, run_key=second.run_key)
     ) == (second.shard_key,)
 
 
 def test_two_unique_same_run_shards_are_sorted(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     first_result, _, _ = _run_result("legacy", token_count=1)
-    first = append_mixtral_routing_shard(workspace, first_result)
+    first = append_routing_shard(workspace, first_result)
     from moeatlas.events import TokenEvent
 
     token = TokenEvent(
@@ -456,10 +455,10 @@ def test_two_unique_same_run_shards_are_sorted(tmp_path: Path) -> None:
         route.model_copy(update={"token_key": token.token_key})
         for route in first_result.routing_events
     )
-    second_result = MixtralRoutingForwardResult(first_result.output, (token,), routes)
-    second = append_mixtral_routing_shard(workspace, second_result)
+    second_result = RoutingForwardResult(first_result.output, (token,), routes)
+    second = append_routing_shard(workspace, second_result)
     assert second.shard_key != first.shard_key
-    listed = list_mixtral_routing_shards(workspace, run_key=first.run_key)
+    listed = list_routing_shards(workspace, run_key=first.run_key)
     assert tuple(item.shard_key for item in listed) == tuple(
         sorted((first.shard_key, second.shard_key))
     )
@@ -468,11 +467,11 @@ def test_two_unique_same_run_shards_are_sorted(tmp_path: Path) -> None:
 def test_corruption_and_managed_extras_are_reopen_failures(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result()
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     shard = workspace / receipt.relative_path
     (shard / "extra").write_text("bad")
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+        list_routing_shards(workspace, run_key=receipt.run_key)
     assert caught.value.stage == "reopen"
 
 
@@ -501,7 +500,7 @@ def test_corruption_and_managed_extras_are_reopen_failures(tmp_path: Path) -> No
 def test_manifest_shape_identity_and_checksums_are_strict(tmp_path: Path, tamper: str) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     payload = _manifest(receipt, workspace)
     if tamper == "extra":
         payload["unexpected"] = True
@@ -545,7 +544,7 @@ def test_manifest_shape_identity_and_checksums_are_strict(tmp_path: Path, tamper
     else:
         _rewrite_manifest(receipt, workspace, payload)
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+        list_routing_shards(workspace, run_key=receipt.run_key)
     assert caught.value.stage == "reopen"
 
 
@@ -579,7 +578,7 @@ def test_valid_checksum_parquet_tampering_reaches_exact_reopen_validation(
     workspace = _workspace(tmp_path)
     store_text = tamper == "semantic_token_change"
     result, _, _ = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result, store_token_text=store_text)
+    receipt = append_routing_shard(workspace, result, store_token_text=store_text)
     shard = workspace / receipt.relative_path
     connection = duckdb.connect(database=":memory:")
     try:
@@ -670,7 +669,7 @@ def test_valid_checksum_parquet_tampering_reaches_exact_reopen_validation(
     _rewrite_parquet(shard / target, columns, rows)
     _refresh_manifest_file(receipt, workspace, target)
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+        list_routing_shards(workspace, run_key=receipt.run_key)
     assert caught.value.stage == "reopen"
 
 
@@ -678,7 +677,7 @@ def test_valid_checksum_parquet_tampering_reaches_exact_reopen_validation(
 def test_file_metadata_tampering_reaches_checksum_validation(tmp_path: Path, tamper: str) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     shard = workspace / receipt.relative_path
     path = shard / "tokens.parquet"
     manifest = _manifest(receipt, workspace)
@@ -691,7 +690,7 @@ def test_file_metadata_tampering_reaches_checksum_validation(tmp_path: Path, tam
         manifest["files"]["tokens.parquet"]["sha256"] = "sha256:" + "f" * 64
     _rewrite_manifest(receipt, workspace, manifest)
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+        list_routing_shards(workspace, run_key=receipt.run_key)
     assert caught.value.stage == "reopen"
 
 
@@ -699,7 +698,7 @@ def test_file_metadata_tampering_reaches_checksum_validation(tmp_path: Path, tam
 def test_hidden_staging_shape_is_validated(tmp_path: Path, bad_kind: str) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     run_parent = workspace / "/".join(receipt.relative_path.split("/")[:-1])
     if bad_kind == "file":
         (run_parent / ".staging-crash").write_text("partial")
@@ -709,50 +708,50 @@ def test_hidden_staging_shape_is_validated(tmp_path: Path, bad_kind: str) -> Non
         (run_parent / ".staging-unsafe.name").mkdir()
     if bad_kind == "wrong-name":
         with pytest.raises(RoutingShardError) as caught:
-            list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+            list_routing_shards(workspace, run_key=receipt.run_key)
         assert caught.value.stage == "reopen"
     else:
         with pytest.raises(RoutingShardError) as caught:
-            list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+            list_routing_shards(workspace, run_key=receipt.run_key)
         assert caught.value.stage == "reopen"
 
 
 def test_hidden_crash_staging_directory_is_ignored(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     run_parent = workspace / "/".join(receipt.relative_path.split("/")[:-1])
     stage = run_parent / ".staging-crash"
     stage.mkdir()
     (stage / "partial.parquet").write_bytes(b"partial")
-    listed = list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+    listed = list_routing_shards(workspace, run_key=receipt.run_key)
     assert tuple(item.shard_key for item in listed) == (receipt.shard_key,)
 
 
 def test_managed_root_and_shard_symlink_attacks_are_rejected(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     shard = workspace / receipt.relative_path
     token_path = shard / "tokens.parquet"
     token_backup = shard / "tokens.backup"
     token_path.rename(token_backup)
     token_path.symlink_to(token_backup)
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+        list_routing_shards(workspace, run_key=receipt.run_key)
     assert caught.value.stage == "reopen"
 
     other_parent = tmp_path / "other"
     other_parent.mkdir()
     other_workspace = _workspace(other_parent)
     other_result, _, _ = _run_result("legacy", token_count=1)
-    append_mixtral_routing_shard(other_workspace, other_result)
+    append_routing_shard(other_workspace, other_result)
     routing_root = other_workspace / "routing"
     moved_root = other_workspace / "routing.backup"
     routing_root.rename(moved_root)
     routing_root.symlink_to(moved_root, target_is_directory=True)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(other_workspace, other_result)
+        append_routing_shard(other_workspace, other_result)
     assert caught.value.stage == "workspace"
 
 
@@ -762,26 +761,26 @@ def test_managed_children_and_final_nondirectory_collisions_are_rejected(tmp_pat
     (workspace / "routing").mkdir()
     (workspace / "routing" / "v1").write_text("not a directory")
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "workspace"
 
     second_parent = tmp_path / "second"
     second_parent.mkdir()
     second_workspace = _workspace(second_parent)
     second_result, _, _ = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(second_workspace, second_result)
+    receipt = append_routing_shard(second_workspace, second_result)
     shard = second_workspace / receipt.relative_path
     shutil.rmtree(shard)
     shard.write_text("not a shard directory")
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(second_workspace, second_result)
+        append_routing_shard(second_workspace, second_result)
     assert caught.value.stage == "workspace"
 
 
 def test_absent_subtree_list_is_empty_and_nonmutating(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     before = _tree_snapshot(workspace)
-    assert list_mixtral_routing_shards(workspace, run_key="run-absent") == ()
+    assert list_routing_shards(workspace, run_key="run-absent") == ()
     assert _tree_snapshot(workspace) == before
 
 
@@ -791,7 +790,7 @@ def test_each_managed_directory_and_file_symlink_is_rejected(tmp_path: Path, att
     parent.mkdir()
     workspace = _workspace(parent)
     result, _, _ = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     shard = workspace / receipt.relative_path
     run_parent = shard.parent
     version = run_parent.parent
@@ -819,7 +818,7 @@ def test_each_managed_directory_and_file_symlink_is_rejected(tmp_path: Path, att
         path.rename(backup)
         path.symlink_to(backup)
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+        list_routing_shards(workspace, run_key=receipt.run_key)
     assert caught.value.stage in {"workspace", "reopen"}
 
 
@@ -841,7 +840,7 @@ def test_prepublication_fsync_failures_clean_owned_staging(
 
     monkeypatch.setattr(storage.os, "fsync", fail_at)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "write"
     assert not (workspace / "routing").exists() or not any(
         path.name.startswith("shard-") for path in workspace.rglob("shard-*")
@@ -861,7 +860,7 @@ def test_manifest_write_and_parquet_write_failures_clean_staging(
 
     monkeypatch.setattr(storage, "_write_parquets", fail_write)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "write"
     assert not any(path.name.startswith(".staging-") for path in workspace.rglob("*"))
 
@@ -875,7 +874,7 @@ def test_manifest_write_and_parquet_write_failures_clean_staging(
 
     monkeypatch.setattr(storage, "_write_parquets", fail_after_write)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "write"
     assert not any(path.name.startswith(".staging-") for path in workspace.rglob("*"))
 
@@ -889,7 +888,7 @@ def test_manifest_write_and_parquet_write_failures_clean_staging(
 
     monkeypatch.setattr(storage, "_write_manifest", fail_manifest)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "write"
     assert not any(path.name.startswith(".staging-") for path in workspace.rglob("*"))
 
@@ -942,7 +941,7 @@ def test_each_parquet_write_failure_cleans_owned_staging(
 
     monkeypatch.setattr(storage, "_load_duckdb", lambda: DuckDBProxy)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "write"
     assert not any(path.name.startswith(".staging-") for path in workspace.rglob("*"))
     assert not any(path.name.startswith("shard-") for path in workspace.rglob("*"))
@@ -959,7 +958,7 @@ def test_rename_failure_is_publish_and_cleans_staging(
 
     monkeypatch.setattr(storage.os, "rename", fail_rename)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "publish"
     assert not any(path.name.startswith(".staging-") for path in workspace.rglob("*"))
 
@@ -981,10 +980,10 @@ def test_post_rename_parent_fsync_failure_recovers_by_idempotent_retry(
 
     monkeypatch.setattr(storage.os, "fsync", fail_parent_only)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "publish"
     monkeypatch.setattr(storage.os, "fsync", original_fsync)
-    recovered = append_mixtral_routing_shard(workspace, result)
+    recovered = append_routing_shard(workspace, result)
     assert recovered.created is False
 
 
@@ -1015,14 +1014,14 @@ def test_duckdb_connections_close_on_write_and_reopen_failure(
 
     monkeypatch.setattr(storage, "_load_duckdb", lambda: DuckDBProxy)
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(workspace, result)
+        append_routing_shard(workspace, result)
     assert caught.value.stage == "write"
     assert not any(path.name.startswith(".staging-") for path in workspace.rglob("*"))
     monkeypatch.setattr(storage, "_load_duckdb", lambda: duckdb)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: DuckDBProxy)
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_shards(workspace, run_key=receipt.run_key)
+        list_routing_shards(workspace, run_key=receipt.run_key)
     assert caught.value.stage == "reopen"
 
 
@@ -1030,12 +1029,12 @@ def test_workspace_validation_and_no_write_on_preflight(tmp_path: Path) -> None:
     result, _, _ = _run_result()
     missing = tmp_path / "missing"
     with pytest.raises(RoutingShardError) as caught:
-        append_mixtral_routing_shard(missing, result)
+        append_routing_shard(missing, result)
     assert caught.value.stage == "workspace"
     assert not missing.exists()
     before = _tree_snapshot(tmp_path)
     with pytest.raises(TypeError):
-        append_mixtral_routing_shard(tmp_path, result, store_token_text=1)  # type: ignore[arg-type]
+        append_routing_shard(tmp_path, result, store_token_text=1)  # type: ignore[arg-type]
     assert _tree_snapshot(tmp_path) == before
 
 
@@ -1047,10 +1046,10 @@ def test_strict_preflight_argument_types_leave_workspace_unchanged(tmp_path: Pat
         workspace = _workspace(workspace_parent)
         before = _tree_snapshot(workspace)
         with pytest.raises(TypeError):
-            append_mixtral_routing_shard(bad_workspace, result)  # type: ignore[arg-type]
+            append_routing_shard(bad_workspace, result)  # type: ignore[arg-type]
         assert _tree_snapshot(workspace) == before
 
-    class ResultSubclass(MixtralRoutingForwardResult):
+    class ResultSubclass(RoutingForwardResult):
         pass
 
     subclass = ResultSubclass(result.output, result.token_events, result.routing_events)
@@ -1059,7 +1058,7 @@ def test_strict_preflight_argument_types_leave_workspace_unchanged(tmp_path: Pat
     workspace = _workspace(subclass_parent)
     before = _tree_snapshot(workspace)
     with pytest.raises(TypeError):
-        append_mixtral_routing_shard(workspace, subclass)
+        append_routing_shard(workspace, subclass)
     assert _tree_snapshot(workspace) == before
 
     not_result_parent = tmp_path / "not-result"
@@ -1067,7 +1066,7 @@ def test_strict_preflight_argument_types_leave_workspace_unchanged(tmp_path: Pat
     workspace = _workspace(not_result_parent)
     before = _tree_snapshot(workspace)
     with pytest.raises(TypeError):
-        append_mixtral_routing_shard(workspace, object())  # type: ignore[arg-type]
+        append_routing_shard(workspace, object())  # type: ignore[arg-type]
     assert _tree_snapshot(workspace) == before
 
     invalid_run_parent = tmp_path / "invalid-run"
@@ -1076,7 +1075,7 @@ def test_strict_preflight_argument_types_leave_workspace_unchanged(tmp_path: Pat
     before = _tree_snapshot(workspace)
     for invalid_run_key in (None, 1, "", "  run"):
         with pytest.raises((TypeError, ValueError)):
-            list_mixtral_routing_shards(workspace, run_key=invalid_run_key)  # type: ignore[arg-type]
+            list_routing_shards(workspace, run_key=invalid_run_key)  # type: ignore[arg-type]
         assert _tree_snapshot(workspace) == before
 
 
@@ -1116,7 +1115,7 @@ def test_receipt_is_value_only_and_payload_is_not_retained(tmp_path: Path) -> No
     output_ref = weakref.ref(marker)
     token_event_ref = weakref.ref(result.token_events[0])
     routing_event_ref = weakref.ref(result.routing_events[0])
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     assert receipt.__slots__ == (
         "schema_version",
         "shard_key",
@@ -1157,7 +1156,7 @@ def test_offline_cache_network_and_ast_guards(
     monkeypatch.setattr(socket, "socket", forbidden)
     monkeypatch.setattr(urllib.request, "urlopen", forbidden)
     before = tuple(path.relative_to(workspace).as_posix() for path in workspace.rglob("*"))
-    append_mixtral_routing_shard(workspace, result)
+    append_routing_shard(workspace, result)
     after = tuple(path.relative_to(workspace).as_posix() for path in workspace.rglob("*"))
     assert before != after
     assert tuple(path.relative_to(cache_root).as_posix() for path in cache_root.rglob("*")) == (
@@ -1226,16 +1225,16 @@ def test_sql_is_literal_parameterized_and_parquet_uses_relation_path_api() -> No
 def test_public_signatures_and_no_output_serialization() -> None:
     assert STORE_SCHEMA_VERSION == "2.0"
     assert storage.LEGACY_STORE_SCHEMA_VERSION == "1.0"
-    assert tuple(inspect.signature(append_mixtral_routing_shard).parameters) == (
+    assert tuple(inspect.signature(append_routing_shard).parameters) == (
         "workspace",
         "result",
         "store_token_text",
     )
     assert (
-        inspect.signature(append_mixtral_routing_shard).parameters["store_token_text"].kind
+        inspect.signature(append_routing_shard).parameters["store_token_text"].kind
         is inspect.Parameter.KEYWORD_ONLY
     )
-    assert tuple(inspect.signature(list_mixtral_routing_shards).parameters) == (
+    assert tuple(inspect.signature(list_routing_shards).parameters) == (
         "workspace",
         "run_key",
     )

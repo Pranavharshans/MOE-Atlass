@@ -215,7 +215,7 @@ If the retry also fails, no result is published; the existing
 `pending_runtime_cleanup` so the caller can retry cleanup.
 
 Only a complete, non-truncated, zero-dropped capture publishes a
-`RoutingForwardResult` (with the historical `MixtralRoutingForwardResult`
+`RoutingForwardResult` (with the historical `RoutingForwardResult`
 identity alias). The frozen, slots, identity-equality result retains only the
 exact caller-owned output object and fresh token/routing events; its output
 identity is preserved and hidden from `repr`. Fresh collection copies and

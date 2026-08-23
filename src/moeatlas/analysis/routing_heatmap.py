@@ -377,14 +377,8 @@ def render_compact_routing_load_heatmap(
     return "\n".join(lines) + "\n"
 
 
-# Preserve the historical spelling as an identity alias.  It is deliberately
-# not a family-specific renderer, so all families share one byte-stable HTML
-# contract.
-render_mixtral_routing_load_heatmap = render_routing_load_heatmap
-
 __all__ = [
     "ROUTING_HEATMAP_SCHEMA_VERSION",
     "render_compact_routing_load_heatmap",
     "render_routing_load_heatmap",
-    "render_mixtral_routing_load_heatmap",
 ]

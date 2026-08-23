@@ -125,7 +125,7 @@ caller model kwargs, shallow-copies only the kwargs mapping, and invokes the
 callable model exactly once under the canonical passive `RoutingCaptureSession`.
 It computes the complete-event budget before hooks/model traversal and
 publishes only a frozen model-neutral `RoutingForwardResult` (the historical
-`MixtralRoutingForwardResult` name remains an identity alias) after cleanup and event
+`RoutingForwardResult` name remains an identity alias) after cleanup and event
 postconditions succeed. The result owns no model or decoder and retains the
 exact caller output identity plus fresh event copies. Tokenization, prompts,
 padding, generation, datasets, storage, CLI, server, and UI remain outside

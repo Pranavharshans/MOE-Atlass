@@ -14,10 +14,8 @@ import pytest
 import moeatlas.store.routing_shards as storage
 from moeatlas.analysis import (
     ROUTING_LOAD_SCHEMA_VERSION,
-    MixtralRoutingLoadMatrix,
     RoutingLoadError,
     RoutingLoadMatrix,
-    aggregate_mixtral_routing_load,
     aggregate_routing_load,
 )
 from moeatlas.core import make_component_key, make_model_key, stable_digest
@@ -25,8 +23,8 @@ from moeatlas.events import EVENT_SCHEMA_VERSION, RoutingEvent, TokenEvent, Toke
 from moeatlas.store import (
     STORE_SCHEMA_VERSION,
     RoutingShardError,
-    append_mixtral_routing_shard,
-    list_mixtral_routing_runs,
+    append_routing_shard,
+    list_routing_runs,
 )
 
 from .test_mixtral_routing_decoder import _inspection, _qwen_inspection
@@ -54,7 +52,7 @@ def _aggregate(
     universe: object | None = None,
     **limits: int,
 ):
-    return aggregate_mixtral_routing_load(
+    return aggregate_routing_load(
         workspace,
         inspection,
         run_key=run_key,
@@ -295,7 +293,7 @@ def _duckdb_required(request: pytest.FixtureRequest) -> None:
 
 def test_public_surface_and_matrix_field_order() -> None:
     assert ROUTING_LOAD_SCHEMA_VERSION == "1.0"
-    assert tuple(field.name for field in fields(MixtralRoutingLoadMatrix)) == (
+    assert tuple(field.name for field in fields(RoutingLoadMatrix)) == (
         "schema_version",
         "store_schema_version",
         "event_schema_version",
@@ -316,12 +314,12 @@ def test_public_surface_and_matrix_field_order() -> None:
         "assignment_shares",
         "load_ratios",
     )
-    assert MixtralRoutingLoadMatrix.__slots__ == tuple(
-        field.name for field in fields(MixtralRoutingLoadMatrix)
+    assert RoutingLoadMatrix.__slots__ == tuple(
+        field.name for field in fields(RoutingLoadMatrix)
     )
-    assert MixtralRoutingLoadMatrix.__dataclass_params__.frozen is True
-    assert MixtralRoutingLoadMatrix.__dataclass_params__.eq is True
-    assert tuple(inspect.signature(aggregate_mixtral_routing_load).parameters) == (
+    assert RoutingLoadMatrix.__dataclass_params__.frozen is True
+    assert RoutingLoadMatrix.__dataclass_params__.eq is True
+    assert tuple(inspect.signature(aggregate_routing_load).parameters) == (
         "workspace",
         "inspection",
         "run_key",
@@ -330,14 +328,14 @@ def test_public_surface_and_matrix_field_order() -> None:
         "max_matrix_cells",
         "declared_universe",
     )
-    signature = inspect.signature(aggregate_mixtral_routing_load)
+    signature = inspect.signature(aggregate_routing_load)
     assert signature.parameters["run_key"].kind is inspect.Parameter.KEYWORD_ONLY
     assert signature.parameters["max_routing_rows"].kind is inspect.Parameter.KEYWORD_ONLY
     assert signature.parameters["declared_universe"].default is None
 
 
 def test_matrix_constructor_revalidates_formula_and_axes() -> None:
-    valid = MixtralRoutingLoadMatrix(
+    valid = RoutingLoadMatrix(
         schema_version="1.0",
         store_schema_version=STORE_SCHEMA_VERSION,
         event_schema_version="1.0",
@@ -407,7 +405,7 @@ def test_inspection_axes_require_numeric_contiguous_layers(indices: tuple[int, i
 def test_known_layout_formulas_and_explicit_zero_experts(layout: str, tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result(layout, token_count=2)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     matrix = _aggregate(workspace, inspection, receipt.run_key)
     assert matrix.layout == ("legacy_indexed" if layout == "legacy" else "packed")
     assert matrix.schema_version == ROUTING_LOAD_SCHEMA_VERSION
@@ -488,7 +486,7 @@ def test_budget_validation_precedes_dependency_and_filesystem(tmp_path: Path, mo
 def test_source_budgets_and_workspace_preflight_do_not_write(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     before = _tree_snapshot(workspace)
     with pytest.raises(RoutingLoadError) as caught:
         _aggregate(workspace, inspection, receipt.run_key, max_source_bytes=1)
@@ -499,7 +497,7 @@ def test_source_budgets_and_workspace_preflight_do_not_write(tmp_path: Path) -> 
 def test_source_budget_exact_boundaries_and_readonly_success(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     shard = workspace / receipt.relative_path
     source_bytes = sum(
         (shard / name).stat().st_size
@@ -533,7 +531,7 @@ def test_actual_routing_budget_precedes_manifest_and_source_fetchall(
 ) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     close_calls: list[int] = []
     proxy = _DuckDBProxy(routing_count=999, close_calls=close_calls)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: proxy)
@@ -561,7 +559,7 @@ def test_count_read_failures_are_reopen_or_exact_control_flow(
 ) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     close_calls: list[int] = []
     proxy = _DuckDBProxy(count_failure=failure, close_calls=close_calls)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: proxy)
@@ -585,7 +583,7 @@ def test_connection_proxy_primary_failures_close_once(
 ) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     close_calls: list[int] = []
     proxy = _DuckDBProxy(failure=failure, close_calls=close_calls)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: proxy)
@@ -602,7 +600,7 @@ def test_connection_proxy_close_failure_and_primary_are_terminal(
 ) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     close_calls: list[int] = []
     proxy = _DuckDBProxy(close_failure=OSError("close"), close_calls=close_calls)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: proxy)
@@ -617,12 +615,12 @@ def test_connection_proxy_success_closes_once_and_returns_matrix(
 ) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     close_calls: list[int] = []
     proxy = _DuckDBProxy(close_calls=close_calls)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: proxy)
     matrix = _aggregate(workspace, inspection, receipt.run_key)
-    assert isinstance(matrix, MixtralRoutingLoadMatrix)
+    assert isinstance(matrix, RoutingLoadMatrix)
     assert close_calls == [1]
 
 
@@ -632,7 +630,7 @@ def test_connection_proxy_close_control_flow_is_exact_and_publishes_no_matrix(
 ) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     close_calls: list[int] = []
     proxy = _DuckDBProxy(close_failure=failure, close_calls=close_calls)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: proxy)
@@ -655,7 +653,7 @@ def test_connection_proxy_close_control_flow_is_exact_and_publishes_no_matrix(
 def test_dependency_failure_is_lazy_and_nonmutating(tmp_path: Path, monkeypatch) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     before = _tree_snapshot(workspace)
 
     def unavailable() -> object:
@@ -671,7 +669,7 @@ def test_dependency_failure_is_lazy_and_nonmutating(tmp_path: Path, monkeypatch)
 def test_multiple_shards_are_read_across_the_run_and_sorted(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     first, _, inspection = _run_result("legacy", token_count=1)
-    first_receipt = append_mixtral_routing_shard(workspace, first)
+    first_receipt = append_routing_shard(workspace, first)
     token = TokenEvent(
         run_key="run-1",
         sequence_id="sequence-2",
@@ -684,7 +682,7 @@ def test_multiple_shards_are_read_across_the_run_and_sorted(tmp_path: Path) -> N
         event.model_copy(update={"token_key": token.token_key}) for event in first.routing_events
     )
     second = first.__class__(object(), (token,), routes)
-    second_receipt = append_mixtral_routing_shard(workspace, second)
+    second_receipt = append_routing_shard(workspace, second)
     matrix = _aggregate(workspace, inspection, first_receipt.run_key)
     assert matrix.token_count == 2
     assert matrix.assignment_count == 2 * len(matrix.layer_keys) * matrix.routed_top_k
@@ -709,7 +707,7 @@ def test_valid_contiguous_eleven_layer_source_uses_numeric_axis_order(tmp_path: 
     base_result, _, base_inspection = _run_result("legacy", token_count=1)
     inspection = _inspection_with_many_layers(base_inspection)
     result = _result_with_many_layers(base_result, inspection)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     matrix = _aggregate(workspace, inspection, receipt.run_key)
     assert matrix.layer_indices == tuple(range(11))
     assert matrix.layer_indices[2] == 2
@@ -736,7 +734,7 @@ def test_valid_contiguous_eleven_layer_source_uses_numeric_axis_order(tmp_path: 
 def test_different_exact_mixtral_model_binding_is_rejected_at_source(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     different = _inspection_with_model_key(inspection, "other/mixtral")
     assert different.descriptor.name == "huggingface-mixtral-static"
     assert different.descriptor.architecture_families == ("mixtral",)
@@ -749,7 +747,7 @@ def test_different_exact_mixtral_model_binding_is_rejected_at_source(tmp_path: P
 def test_repeated_aggregation_is_value_equal(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     assert _aggregate(workspace, inspection, receipt.run_key) == _aggregate(
         workspace, inspection, receipt.run_key
     )
@@ -761,8 +759,8 @@ def test_redacted_and_opt_in_token_text_have_equal_routing_matrices(tmp_path: Pa
     redacted_workspace = _workspace(tmp_path / "redacted")
     stored_workspace = _workspace(tmp_path / "stored")
     result, _, inspection = _run_result("legacy", token_count=1)
-    redacted_receipt = append_mixtral_routing_shard(redacted_workspace, result)
-    stored_receipt = append_mixtral_routing_shard(stored_workspace, result, store_token_text=True)
+    redacted_receipt = append_routing_shard(redacted_workspace, result)
+    stored_receipt = append_routing_shard(stored_workspace, result, store_token_text=True)
     redacted = _aggregate(redacted_workspace, inspection, redacted_receipt.run_key)
     stored = _aggregate(stored_workspace, inspection, stored_receipt.run_key)
     assert replace(redacted, shard_keys=stored.shard_keys) == stored
@@ -771,7 +769,7 @@ def test_redacted_and_opt_in_token_text_have_equal_routing_matrices(tmp_path: Pa
 def test_packed_source_is_incompatible_with_legacy_inspection(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, packed_inspection = _run_result("packed", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     legacy_inspection = _inspection("legacy")
     assert packed_inspection.report.model_key == legacy_inspection.report.model_key
     with pytest.raises(RoutingLoadError) as caught:
@@ -799,8 +797,8 @@ def test_same_run_mixed_layout_shards_with_distinct_tokens_are_incompatible(
         for event in packed_result.routing_events
     )
     packed_distinct = packed_result.__class__(object(), (packed_token,), packed_routes)
-    legacy_receipt = append_mixtral_routing_shard(workspace, legacy_result)
-    packed_receipt = append_mixtral_routing_shard(workspace, packed_distinct)
+    legacy_receipt = append_routing_shard(workspace, legacy_result)
+    packed_receipt = append_routing_shard(workspace, packed_distinct)
     assert legacy_receipt.run_key == packed_receipt.run_key == "run-1"
     assert legacy_receipt.shard_key != packed_receipt.shard_key
     inspection = legacy_inspection if inspection_side == "legacy" else packed_inspection
@@ -826,21 +824,21 @@ def test_budget_arguments_are_strict_and_nonmutating(
     }
     values[field] = bad
     with pytest.raises((TypeError, ValueError)):
-        aggregate_mixtral_routing_load(workspace, inspection, run_key="run-1", **values)
+        aggregate_routing_load(workspace, inspection, run_key="run-1", **values)
     assert _tree_snapshot(workspace) == before
 
 
 def test_source_corruption_is_reopen_and_duplicate_is_conflict(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("packed", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     shard = workspace / receipt.relative_path
     (shard / "routing.parquet").write_bytes((shard / "routing.parquet").read_bytes() + b"tamper")
     with pytest.raises(RoutingShardError) as caught:
         _aggregate(workspace, inspection, receipt.run_key)
     assert caught.value.stage == "reopen"
     with pytest.raises(TypeError):
-        aggregate_mixtral_routing_load(
+        aggregate_routing_load(
             123,
             inspection,
             run_key=receipt.run_key,
@@ -849,7 +847,7 @@ def test_source_corruption_is_reopen_and_duplicate_is_conflict(tmp_path: Path) -
             max_matrix_cells=1,
         )
     with pytest.raises(TypeError):
-        aggregate_mixtral_routing_load(
+        aggregate_routing_load(
             workspace,
             inspection,
             run_key=[receipt.run_key],
@@ -865,7 +863,7 @@ def test_valid_checksum_duplicate_expert_per_token_layer_is_rejected(tmp_path: P
     routes = list(result.routing_events)
     routes[1] = routes[1].model_copy(update={"expert_key": routes[0].expert_key})
     duplicate = result.__class__(object(), result.token_events, tuple(routes))
-    receipt = append_mixtral_routing_shard(workspace, duplicate)
+    receipt = append_routing_shard(workspace, duplicate)
     with pytest.raises(RoutingLoadError) as caught:
         _aggregate(workspace, inspection, receipt.run_key)
     assert caught.value.stage == "source"
@@ -893,7 +891,7 @@ def test_source_completeness_rejects_rank_layer_and_identity_mismatches(
     else:
         routes[0] = routes[0].model_copy(update={"expert_key": "component:" + "e" * 64})
     invalid = result.__class__(object(), result.token_events, tuple(routes))
-    receipt = append_mixtral_routing_shard(workspace, invalid)
+    receipt = append_routing_shard(workspace, invalid)
     with pytest.raises(RoutingLoadError) as caught:
         _aggregate(workspace, inspection, receipt.run_key)
     assert caught.value.stage == "source"
@@ -902,7 +900,7 @@ def test_source_completeness_rejects_rank_layer_and_identity_mismatches(
 def test_valid_checksum_duplicate_rank_is_reopen(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("packed", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     routing_path = workspace / receipt.relative_path / "routing.parquet"
     connection = duckdb.connect(database=":memory:")
     try:
@@ -926,7 +924,7 @@ def test_valid_checksum_duplicate_rank_is_reopen(tmp_path: Path) -> None:
 def test_valid_checksum_source_corruption_is_reopen(corruption: str, tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     shard = workspace / receipt.relative_path
     routing_path = shard / "routing.parquet"
     if corruption == "malformed":
@@ -960,7 +958,7 @@ def test_valid_checksum_source_corruption_is_reopen(corruption: str, tmp_path: P
 def test_query_failures_are_safe_and_connection_is_closed(tmp_path: Path, monkeypatch) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     original = storage._validate_routing_load_source
 
     def fail(*args: object, **kwargs: object) -> object:
@@ -977,7 +975,7 @@ def test_query_failures_are_safe_and_connection_is_closed(tmp_path: Path, monkey
 def test_network_cache_and_tmp_are_not_used(tmp_path: Path, monkeypatch) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     cache = tmp_path / "cache"
     temp = tmp_path / "temp"
     cache.mkdir()
@@ -1000,7 +998,7 @@ def test_network_cache_and_tmp_are_not_used(tmp_path: Path, monkeypatch) -> None
 def test_matrix_does_not_retain_inspection_or_source_objects(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     inspection_ref = weakref.ref(inspection)
     matrix = _aggregate(workspace, inspection, receipt.run_key)
     del result
@@ -1111,9 +1109,11 @@ def test_ast_and_forbidden_import_guards() -> None:
     assert "write_parquet" not in source
 
 
-def test_neutral_public_surface_and_historical_mixtral_names_are_identity_aliases() -> None:
-    assert MixtralRoutingLoadMatrix is RoutingLoadMatrix
-    assert aggregate_mixtral_routing_load is aggregate_routing_load
+def test_neutral_public_surface_has_no_legacy_mixtral_aliases() -> None:
+    import moeatlas.analysis.routing_load as routing_load
+
+    assert not hasattr(routing_load, "MixtralRoutingLoadMatrix")
+    assert not hasattr(routing_load, "aggregate_mixtral_routing_load")
 
 
 def test_qwen35_shared_expert_is_validated_but_excluded_from_neutral_matrix(
@@ -1122,7 +1122,7 @@ def test_qwen35_shared_expert_is_validated_but_excluded_from_neutral_matrix(
     workspace = _workspace(tmp_path)
     inspection = _qwen35_inspection()
     result = _qwen_result()
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     matrix = aggregate_routing_load(
         workspace,
         inspection,
@@ -1151,8 +1151,8 @@ def test_qwen35_both_roots_cross_the_full_forward_store_inventory_and_analysis_p
 ) -> None:
     workspace = _workspace(tmp_path)
     result, _, inspection, _ = _run_qwen(surface)
-    receipt = append_mixtral_routing_shard(workspace, result)
-    inventory = list_mixtral_routing_runs(
+    receipt = append_routing_shard(workspace, result)
+    inventory = list_routing_runs(
         workspace,
         max_runs=10,
         max_shards=10,
@@ -1204,7 +1204,7 @@ def test_future_descriptor_is_accepted_only_by_structural_routing_contract(
         }
     )
     result = _qwen_result()
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     matrix = aggregate_routing_load(
         workspace,
         inspection,
@@ -1224,7 +1224,7 @@ def test_declared_universe_path_matches_legacy_aggregation(tmp_path: Path) -> No
 
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     declared = publish_routing_universe(inspection)
     assert _aggregate(
         workspace, inspection, receipt.run_key, universe=declared
@@ -1251,7 +1251,7 @@ def test_tampered_declared_universe_is_rejected_at_inspection_stage(
 
     workspace = _workspace(tmp_path)
     result, _, inspection = _run_result("legacy", token_count=1)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
 
     payload = json.loads(publish_routing_universe(inspection).to_json())
     payload["layers"][0]["routed_top_k"] = 3
@@ -1286,7 +1286,7 @@ def test_adapter_declared_layout_stays_gated_in_analysis(tmp_path: Path) -> None
     assert published.layout == "custom_sparse"
     workspace = _workspace(tmp_path)
     result, _, _ = _run_result("legacy", token_count=1)
-    append_mixtral_routing_shard(workspace, result)
+    append_routing_shard(workspace, result)
     # ...while routing-load analysis keeps its decodable-layout contract on
     # both the legacy and declared-universe paths.
     with pytest.raises(RoutingLoadError) as exc:

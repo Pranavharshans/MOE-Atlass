@@ -190,9 +190,6 @@ def _capture_universe(inspection: AdapterInspection) -> RoutingUniverse:
     return universe
 
 
-MixtralRoutingForwardResult = RoutingForwardResult
-
-
 def run_routing_forward(
     model: object,
     inspection: AdapterInspection,
@@ -345,7 +342,6 @@ def run_qwen3_5_routing_forward(
 
 __all__ = [
     "RoutingForwardResult",
-    "MixtralRoutingForwardResult",
     "run_routing_forward",
     "run_mixtral_routing_forward",
     "run_qwen3_5_routing_forward",

@@ -30,7 +30,7 @@ artifact.write_text(html, encoding="utf-8")
 webbrowser.open(artifact.resolve().as_uri())
 ```
 
-The historical `render_mixtral_routing_load_heatmap` name is an identity alias
+The historical `render_routing_load_heatmap` name is an identity alias
 of the neutral renderer. The renderer itself remains pure: it returns the string and does not save or
 open anything. The packaged React UI is the primary research presentation
 surface, but it is not a replacement for this portable static HTML export

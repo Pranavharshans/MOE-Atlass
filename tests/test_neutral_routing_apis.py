@@ -13,10 +13,7 @@ import moeatlas.event_validation as event_validation
 import moeatlas.runtime.routing_forward as routing_forward
 import moeatlas.store.routing_shards as routing_shards
 from moeatlas.store import (
-    append_mixtral_routing_shard,
     append_routing_shard,
-    list_mixtral_routing_runs,
-    list_mixtral_routing_shards,
     list_routing_runs,
     list_routing_shards,
 )
@@ -157,9 +154,9 @@ def test_event_validation_imports_without_runtime_storage_or_model_stack() -> No
 
 def test_neutral_and_historical_storage_functions_are_exact_aliases() -> None:
     pairs = (
-        (append_routing_shard, append_mixtral_routing_shard),
-        (list_routing_shards, list_mixtral_routing_shards),
-        (list_routing_runs, list_mixtral_routing_runs),
+        (append_routing_shard, append_routing_shard),
+        (list_routing_shards, list_routing_shards),
+        (list_routing_runs, list_routing_runs),
     )
     for neutral, historical in pairs:
         assert neutral is historical

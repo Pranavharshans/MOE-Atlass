@@ -1,4 +1,10 @@
-# PRD v1 acceptance audit (model-free)
+# Archived PRD v1 acceptance audit
+
+Status: frozen historical record. This document captures the model-free v1
+acceptance review at the time it was written. It is not the current roadmap or
+the current compatibility report. Use [roadmap.md](roadmap.md) for planned work
+and [model-validation-ledger.md](model-validation-ledger.md) for current
+model/GPU evidence.
 
 This audit maps every MoEAtlas PRD v1 acceptance area to its implementation
 surface, its local test evidence, and its honest status. It was produced

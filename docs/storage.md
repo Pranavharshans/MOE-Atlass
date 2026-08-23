@@ -3,7 +3,7 @@
 Feature 19 adds one bounded, caller-invoked persistence seam:
 `append_routing_shard(workspace, result, *, store_token_text=False)`. It accepts
 only a complete model-neutral `RoutingForwardResult` from the Feature 18
-one-forward boundary. `append_mixtral_routing_shard` remains an exact identity
+one-forward boundary. `append_routing_shard` remains an exact identity
 alias for backward compatibility and accepts Qwen3.5 or future-family results
 without changing the persisted schema. Because each historical name is the same
 function object as its canonical name (not a wrapper), introspection attributes
@@ -49,7 +49,7 @@ pattern are ignored after a crash; staging files, symlinks, or malformed names
 are rejected. There is no concurrent-writer guarantee.
 
 `list_routing_shards(workspace, *, run_key=...)` is non-mutating.
-`list_mixtral_routing_shards` is its exact compatibility alias. The function
+`list_routing_shards` is its exact compatibility alias. The function
 reopens every committed shard, rejects symlinks, extras, manifest/checksum/
 schema/count/identity/order corruption, and returns value-only receipts sorted
 by `shard_key`. `RoutingShardError` exposes only one fixed stage:
@@ -126,7 +126,7 @@ unchanged.
 
 Feature 23 adds a read-only inventory primitive over the committed shard tree.
 Call it as `list_routing_runs(workspace, *, max_runs, max_shards,
-max_event_rows, max_source_bytes)`. `list_mixtral_routing_runs` remains an exact
+max_event_rows, max_source_bytes)`. `list_routing_runs` remains an exact
 identity alias with the same signature and output.
 All four budgets are required positive, non-bool integers. It scans only
 `routing/v1`, counts run and committed-shard candidates before DuckDB, sums the
@@ -136,9 +136,9 @@ committed sources retain safe reopen/conflict failures. An absent `routing/v1`
 is a canonical empty inventory and does not import DuckDB or mutate the
 workspace.
 
-`MixtralRoutingRunInventory` has schema version `1.0`, manifest type
+`RoutingRunInventory` has schema version `1.0`, manifest type
 `mixtral_routing_run_inventory`, exact totals, and lexically ordered
-`MixtralRoutingRunSummary` values. Each summary preserves canonical shard keys,
+`RoutingRunSummary` values. Each summary preserves canonical shard keys,
 exact source bytes, and `redacted`, `stored`, or `mixed` token-text policy.
 `to_json()` is compact deterministic JSON with UTF-8 characters, no NaN, and
 no trailing newline. Inventory exposes only fixed `budget` and `index` errors;

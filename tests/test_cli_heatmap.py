@@ -18,7 +18,7 @@ import moeatlas.scan as scan_module
 from moeatlas.analysis import RoutingLoadError
 from moeatlas.cli import build_parser, main
 from moeatlas.scan import ScanOutputError
-from moeatlas.store import RoutingShardError, append_mixtral_routing_shard
+from moeatlas.store import RoutingShardError, append_routing_shard
 
 from .test_mixtral_routing_decoder import _inspection
 from .test_qwen3_5_routing_forward import _run_qwen
@@ -67,7 +67,7 @@ def _real_fixture(tmp_path: Path, layout: str) -> tuple[Path, Path, str]:
     result, _model, inspection = _run(layout, token_count=1)
     workspace = tmp_path / f"workspace-{layout}"
     workspace.mkdir()
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     inspection_path = tmp_path / f"inspection-{layout}.json"
     inspection_path.write_bytes(inspection.to_json().encode())
     return workspace, inspection_path, receipt.run_key
@@ -288,7 +288,7 @@ def test_determinism_redaction_equivalence_and_workspace_readonly(tmp_path: Path
     for index, store_token_text in enumerate((False, True)):
         workspace = tmp_path / f"workspace-{index}"
         workspace.mkdir()
-        append_mixtral_routing_shard(workspace, result, store_token_text=store_token_text)
+        append_routing_shard(workspace, result, store_token_text=store_token_text)
         workspaces.append(workspace)
         before = tuple(
             sorted(item.relative_to(workspace).as_posix() for item in workspace.rglob("*"))
@@ -735,7 +735,7 @@ def test_cli_neutral_heatmap_accepts_both_qwen35_roots(
     workspace = tmp_path / f"workspace-{surface}"
     workspace.mkdir()
     result, _, inspection, _ = _run_qwen(surface)
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     inspection_path = tmp_path / f"inspection-{surface}.json"
     inspection_path.write_text(inspection.to_json(), encoding="utf-8")
     output = tmp_path / f"{surface}.html"

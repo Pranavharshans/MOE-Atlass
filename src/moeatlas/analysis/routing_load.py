@@ -802,17 +802,9 @@ def aggregate_routing_load(
         raise _error("source", exc)
 
 
-# Compatibility names are identity aliases, not family-specific wrappers.  A
-# caller using the historical Mixtral spelling therefore gets exactly the
-# neutral value/function and the same serialized behaviour.
-MixtralRoutingLoadMatrix = RoutingLoadMatrix
-aggregate_mixtral_routing_load = aggregate_routing_load
-
 __all__ = [
     "ROUTING_LOAD_SCHEMA_VERSION",
     "RoutingLoadMatrix",
-    "MixtralRoutingLoadMatrix",
     "RoutingLoadError",
     "aggregate_routing_load",
-    "aggregate_mixtral_routing_load",
 ]

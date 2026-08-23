@@ -16,9 +16,9 @@ import moeatlas.cli as cli_module
 from moeatlas.analysis import RoutingLoadError
 from moeatlas.cli import build_parser, main
 from moeatlas.events import RoutingEvent, TokenEvent
-from moeatlas.runtime import MixtralRoutingForwardResult
+from moeatlas.runtime import RoutingForwardResult
 from moeatlas.scan import ScanOutputError
-from moeatlas.store import RoutingShardError, append_mixtral_routing_shard
+from moeatlas.store import RoutingShardError, append_routing_shard
 
 from .test_runtime_routing_forward import _ForwardModel, _run
 
@@ -64,7 +64,7 @@ def _command(
     return argv
 
 
-def _retagged(result: MixtralRoutingForwardResult, *, run_key: str) -> MixtralRoutingForwardResult:
+def _retagged(result: RoutingForwardResult, *, run_key: str) -> RoutingForwardResult:
     tokens: list[TokenEvent] = []
     remapped: dict[str, str] = {}
     for index, event in enumerate(result.token_events):
@@ -81,7 +81,7 @@ def _retagged(result: MixtralRoutingForwardResult, *, run_key: str) -> MixtralRo
         )
         for route in result.routing_events
     )
-    return MixtralRoutingForwardResult(result.output, tuple(tokens), routes)
+    return RoutingForwardResult(result.output, tuple(tokens), routes)
 
 
 def _two_run_fixture(tmp_path: Path, layout: str = "legacy") -> tuple[Path, Path, str, str]:
@@ -91,8 +91,8 @@ def _two_run_fixture(tmp_path: Path, layout: str = "legacy") -> tuple[Path, Path
     )
     workspace = tmp_path / f"workspace-{layout}"
     workspace.mkdir()
-    append_mixtral_routing_shard(workspace, baseline_result)
-    append_mixtral_routing_shard(workspace, _retagged(comparison_source, run_key="run-2"))
+    append_routing_shard(workspace, baseline_result)
+    append_routing_shard(workspace, _retagged(comparison_source, run_key="run-2"))
     inspection_path = tmp_path / f"inspection-{layout}.json"
     inspection_path.write_bytes(inspection.to_json().encode())
     return workspace, inspection_path, "run-1", "run-2"
@@ -509,8 +509,8 @@ def test_incomparable_universes_fail_with_generic_message(
     comparison_source, _, _ = _run("legacy", token_count=2)
     workspace = tmp_path / "workspace-incomparable"
     workspace.mkdir()
-    append_mixtral_routing_shard(workspace, baseline_result)
-    append_mixtral_routing_shard(workspace, _retagged(comparison_source, run_key="run-2"))
+    append_routing_shard(workspace, baseline_result)
+    append_routing_shard(workspace, _retagged(comparison_source, run_key="run-2"))
     inspection_path = tmp_path / "inspection.json"
     inspection_path.write_bytes(inspection.to_json().encode())
     output = tmp_path / "output.html"

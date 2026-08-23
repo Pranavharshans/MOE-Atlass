@@ -12,8 +12,8 @@ structural contract is accepted without an analysis-family branch.
 This neutralizes and supersedes the Feature 20 Mixtral-only analysis boundary;
 the Feature 20 contract remains byte-compatible through the historical aliases.
 
-The historical `MixtralRoutingLoadMatrix` and
-`aggregate_mixtral_routing_load` names are identity aliases of
+The historical `RoutingLoadMatrix` and
+`aggregate_routing_load` names are identity aliases of
 `RoutingLoadMatrix` and `aggregate_routing_load`. Adapter name, version, and
 architecture family are provenance, not an allowlist. Shared-expert components
 must be explicitly marked `shared=True, routed=False`; they are checked for

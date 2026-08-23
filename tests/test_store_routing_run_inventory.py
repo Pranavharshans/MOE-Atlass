@@ -11,17 +11,17 @@ from pathlib import Path
 
 import pytest
 
-import moeatlas.store.routing_shards as storage
+import moeatlas.store.routing_inventory as storage
 from moeatlas.events import RoutingEvent, TokenEvent
 from moeatlas.store import (
     ROUTING_RUN_INVENTORY_SCHEMA_VERSION,
     STORE_SCHEMA_VERSION,
-    MixtralRoutingRunInventory,
-    MixtralRoutingRunSummary,
+    RoutingRunInventory,
     RoutingRunInventoryError,
+    RoutingRunSummary,
     RoutingShardError,
-    append_mixtral_routing_shard,
-    list_mixtral_routing_runs,
+    append_routing_shard,
+    list_routing_runs,
 )
 
 from .test_runtime_routing_forward import _run
@@ -37,7 +37,7 @@ def _workspace(tmp_path: Path) -> Path:
 def _append(tmp_path: Path, layout: str = "legacy", *, stored: bool = False):
     result, _model, inspection = _run(layout, token_count=1)
     workspace = _workspace(tmp_path)
-    receipt = append_mixtral_routing_shard(workspace, result, store_token_text=stored)
+    receipt = append_routing_shard(workspace, result, store_token_text=stored)
     return workspace, receipt, inspection
 
 
@@ -59,15 +59,15 @@ def _retag_result(result: object, *, run_key: str, token_prefix: str):
         )
         for index, event in enumerate(result.routing_events)
     )
-    from moeatlas.runtime import MixtralRoutingForwardResult
+    from moeatlas.runtime import RoutingForwardResult
 
-    return MixtralRoutingForwardResult(result.output, tokens, routes)
+    return RoutingForwardResult(result.output, tokens, routes)
 
 
 def test_public_inventory_surface_is_exact_and_serializable() -> None:
-    assert is_dataclass(MixtralRoutingRunSummary)
-    assert is_dataclass(MixtralRoutingRunInventory)
-    assert tuple(field.name for field in fields(MixtralRoutingRunSummary)) == (
+    assert is_dataclass(RoutingRunSummary)
+    assert is_dataclass(RoutingRunInventory)
+    assert tuple(field.name for field in fields(RoutingRunSummary)) == (
         "run_key",
         "shard_keys",
         "shard_count",
@@ -76,7 +76,7 @@ def test_public_inventory_surface_is_exact_and_serializable() -> None:
         "source_bytes",
         "token_text_policy",
     )
-    assert tuple(field.name for field in fields(MixtralRoutingRunInventory)) == (
+    assert tuple(field.name for field in fields(RoutingRunInventory)) == (
         "schema_version",
         "manifest_type",
         "store_schema_version",
@@ -88,9 +88,9 @@ def test_public_inventory_surface_is_exact_and_serializable() -> None:
         "source_bytes",
         "runs",
     )
-    assert getattr(MixtralRoutingRunSummary, "__slots__")
-    assert getattr(MixtralRoutingRunInventory, "__slots__")
-    summary = MixtralRoutingRunSummary(
+    assert getattr(RoutingRunSummary, "__slots__")
+    assert getattr(RoutingRunInventory, "__slots__")
+    summary = RoutingRunSummary(
         "run-1",
         ("shard:" + "a" * 64,),
         1,
@@ -99,7 +99,7 @@ def test_public_inventory_surface_is_exact_and_serializable() -> None:
         1,
         "redacted",
     )
-    inventory = MixtralRoutingRunInventory(
+    inventory = RoutingRunInventory(
         "1.0",
         "mixtral_routing_run_inventory",
         STORE_SCHEMA_VERSION,
@@ -122,7 +122,7 @@ def test_public_inventory_surface_is_exact_and_serializable() -> None:
 
 def test_inventory_constructor_invariant_matrix() -> None:
     key = "shard:" + "a" * 64
-    summary = MixtralRoutingRunSummary("run-1", (key,), 1, 1, 1, 1, "redacted")
+    summary = RoutingRunSummary("run-1", (key,), 1, 1, 1, 1, "redacted")
     valid = {
         "schema_version": "1.0",
         "manifest_type": "mixtral_routing_run_inventory",
@@ -154,17 +154,17 @@ def test_inventory_constructor_invariant_matrix() -> None:
         else:
             payload[field] = value
         with pytest.raises((TypeError, ValueError)):
-            MixtralRoutingRunInventory(**payload)
+            RoutingRunInventory(**payload)
     with pytest.raises(ValueError):
-        MixtralRoutingRunSummary("run-1", (key, key), 2, 1, 1, 1, "redacted")
+        RoutingRunSummary("run-1", (key, key), 2, 1, 1, 1, "redacted")
     with pytest.raises(ValueError):
-        MixtralRoutingRunSummary("run-1", (key,), 1, 1, 1, 1, "invalid")
+        RoutingRunSummary("run-1", (key,), 1, 1, 1, 1, "invalid")
 
 
 @pytest.mark.parametrize("layout", ["legacy", "packed"])
 def test_inventory_round_trip_layouts_and_exact_totals(tmp_path: Path, layout: str) -> None:
     workspace, receipt, _inspection = _append(tmp_path, layout)
-    inventory = list_mixtral_routing_runs(
+    inventory = list_routing_runs(
         workspace,
         max_runs=1,
         max_shards=1,
@@ -184,12 +184,12 @@ def test_inventory_round_trip_layouts_and_exact_totals(tmp_path: Path, layout: s
 def test_multi_run_multi_shard_order_bytes_and_mixed_redaction(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     base, _model, _inspection = _run("legacy", token_count=1)
-    first = append_mixtral_routing_shard(workspace, base, store_token_text=False)
+    first = append_routing_shard(workspace, base, store_token_text=False)
     second_result = _retag_result(base, run_key=first.run_key, token_prefix="b")
-    second = append_mixtral_routing_shard(workspace, second_result, store_token_text=True)
+    second = append_routing_shard(workspace, second_result, store_token_text=True)
     other_result = _retag_result(base, run_key="run-2", token_prefix="c")
-    other = append_mixtral_routing_shard(workspace, other_result, store_token_text=True)
-    inventory = list_mixtral_routing_runs(
+    other = append_routing_shard(workspace, other_result, store_token_text=True)
+    inventory = list_routing_runs(
         workspace, max_runs=2, max_shards=3, max_event_rows=1000, max_source_bytes=10_000_000
     )
     assert tuple(item.run_key for item in inventory.runs) == ("run-1", "run-2")
@@ -228,7 +228,7 @@ def test_absent_tree_is_canonical_empty_and_does_not_import_duckdb(
 
     monkeypatch.setattr(builtins, "__import__", blocked)
     before = tuple(sorted(item.relative_to(workspace).as_posix() for item in workspace.rglob("*")))
-    inventory = list_mixtral_routing_runs(
+    inventory = list_routing_runs(
         workspace, max_runs=1, max_shards=1, max_event_rows=1, max_source_bytes=1
     )
     after = tuple(sorted(item.relative_to(workspace).as_posix() for item in workspace.rglob("*")))
@@ -245,19 +245,19 @@ def test_inventory_budgets_are_strict_and_preflight_before_workspace(
     kwargs = dict(max_runs=1, max_shards=1, max_event_rows=1, max_source_bytes=1)
     kwargs[name] = value  # type: ignore[assignment]
     with pytest.raises((TypeError, ValueError)):
-        list_mixtral_routing_runs(workspace, **kwargs)
+        list_routing_runs(workspace, **kwargs)
     assert not workspace.exists()
 
 
 def test_inventory_budgets_cover_declared_source_and_events(tmp_path: Path) -> None:
     workspace, _receipt, _inspection = _append(tmp_path)
     with pytest.raises(RoutingRunInventoryError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=1, max_event_rows=1, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "budget"
     with pytest.raises(RoutingRunInventoryError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=1, max_event_rows=100, max_source_bytes=1
         )
     assert caught.value.stage == "budget"
@@ -277,7 +277,7 @@ def test_actual_row_budget_precedes_reconstruct_and_declared_check(
     monkeypatch.setattr(storage, "_inventory_count_rows", lambda *_args: 10_000)
     monkeypatch.setattr(storage, "_reconstruct_shard_with_connection", forbidden)
     with pytest.raises(RoutingRunInventoryError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=1, max_event_rows=1, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "budget"
@@ -287,10 +287,10 @@ def test_actual_row_budget_precedes_reconstruct_and_declared_check(
 def test_all_inventory_budget_boundaries_are_exact(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     first_result, _model, _inspection = _run("legacy", token_count=1)
-    first = append_mixtral_routing_shard(workspace, first_result)
+    first = append_routing_shard(workspace, first_result)
     second_result = _retag_result(first_result, run_key="run-2", token_prefix="b")
-    second = append_mixtral_routing_shard(workspace, second_result)
-    unconstrained = list_mixtral_routing_runs(
+    second = append_routing_shard(workspace, second_result)
+    unconstrained = list_routing_runs(
         workspace, max_runs=10, max_shards=10, max_event_rows=1000, max_source_bytes=10_000_000
     )
     totals = {
@@ -308,16 +308,16 @@ def test_all_inventory_budget_boundaries_are_exact(tmp_path: Path) -> None:
         max_event_rows=totals["max_event_rows"],
         max_source_bytes=totals["max_source_bytes"],
     )
-    assert list_mixtral_routing_runs(workspace, **exact).run_count == 2
+    assert list_routing_runs(workspace, **exact).run_count == 2
     for name, value in totals.items():
         below = dict(exact)
         below[name] = value - 1
         if below[name] <= 0:
             with pytest.raises((TypeError, ValueError)):
-                list_mixtral_routing_runs(workspace, **below)
+                list_routing_runs(workspace, **below)
         else:
             with pytest.raises(RoutingRunInventoryError) as caught:
-                list_mixtral_routing_runs(workspace, **below)
+                list_routing_runs(workspace, **below)
             assert caught.value.stage == "budget"
 
 
@@ -328,11 +328,11 @@ def test_empty_and_staging_only_candidates_count_max_runs(tmp_path: Path) -> Non
     empty.mkdir()
     (empty / ".staging-crash").mkdir()
     with pytest.raises(RoutingRunInventoryError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=10, max_event_rows=1000, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "budget"
-    inventory = list_mixtral_routing_runs(
+    inventory = list_routing_runs(
         workspace, max_runs=2, max_shards=10, max_event_rows=1000, max_source_bytes=10_000_000
     )
     assert inventory.run_count == 1
@@ -344,7 +344,7 @@ def test_routing_root_and_version_entries_are_exact(tmp_path: Path) -> None:
     routing.mkdir()
     (routing / "rogue").mkdir()
     with pytest.raises(RoutingRunInventoryError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=1, max_event_rows=1, max_source_bytes=1
         )
     assert caught.value.stage == "index"
@@ -352,7 +352,7 @@ def test_routing_root_and_version_entries_are_exact(tmp_path: Path) -> None:
     (routing / "v1").mkdir()
     (routing / ".staging-version").mkdir()
     with pytest.raises(RoutingRunInventoryError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=1, max_event_rows=1, max_source_bytes=1
         )
     assert caught.value.stage == "index"
@@ -368,7 +368,7 @@ def test_empty_routing_root_without_v1_is_canonical_empty_and_read_only(
     monkeypatch.setattr(
         storage, "_load_duckdb", lambda: (_ for _ in ()).throw(AssertionError("lazy"))
     )
-    inventory = list_mixtral_routing_runs(
+    inventory = list_routing_runs(
         workspace, max_runs=1, max_shards=1, max_event_rows=1, max_source_bytes=1
     )
     after = tuple(sorted(item.relative_to(workspace).as_posix() for item in workspace.rglob("*")))
@@ -381,7 +381,7 @@ def test_malformed_run_and_managed_links_are_index_errors(tmp_path: Path) -> Non
     version = workspace / "routing" / "v1"
     (version / "not-a-run").mkdir()
     with pytest.raises(RoutingRunInventoryError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=10, max_shards=10, max_event_rows=1000, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "index"
@@ -396,7 +396,7 @@ def test_malformed_run_and_managed_links_are_index_errors(tmp_path: Path) -> Non
     except OSError as exc:
         pytest.skip(f"symlink creation unavailable: {exc}")
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace2, max_runs=1, max_shards=1, max_event_rows=1000, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "reopen"
@@ -416,7 +416,7 @@ def test_managed_root_version_run_symlinks_are_rejected(tmp_path: Path, target: 
     except OSError as exc:
         pytest.skip(f"symlink creation unavailable: {exc}")
     with pytest.raises(RoutingRunInventoryError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=10, max_shards=10, max_event_rows=1000, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "index"
@@ -433,7 +433,7 @@ def test_managed_root_version_run_nondirs_are_rejected(tmp_path: Path, target: s
     selected.rename(backup)
     selected.write_text("not a directory")
     with pytest.raises(RoutingRunInventoryError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=10, max_shards=10, max_event_rows=1000, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "index"
@@ -446,7 +446,7 @@ def test_inventory_reuses_authoritative_reopen_and_conflict_stages(tmp_path: Pat
     payload["routing_count"] += 1
     manifest_path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=1, max_event_rows=1000, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "reopen"
@@ -455,8 +455,8 @@ def test_inventory_reuses_authoritative_reopen_and_conflict_stages(tmp_path: Pat
 def test_inventory_detects_cross_shard_identity_conflict_after_reopen(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     result, _model, _inspection = _run("legacy", token_count=1)
-    first = append_mixtral_routing_shard(workspace, result)
-    from moeatlas.runtime import MixtralRoutingForwardResult
+    first = append_routing_shard(workspace, result)
+    from moeatlas.runtime import RoutingForwardResult
 
     changed_routes = tuple(
         RoutingEvent.model_validate(
@@ -467,15 +467,15 @@ def test_inventory_detects_cross_shard_identity_conflict_after_reopen(tmp_path: 
         )
         for event in result.routing_events
     )
-    changed = MixtralRoutingForwardResult(result.output, result.token_events, changed_routes)
+    changed = RoutingForwardResult(result.output, result.token_events, changed_routes)
     source_workspace = _workspace(tmp_path / "source")
-    second = append_mixtral_routing_shard(source_workspace, changed)
+    second = append_routing_shard(source_workspace, changed)
     destination = workspace / second.relative_path
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_workspace / second.relative_path, destination)
     assert first.run_key == second.run_key
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=2, max_event_rows=1000, max_source_bytes=20_000_000
         )
     assert caught.value.stage == "conflict"
@@ -494,7 +494,7 @@ def test_inventory_committed_corruption_uses_reopen_stage(tmp_path: Path, tamper
         payload["unexpected"] = True
         path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=1, max_event_rows=1000, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "reopen"
@@ -502,7 +502,7 @@ def test_inventory_committed_corruption_uses_reopen_stage(tmp_path: Path, tamper
 
 def test_inventory_modes_and_policy_are_deterministic(tmp_path: Path) -> None:
     workspace, receipt, _inspection = _append(tmp_path, stored=True)
-    inventory = list_mixtral_routing_runs(
+    inventory = list_routing_runs(
         workspace, max_runs=1, max_shards=1, max_event_rows=1000, max_source_bytes=10_000_000
     )
     assert inventory.runs[0].token_text_policy == "stored"
@@ -551,7 +551,7 @@ def test_inventory_connection_close_lifecycle_and_primary_identity(
     base_connection = duckdb.connect(database=":memory:")
     proxy_connection = ConnectionProxy(base_connection)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: DuckProxy(proxy_connection))
-    inventory = list_mixtral_routing_runs(
+    inventory = list_routing_runs(
         workspace, max_runs=1, max_shards=1, max_event_rows=1000, max_source_bytes=10_000_000
     )
     assert inventory.run_count == 1
@@ -567,7 +567,7 @@ def test_inventory_connection_close_lifecycle_and_primary_identity(
         )
         expected_type = RoutingShardError if isinstance(primary, ValueError) else type(primary)
         with pytest.raises(expected_type) as caught:
-            list_mixtral_routing_runs(
+            list_routing_runs(
                 workspace,
                 max_runs=1,
                 max_shards=1,
@@ -585,7 +585,7 @@ def test_inventory_connection_close_lifecycle_and_primary_identity(
     proxy_connection = ConnectionProxy(base_connection, close_failures=1)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: DuckProxy(proxy_connection))
     assert (
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=1, max_event_rows=1000, max_source_bytes=10_000_000
         ).run_count
         == 1
@@ -596,7 +596,7 @@ def test_inventory_connection_close_lifecycle_and_primary_identity(
     proxy_connection = ConnectionProxy(base_connection, close_failures=2)
     monkeypatch.setattr(storage, "_load_duckdb", lambda: DuckProxy(proxy_connection))
     with pytest.raises(RoutingShardError) as caught:
-        list_mixtral_routing_runs(
+        list_routing_runs(
             workspace, max_runs=1, max_shards=1, max_event_rows=1000, max_source_bytes=10_000_000
         )
     assert caught.value.stage == "reopen"
@@ -610,7 +610,7 @@ def test_inventory_ast_is_bounded_parameterized_and_model_free() -> None:
         "_inventory_index",
         "_inventory_shards_for_run",
         "_inventory_count_rows",
-        "list_mixtral_routing_runs",
+        "list_routing_runs",
     }
     functions = {
         node.name: node

@@ -12,8 +12,8 @@ from moeatlas.cli import build_parser, main
 from moeatlas.scan import ScanOutputError
 from moeatlas.store import (
     STORE_SCHEMA_VERSION,
-    MixtralRoutingRunInventory,
-    append_mixtral_routing_shard,
+    RoutingRunInventory,
+    append_routing_shard,
 )
 
 from .test_runtime_routing_forward import _run
@@ -52,7 +52,7 @@ def _fixture(tmp_path: Path, layout: str = "legacy") -> tuple[Path, str]:
     result, _model, _inspection = _run(layout, token_count=1)
     workspace = tmp_path / f"workspace-{layout}"
     workspace.mkdir()
-    receipt = append_mixtral_routing_shard(workspace, result)
+    receipt = append_routing_shard(workspace, result)
     return workspace, receipt.run_key
 
 
@@ -203,7 +203,7 @@ def test_inventory_serialization_and_writer_control_flow_are_exact(
 ) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    inventory = MixtralRoutingRunInventory(
+    inventory = RoutingRunInventory(
         "1.0",
         "mixtral_routing_run_inventory",
         STORE_SCHEMA_VERSION,

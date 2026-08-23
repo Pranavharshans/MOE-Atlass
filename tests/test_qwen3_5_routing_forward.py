@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import moeatlas.runtime.routing_forward as routing_forward
 from moeatlas.adapters import (
     AdapterInspection,
     Qwen3_5MoeStaticAdapter,
@@ -24,7 +25,6 @@ from moeatlas.adapters import (
 from moeatlas.events import RoutingEvent, TokenEvent
 from moeatlas.probe import ProbePlan
 from moeatlas.runtime import (
-    MixtralRoutingForwardResult,
     Qwen3_5RoutingDecoder,
     RoutingCaptureError,
     RoutingCaptureSession,
@@ -203,8 +203,8 @@ def _run_qwen(
 
 
 @pytest.mark.parametrize("surface", ["conditional", "text"])
-def test_public_api_signature_alias_slots_repr_and_eq(surface: str) -> None:
-    assert RoutingForwardResult is MixtralRoutingForwardResult
+def test_public_api_signature_slots_repr_and_eq(surface: str) -> None:
+    assert not hasattr(routing_forward, "MixtralRoutingForwardResult")
     assert RoutingForwardResult.__name__ == "RoutingForwardResult"
     assert RoutingForwardResult.__module__ == "moeatlas.runtime.routing_forward"
     assert RoutingForwardResult.__slots__ == ("output", "token_events", "routing_events")

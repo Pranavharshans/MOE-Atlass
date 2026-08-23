@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover - exercised only without the store extra
 
 import moeatlas.store.run_export as run_export
 from moeatlas.events import RoutingEvent, TokenEvent
-from moeatlas.runtime import MixtralRoutingForwardResult
+from moeatlas.runtime import RoutingForwardResult
 from moeatlas.store import (
     BUNDLE_MANIFEST_TYPE,
     RUN_EXPORT_SCHEMA_VERSION,
@@ -26,7 +26,7 @@ from moeatlas.store import (
     RunBundleError,
     RunBundleFileEntry,
     RunBundleReceipt,
-    append_mixtral_routing_shard,
+    append_routing_shard,
     export_run_bundle,
     import_run_bundle,
     list_routing_shards,
@@ -59,7 +59,7 @@ def _rekey_result(result: object, *, run_key: str, offset: int):
         )
         for event in result.routing_events
     )
-    return MixtralRoutingForwardResult(result.output, tokens, routes)
+    return RoutingForwardResult(result.output, tokens, routes)
 
 
 def _workspace(tmp_path: Path, name: str = "workspace") -> Path:
@@ -87,7 +87,7 @@ def _seed_run(
                 result, run_key=receipts[0].run_key, offset=100 * index
             )
         receipts.append(
-            append_mixtral_routing_shard(
+            append_routing_shard(
                 workspace,
                 shard_result,
                 store_token_text=stored_flags[index % len(stored_flags)],
@@ -317,7 +317,7 @@ def test_redaction_and_text_round_trips_across_workspaces(tmp_path: Path) -> Non
     result, _model, _inspection = _run("legacy", token_count=2)
 
     redacted_workspace = _workspace(tmp_path, "redacted-ws")
-    redacted_receipt = append_mixtral_routing_shard(
+    redacted_receipt = append_routing_shard(
         redacted_workspace, result, store_token_text=False
     )
     redacted_bundle = tmp_path / "redacted-bundle"
@@ -331,7 +331,7 @@ def test_redaction_and_text_round_trips_across_workspaces(tmp_path: Path) -> Non
     assert _manifest(redacted_bundle)["shards"][0]["token_text_stored"] is False
 
     stored_workspace = _workspace(tmp_path, "stored-ws")
-    stored_receipt = append_mixtral_routing_shard(
+    stored_receipt = append_routing_shard(
         stored_workspace, result, store_token_text=True
     )
     stored_bundle = tmp_path / "stored-bundle"

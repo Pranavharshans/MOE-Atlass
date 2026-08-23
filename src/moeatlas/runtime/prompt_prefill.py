@@ -10,7 +10,7 @@ from ..core import ModelManifest, validate_stable_identifier
 from ..events import TokenEvent
 from ..probe import ProbePlan
 from .contracts import LoadedModel
-from .routing_forward import MixtralRoutingForwardResult, run_mixtral_routing_forward
+from .routing_forward import RoutingForwardResult, run_mixtral_routing_forward
 
 _STAGES = frozenset({"tokenize", "encoding"})
 _ADAPTER_NAME = "huggingface-mixtral-static"
@@ -300,7 +300,7 @@ def run_mixtral_prompt_prefill(
     max_prompt_chars: int,
     max_tokens: int,
     max_events: int,
-) -> MixtralRoutingForwardResult:
+) -> RoutingForwardResult:
     """Tokenize one plain-text prompt and delegate one bounded passive prefill."""
 
     (

@@ -11,12 +11,12 @@ from typing import Protocol, runtime_checkable
 
 from ..runtime.routing_forward import RoutingForwardResult
 from . import routing_shards as _routing_shards
+from .routing_inventory import list_routing_runs
 from .routing_shards import (
-    MixtralRoutingRunInventory,
+    RoutingRunInventory,
     RoutingShardAssignmentQuery,
     RoutingShardReceipt,
     append_routing_shard,
-    list_routing_runs,
     list_routing_shards,
     query_routing_run_assignments,
 )
@@ -33,7 +33,7 @@ class RoutingRunReader(Protocol):
         max_shards: int,
         max_event_rows: int,
         max_source_bytes: int,
-    ) -> MixtralRoutingRunInventory:
+    ) -> RoutingRunInventory:
         """List routing runs within the given budget bounds."""
         ...
 
@@ -106,7 +106,7 @@ class DuckDBRoutingShardStore:
         max_shards: int,
         max_event_rows: int,
         max_source_bytes: int,
-    ) -> MixtralRoutingRunInventory:
+    ) -> RoutingRunInventory:
         """List routing runs within the given budget bounds.
 
         Delegates to :func:`list_routing_runs`.

@@ -108,7 +108,6 @@ from .resource_admission import (
 )
 from .routing import RoutingCaptureError, RoutingCaptureSession, RoutingCaptureTarget
 from .routing_forward import (
-    MixtralRoutingForwardResult,
     RoutingForwardResult,
     run_mixtral_routing_forward,
     run_qwen3_5_routing_forward,
@@ -156,7 +155,6 @@ __all__ = [
     "ModelObservationError",
     "ModelRuntimeDependencyError",
     "MixtralRoutingDecoder",
-    "MixtralRoutingForwardResult",
     "RoutingForwardResult",
     "MixtralPromptPrefillError",
     "Qwen3_5RoutingDecoder",
