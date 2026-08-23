@@ -66,9 +66,12 @@ must be repeated once as a fresh baseline.
 ## Honest scope
 
 Local tests prove the mechanics without a model stack. Real checkpoint
-certification remains a VM/GPU validation step. Models whose experts are
-packed into a fused kernel, do not expose independent forward-hook modules,
-or return a non-tensor expert payload are reported as unsupported rather than
+certification remains a VM/GPU validation step. Models whose expert weights
+are packed into tensors are reported separately from models whose execution
+backend is fused. Static discovery reports the weight layout but leaves the
+execution backend unresolved; it never treats packed storage as proof of
+kernel fusion. Models that do not expose independent forward-hook modules or
+return a non-tensor expert payload are reported as unsupported rather than
 silently approximated. One changed output is not enough to label an expert as
 task-specialized: use scored task rows, negative-control datasets, repeated
 runs, and multiple target controls before making that claim.

@@ -3,8 +3,9 @@
 This module intentionally contains no model-family allowlist.  It resolves a
 human layer/expert coordinate against the immutable discovery report and owns
 only temporary forward-hook handles.  Models that do not expose each routed
-expert as an independently hookable module are rejected explicitly; a fused
-or packed implementation must never be reported as successfully ablated.
+expert as an independently hookable module are rejected explicitly; packed
+storage and fused execution are recorded as separate facts and neither is
+reported as successfully ablated without runtime evidence.
 """
 
 from __future__ import annotations
@@ -30,7 +31,17 @@ class InterventionSupportTier(str, Enum):
     """How a discovered implementation can be manipulated safely."""
 
     EXPOSED_EXPERTS = "exposed_experts"
-    PACKED_OR_FUSED = "packed_or_fused"
+    PACKED_EXPERTS = "packed_experts"
+    OPAQUE_EXPERTS = "opaque_experts"
+    UNAVAILABLE = "unavailable"
+
+
+class ExpertWeightLayout(str, Enum):
+    """How routed expert parameters are represented in the loaded module tree."""
+
+    INDEXED_MODULES = "indexed_modules"
+    PACKED_TENSORS = "packed_tensors"
+    OPAQUE = "opaque"
     UNAVAILABLE = "unavailable"
 
 
@@ -43,6 +54,9 @@ class InterventionCapabilityReport:
     target_count: int
     target_format: str | None
     reason: str
+    weight_layout: ExpertWeightLayout
+    execution_backend: str | None = None
+    fused_backend: bool | None = None
 
     @property
     def live_supported(self) -> bool:
@@ -56,6 +70,9 @@ class InterventionCapabilityReport:
             "target_count": self.target_count,
             "target_format": self.target_format,
             "tier": self.tier.value,
+            "weight_layout": self.weight_layout.value,
+            "execution_backend": self.execution_backend,
+            "fused_backend": self.fused_backend,
         }
 
 
@@ -130,24 +147,42 @@ def classify_intervention_capability(report: DiscoveryReport) -> InterventionCap
             target_count=len(targets),
             target_format="layer:N/expert:M",
             reason="routed experts are independently exposed as hookable modules",
+            weight_layout=ExpertWeightLayout.INDEXED_MODULES,
         )
     has_moe = report.facts.expert_count is not None or any(
         component.kind in {ComponentKind.MOE_LAYER, ComponentKind.EXPERT_CONTAINER}
         for component in report.components
     )
-    has_container = any(
-        component.kind is ComponentKind.EXPERT_CONTAINER for component in report.components
+    containers = tuple(
+        component
+        for component in report.components
+        if component.kind is ComponentKind.EXPERT_CONTAINER
     )
-    if has_moe and has_container:
+    expert_count = report.facts.expert_count
+    has_packed_weights = type(expert_count) is int and any(
+        any(len(shape) >= 3 and expert_count in shape for shape in component.tensor_shapes.values())
+        for component in containers
+    )
+    if has_moe and has_packed_weights:
         return InterventionCapabilityReport(
-            tier=InterventionSupportTier.PACKED_OR_FUSED,
+            tier=InterventionSupportTier.PACKED_EXPERTS,
             operations=(),
             target_count=0,
             target_format=None,
             reason=(
-                "experts are packed or fused; no independently validated manipulation seam "
-                "was discovered"
+                "routed expert weights are packed tensors; the active execution backend "
+                "has not been inspected"
             ),
+            weight_layout=ExpertWeightLayout.PACKED_TENSORS,
+        )
+    if has_moe and containers:
+        return InterventionCapabilityReport(
+            tier=InterventionSupportTier.OPAQUE_EXPERTS,
+            operations=(),
+            target_count=0,
+            target_format=None,
+            reason="routed expert storage is opaque to static discovery",
+            weight_layout=ExpertWeightLayout.OPAQUE,
         )
     return InterventionCapabilityReport(
         tier=InterventionSupportTier.UNAVAILABLE,
@@ -155,6 +190,7 @@ def classify_intervention_capability(report: DiscoveryReport) -> InterventionCap
         target_count=0,
         target_format=None,
         reason="no routed expert intervention targets were discovered",
+        weight_layout=ExpertWeightLayout.UNAVAILABLE,
     )
 
 
@@ -284,6 +320,7 @@ def parse_intervention_target(label: str) -> tuple[int, int]:
 
 __all__ = [
     "ExpertInterventionTarget",
+    "ExpertWeightLayout",
     "InterventionCapabilityReport",
     "InterventionSupportTier",
     "TransformersExpertInterventionCapability",

@@ -6,6 +6,7 @@ import pytest
 
 from moeatlas.core import ComponentKind
 from moeatlas.interventions import (
+    ExpertWeightLayout,
     InterventionOperation,
     InterventionRecipe,
     InterventionSupportTier,
@@ -53,6 +54,9 @@ def test_capability_report_declares_exposed_expert_operations() -> None:
     assert [operation.value for operation in capability.operations] == ["ablate", "scale"]
     assert capability.target_count == 8
     assert capability.live_supported is True
+    assert capability.weight_layout is ExpertWeightLayout.INDEXED_MODULES
+    assert capability.execution_backend is None
+    assert capability.fused_backend is None
 
 
 def test_ablation_hooks_are_exercised_and_always_removed() -> None:
@@ -114,8 +118,10 @@ def test_inventory_rejects_reports_without_independent_experts() -> None:
     assert capability.live_supported is False
 
 
-def test_packed_experts_are_reported_without_false_live_support() -> None:
+def test_packed_experts_are_separate_from_unresolved_execution_backend() -> None:
     report = scan_report(_model())
+    expert_count = report.facts.expert_count
+    assert expert_count == 4
     packed = report.model_copy(
         update={
             "candidates": [
@@ -130,9 +136,53 @@ def test_packed_experts_are_reported_without_false_live_support() -> None:
             ],
         }
     )
+    packed_container = next(
+        component
+        for component in packed.components
+        if component.kind is ComponentKind.EXPERT_CONTAINER
+    )
+    packed = packed.model_copy(
+        update={
+            "components": [
+                component.model_copy(
+                    update={"tensor_shapes": {"gate_up_proj": [4, 16, 8]}}
+                )
+                if component.component_key == packed_container.component_key
+                else component
+                for component in packed.components
+            ]
+        }
+    )
 
     capability = classify_intervention_capability(packed)
 
-    assert capability.tier is InterventionSupportTier.PACKED_OR_FUSED
+    assert capability.tier is InterventionSupportTier.PACKED_EXPERTS
     assert capability.operations == ()
-    assert "no independently validated" in capability.reason
+    assert capability.weight_layout is ExpertWeightLayout.PACKED_TENSORS
+    assert capability.execution_backend is None
+    assert capability.fused_backend is None
+    assert capability.to_dict()["weight_layout"] == "packed_tensors"
+
+
+def test_opaque_expert_storage_is_not_mislabeled_as_fused() -> None:
+    report = scan_report(_model())
+    opaque = report.model_copy(
+        update={
+            "candidates": [
+                candidate
+                for candidate in report.candidates
+                if candidate.kind is not ComponentKind.EXPERT
+            ],
+            "components": [
+                component.model_copy(update={"tensor_shapes": {}})
+                for component in report.components
+                if component.kind is not ComponentKind.EXPERT
+            ],
+        }
+    )
+
+    capability = classify_intervention_capability(opaque)
+
+    assert capability.tier is InterventionSupportTier.OPAQUE_EXPERTS
+    assert capability.weight_layout is ExpertWeightLayout.OPAQUE
+    assert capability.fused_backend is None

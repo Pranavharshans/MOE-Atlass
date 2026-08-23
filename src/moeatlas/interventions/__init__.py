@@ -38,6 +38,7 @@ from moeatlas.interventions.studies import (
 )
 from moeatlas.interventions.transformers import (
     ExpertInterventionTarget,
+    ExpertWeightLayout,
     InterventionCapabilityReport,
     InterventionSupportTier,
     TransformersExpertInterventionCapability,
@@ -66,6 +67,7 @@ __all__ = [
     "InterventionStudyError",
     "InterventionSupportTier",
     "ExpertInterventionTarget",
+    "ExpertWeightLayout",
     "TransformersExpertInterventionCapability",
     "TransformersInterventionError",
     "intervention_targets",
