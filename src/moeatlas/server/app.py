@@ -33,6 +33,8 @@ from .dto import (
     InterventionRecipeRequest,
     InterventionRecipeResponse,
     InterventionStartRequest,
+    InterventionStudyRequest,
+    InterventionStudyResponse,
     InterventionTargetsResponse,
     JobCreatedResponse,
     JobDiagnosticEntryResponse,
@@ -1793,6 +1795,72 @@ def create_app(
             status="available",
             evidence=evidence,
         )
+
+    @app.post(
+        "/api/intervention-studies",
+        response_model=InterventionStudyResponse,
+    )
+    def create_intervention_study(
+        request: InterventionStudyRequest,
+    ) -> InterventionStudyResponse:
+        try:
+            from ..interventions import (
+                build_intervention_study,
+                publish_intervention_study,
+                read_intervention_evidence,
+            )
+
+            replication_keys = tuple(
+                _validated_run_key(run_key) for run_key in request.intervention_run_keys
+            )
+            control_keys = tuple(
+                _validated_run_key(run_key) for run_key in request.control_run_keys
+            )
+            for run_key in (*replication_keys, *control_keys):
+                workspace_path, _ = _catalog_entry(run_key)
+                if workspace_path.resolve() != Path(bound_workspace).resolve():
+                    raise ValueError("study runs must belong to the bound workspace")
+            replications = tuple(
+                read_intervention_evidence(
+                    bound_workspace,
+                    run_key,
+                    max_bytes=min(max_artifact_bytes, _DEFAULT_ARTIFACT_BYTES),
+                )
+                for run_key in replication_keys
+            )
+            controls = tuple(
+                read_intervention_evidence(
+                    bound_workspace,
+                    run_key,
+                    max_bytes=min(max_artifact_bytes, _DEFAULT_ARTIFACT_BYTES),
+                )
+                for run_key in control_keys
+            )
+            study = build_intervention_study(replications, controls=controls)
+            publish_intervention_study(bound_workspace, study)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="intervention study evidence is incompatible or incomplete",
+            ) from exc
+        return InterventionStudyResponse(study_id=study["study_id"], study=study)
+
+    @app.get(
+        "/api/intervention-studies/{study_id}",
+        response_model=InterventionStudyResponse,
+    )
+    def intervention_study(study_id: str) -> InterventionStudyResponse:
+        try:
+            from ..core import validate_stable_identifier
+            from ..interventions import read_intervention_study
+
+            stable_study_id = validate_stable_identifier(study_id, field_name="study_id")
+            study = read_intervention_study(bound_workspace, stable_study_id)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=404, detail="intervention study is unavailable"
+            ) from exc
+        return InterventionStudyResponse(study_id=stable_study_id, study=study)
 
     @app.get("/api/adapters", response_model=AdaptersResponse)
     def adapters() -> AdaptersResponse:

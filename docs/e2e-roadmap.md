@@ -151,6 +151,20 @@ deliberately has no SSH onboarding page.
 - Acceptance: evaluator golden tests, executor evidence tests, paired-input
   rejection tests, server contracts, and the production frontend build pass.
 
+### Phase R9 — Replicated and controlled causal studies — landed 2026-08-23
+
+- R9.1 Reduce two or more independently persisted intervention runs into a
+  content-addressed study with mean effect, sample deviation, 95% confidence
+  interval, and direction consistency.
+- R9.2 Accept explicit negative-control intervention runs and distinguish
+  `inconclusive`, `replicated`, and `controlled` evidence. A repeated effect
+  without a control is never labelled controlled.
+- R9.3 Require unique run identities, one intervention recipe and evaluator,
+  complete target exercise, finite scores, and bounded replication counts.
+- R9.4 Publish and retrieve immutable study artifacts through the local API.
+- Acceptance: consistent, inconsistent, unexercised, duplicate, controlled,
+  persistence, and server-contract paths pass without a model runtime.
+
 `WORKS*` means the model-free suite and the real Ling VM path both passed; it
 does not claim every architecture/task head or every GPU placement is
 certified. The VM result is a capability boundary, not a universal performance

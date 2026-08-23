@@ -283,6 +283,18 @@ class InterventionEvidenceResponse(_WireModel):
     evidence: dict[str, Any] | None = None
 
 
+class InterventionStudyRequest(_WireModel):
+    """Persisted intervention runs to reduce as replications and controls."""
+
+    intervention_run_keys: tuple[str, ...] = Field(min_length=2, max_length=100)
+    control_run_keys: tuple[str, ...] = Field(default=(), max_length=100)
+
+
+class InterventionStudyResponse(_WireModel):
+    study_id: str
+    study: dict[str, Any]
+
+
 __all__ = [
     "AdapterEntryResponse",
     "AdaptersResponse",
@@ -297,6 +309,8 @@ __all__ = [
     "InterventionStartRequest",
     "InterventionTargetsResponse",
     "InterventionEvidenceResponse",
+    "InterventionStudyRequest",
+    "InterventionStudyResponse",
     "JobCreatedResponse",
     "JobDiagnosticEntryResponse",
     "JobDiagnosticsReference",
