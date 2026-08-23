@@ -10,9 +10,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-RESOURCE_ADMISSION_SCHEMA_VERSION = "1.0"
+RESOURCE_ADMISSION_SCHEMA_VERSION = "1.1"
 _GIB = 1024**3
 _MAX_CACHE_FILES = 100_000
+_MODEL_RUNTIME_HEADROOM = 2 * _GIB
 
 
 class ResourceAdmissionStatus(str, Enum):
@@ -34,12 +35,16 @@ class ResourceSnapshot:
     accelerator_free_bytes: int | None = None
     accelerator_total_bytes: int | None = None
     accelerator_name: str | None = None
+    host_available_bytes: int | None = None
+    host_total_bytes: int | None = None
 
     def __post_init__(self) -> None:
         for field_name in (
             "disk_free_bytes",
             "accelerator_free_bytes",
             "accelerator_total_bytes",
+            "host_available_bytes",
+            "host_total_bytes",
         ):
             value = getattr(self, field_name)
             if value is not None and (
@@ -56,6 +61,7 @@ class ResourceAdmission:
     download_bytes: int | None
     disk_required_bytes: int | None
     accelerator_required_bytes: int | None
+    host_required_bytes: int | None
     snapshot: ResourceSnapshot
     reasons: tuple[str, ...] = ()
 
@@ -78,6 +84,9 @@ class ResourceAdmission:
             "disk_free_bytes": self.snapshot.disk_free_bytes,
             "disk_required_bytes": self.disk_required_bytes,
             "download_bytes": self.download_bytes,
+            "host_available_bytes": self.snapshot.host_available_bytes,
+            "host_required_bytes": self.host_required_bytes,
+            "host_total_bytes": self.snapshot.host_total_bytes,
             "reasons": list(self.reasons),
             "schema_version": RESOURCE_ADMISSION_SCHEMA_VERSION,
             "status": self.status.value,
@@ -130,10 +139,30 @@ def evaluate_resource_admission(
         rejected = True
         reasons.append("not enough free cache disk for this checkpoint")
 
-    dtype_factor = 2.1 if dtype == "float32" else 1.2
+    # Weight files alone are not the peak working set.  Deserialization,
+    # parameter materialization, model construction, and capture buffers can
+    # overlap during loading.  Keep the estimate deliberately conservative so
+    # native OOM killers do not take the entire UI process down near 100% load.
+    dtype_factor = 2.15 if dtype == "float32" else 1.35
     accelerator_required = (
-        int(checkpoint_bytes * dtype_factor) + _GIB if checkpoint_bytes is not None else None
+        int(checkpoint_bytes * (1.15 if dtype != "float32" else 2.05))
+        + _MODEL_RUNTIME_HEADROOM
+        if checkpoint_bytes is not None
+        else None
     )
+    host_required = (
+        int(checkpoint_bytes * dtype_factor) + _MODEL_RUNTIME_HEADROOM
+        if checkpoint_bytes is not None
+        else None
+    )
+    host_shortfall = (
+        host_required is not None
+        and snapshot.host_available_bytes is not None
+        and host_required > snapshot.host_available_bytes
+    )
+    if host_shortfall:
+        rejected = True
+        reasons.append("checkpoint working set is larger than available host or unified memory")
     accelerator_shortfall = (
         accelerator_required is not None
         and snapshot.accelerator_free_bytes is not None
@@ -161,6 +190,7 @@ def evaluate_resource_admission(
         download_bytes=download_bytes,
         disk_required_bytes=disk_required,
         accelerator_required_bytes=accelerator_required,
+        host_required_bytes=host_required,
         snapshot=snapshot,
         reasons=tuple(reasons),
     )
@@ -238,6 +268,18 @@ def observe_resource_snapshot(*, cache_root: Path | None = None) -> ResourceSnap
     accelerator_free: int | None = None
     accelerator_total: int | None = None
     accelerator_name: str | None = None
+    host_available: int | None = None
+    host_total: int | None = None
+    try:
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        available_pages = os.sysconf("SC_AVPHYS_PAGES")
+        total_pages = os.sysconf("SC_PHYS_PAGES")
+        if all(type(value) is int and value >= 0 for value in (page_size, available_pages)):
+            host_available = page_size * available_pages
+        if all(type(value) is int and value >= 0 for value in (page_size, total_pages)):
+            host_total = page_size * total_pages
+    except (OSError, TypeError, ValueError):
+        pass
     try:
         torch = importlib.import_module("torch")
         cuda = getattr(torch, "cuda")
@@ -256,6 +298,8 @@ def observe_resource_snapshot(*, cache_root: Path | None = None) -> ResourceSnap
         accelerator_free_bytes=accelerator_free,
         accelerator_total_bytes=accelerator_total,
         accelerator_name=accelerator_name,
+        host_available_bytes=host_available,
+        host_total_bytes=host_total,
     )
 
 

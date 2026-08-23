@@ -76,6 +76,46 @@ def test_unknown_checkpoint_size_is_caution_not_false_rejection() -> None:
     assert admission.accepted is True
 
 
+def test_host_working_set_shortfall_is_rejected_for_auto_placement() -> None:
+    admission = evaluate_resource_admission(
+        20 * GIB,
+        cached_bytes=20 * GIB,
+        snapshot=ResourceSnapshot(
+            disk_free_bytes=100 * GIB,
+            accelerator_free_bytes=None,
+            host_available_bytes=24 * GIB,
+            host_total_bytes=32 * GIB,
+        ),
+        device="auto",
+        dtype="bfloat16",
+    )
+
+    assert admission.status is ResourceAdmissionStatus.REJECTED
+    assert admission.host_required_bytes is not None
+    assert admission.host_required_bytes > 24 * GIB
+    assert "host or unified memory" in admission.reasons[0]
+
+
+def test_known_host_and_accelerator_headroom_is_reported() -> None:
+    admission = evaluate_resource_admission(
+        4 * GIB,
+        cached_bytes=4 * GIB,
+        snapshot=ResourceSnapshot(
+            disk_free_bytes=100 * GIB,
+            accelerator_free_bytes=24 * GIB,
+            accelerator_total_bytes=24 * GIB,
+            host_available_bytes=64 * GIB,
+            host_total_bytes=128 * GIB,
+        ),
+        device="cuda",
+        dtype="float16",
+    )
+
+    assert admission.status is ResourceAdmissionStatus.READY
+    assert admission.to_dict()["host_required_bytes"] == admission.host_required_bytes
+    assert admission.accelerator_required_bytes is not None
+
+
 def test_cached_snapshot_counts_unique_hub_blobs(tmp_path: Path) -> None:
     root = tmp_path / "hub"
     blob = root / "models--org--model" / "blobs" / "abc"
