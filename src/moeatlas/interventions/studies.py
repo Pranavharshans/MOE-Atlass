@@ -13,7 +13,7 @@ from typing import Any
 
 from moeatlas.core import stable_digest, validate_stable_identifier
 
-INTERVENTION_STUDY_SCHEMA_VERSION = "1.0"
+INTERVENTION_STUDY_SCHEMA_VERSION = "1.1"
 INTERVENTION_STUDY_ARTIFACT_TYPE = "moeatlas.intervention_study"
 _DIRECTORY = "intervention-studies"
 _MAX_REPLICATIONS = 100
@@ -56,6 +56,33 @@ def _finite_delta(document: Mapping[str, Any]) -> float | None:
     return result
 
 
+def _input_signature(document: Mapping[str, Any]) -> tuple[tuple[int, str, str], ...]:
+    rows = document.get("rows")
+    if not isinstance(rows, Sequence) or isinstance(rows, str | bytes | bytearray):
+        raise InterventionStudyError("study evidence has no paired input rows")
+    signature: list[tuple[int, str, str]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise InterventionStudyError("study evidence has invalid paired input rows")
+        row_index = row.get("row_index")
+        input_digest = row.get("input_digest")
+        evaluator = row.get("evaluation_method")
+        if (
+            type(row_index) is not int
+            or isinstance(row_index, bool)
+            or not isinstance(input_digest, str)
+            or not input_digest
+            or not isinstance(evaluator, str)
+            or not evaluator
+        ):
+            raise InterventionStudyError("study evidence has incomplete input identity")
+        signature.append((row_index, input_digest, evaluator))
+    ordered = tuple(sorted(signature))
+    if len({row[0] for row in ordered}) != len(ordered):
+        raise InterventionStudyError("study evidence repeats a row identity")
+    return ordered
+
+
 def _summary(values: list[float]) -> dict[str, float | list[float] | None]:
     if not values:
         return {
@@ -96,6 +123,7 @@ def build_intervention_study(
     if not isinstance(recipe_fingerprint, str) or not isinstance(recipe, Mapping):
         raise InterventionStudyError("replication recipe evidence is unavailable")
     run_keys = tuple(_validated_run_key(document) for document in repeated)
+    input_signature = _input_signature(repeated[0])
     if len(set(run_keys)) != len(run_keys):
         raise InterventionStudyError("replication run keys must be unique")
     for document in repeated:
@@ -103,9 +131,25 @@ def build_intervention_study(
             raise InterventionStudyError("replications do not share one recipe")
         if document.get("score_name") != score_name:
             raise InterventionStudyError("replications do not share one evaluator")
+        if _input_signature(document) != input_signature:
+            raise InterventionStudyError("replications do not share exact input rows")
     control_keys = tuple(_validated_run_key(document) for document in control_documents)
     if set(run_keys).intersection(control_keys) or len(set(control_keys)) != len(control_keys):
         raise InterventionStudyError("control and replication run keys must be distinct")
+    control_recipe_fingerprint = None
+    if control_documents:
+        control_recipe_fingerprint = control_documents[0].get("recipe_fingerprint")
+        if not isinstance(control_recipe_fingerprint, str):
+            raise InterventionStudyError("control recipe evidence is unavailable")
+        if control_recipe_fingerprint == recipe_fingerprint:
+            raise InterventionStudyError("negative controls must use a different recipe")
+        for document in control_documents:
+            if document.get("recipe_fingerprint") != control_recipe_fingerprint:
+                raise InterventionStudyError("negative controls do not share one recipe")
+            if document.get("score_name") != score_name:
+                raise InterventionStudyError("controls do not share the replication evaluator")
+            if _input_signature(document) != input_signature:
+                raise InterventionStudyError("controls do not share exact input rows")
 
     deltas = [delta for document in repeated if (delta := _finite_delta(document)) is not None]
     control_deltas = [
@@ -126,7 +170,15 @@ def build_intervention_study(
         and effect["direction_consistency"] == 1.0
     )
     controlled = False
-    if replicated and control_documents and len(control_deltas) == len(control_documents):
+    controls_exercised = all(
+        document.get("all_targets_exercised") is True for document in control_documents
+    )
+    if (
+        replicated
+        and control_documents
+        and len(control_deltas) == len(control_documents)
+        and controls_exercised
+    ):
         target_mean = abs(float(effect["mean"]))
         control_mean = abs(float(control_effect["mean"]))
         controlled = target_mean > control_mean
@@ -149,6 +201,7 @@ def build_intervention_study(
         "control_run_keys": list(control_keys),
         "replication_count": len(repeated),
         "control_count": len(control_documents),
+        "control_recipe_fingerprint": control_recipe_fingerprint,
         "all_targets_exercised": all_targets_exercised,
         "task_effect": effect,
         "control_effect": control_effect,
