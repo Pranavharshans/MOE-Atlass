@@ -48,7 +48,7 @@ tracks dependency order and exit criteria without redefining those documents.
 | 7 | Task association and Evidence Cards | `model-free complete` | Bounded routing, association, behavior, uncertainty, and evidence-tier analyses without unsupported causal claims | PRD §11 and formula tests; real-evidence capture stays in Sequence 12 |
 | 8 | Plugins and complete headless CLI/API | `model-free complete` | Versioned entry-point registry plus PRD scan/run/compare/export/adapters/doctor workflows through shared services | PRD §§15–16 |
 | 9 | FastAPI server and React UI | `VM/GPU deferred` | Packaged local UI with scan/run/progress/drill-down/compare/evidence/export flows and synthetic browser tests | PRD §§12–14; React SPA and browser E2E stay deferred release work |
-| 10 | Intervention and causal evidence | `model-free complete` | Bounded recipes, snapshot/restore, cleanup, lineage, cancellation, and causal/stability metrics over synthetic modules | PRD §§11.4 and 13.7 |
+| 10 | Intervention and causal evidence | `VM/GPU deferred` | Live baseline-derived ablate/scale for independently exposed experts, exact reconstruction lineage, restoration, paired output/score/latency/routing evidence, and model-free contract tests | PRD §§11.4 and 13.7; fused/packed paths and checkpoint certification remain deferred |
 | 11 | Privacy, reliability, benchmarks, and release | `model-free complete` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19; clean-install/Docker/screenshots stay deferred release work |
 | 12 | Final VM/GPU certification and PRD audit | `VM/GPU deferred` | MV-01–MV-08 and ST-01–ST-04 have recorded evidence; every v1 acceptance row traces to passing implementation and validation. The model-free audit is complete (see [prd-audit](prd-audit.md)); certification stays blocked on VM access | PRD §20 and validation ledger |
 
@@ -56,7 +56,7 @@ The live control-plane implementation now covers the previously missing local
 server/UI path: HF commit resolution, real discovery and run jobs, progress,
 cooperative cancellation/resume, generic architecture persistence, routing and
 expert-activity summaries, metric-selectable heatmaps, run comparison, bounded
-exports, and intervention-recipe validation. Sequence 9 remains
+exports, intervention target discovery, and live paired interventions. Sequence 9 remains
 `VM/GPU deferred` because browser/VM execution evidence and universal model
 certification still belong in the validation ledger; these endpoints do not
 turn a model-free test into a GPU result.
@@ -277,9 +277,11 @@ PRD command set over shared services.
 
 Sequence 9 is model-free complete at the packaged/static boundary. The React/TypeScript SPA now ships its lean intake, preflight, live discovery/run progress, and evidence-aware results surfaces; broad browser E2E and real execution remain deferred (status `VM/GPU deferred`). The server control-plane slice (see [server](server.md)) binds one workspace behind strict construction budgets through `create_app()`, resolves public Hub revisions to immutable commits, launches bounded discovery/run jobs, supports cancellation/resume, and serves architecture, activity, metric heatmaps, comparisons, exports, intervention-recipe validation, and an opt-in cancellable native-versus-captured forward-timing lane. FastAPI remains an optional extra and the wire DTOs stay importable without it. The `moeatlas ui WORKSPACE` command is loopback-by-default with an explicit `--allow-remote` opt-in, canonical port validation, and a fixed dependency hint when the server extra is missing. The packaged React assets and API contracts are covered by local static/browser smoke evidence; broad synthetic browser E2E remains deferred release-engineering evidence recorded in the validation ledger.
 
-Sequence 10 is `model-free complete`: recipes, budgets, the failure-safe
-engine, and paired causal-effect summaries are all constructible and
-contract-tested over synthetic modules (see [interventions](interventions.md)).
+Sequence 10 has a live implementation with `VM/GPU deferred` certification:
+recipes, budgets, the failure-safe engine, paired causal-effect summaries,
+exact baseline reconstruction, real expert-output ablation/scaling hooks, and
+the UI/API workflow are contract-tested without loading a model stack (see
+[interventions](interventions.md)).
 Its first landed slice is the intervention
 mechanics (see [interventions](interventions.md)): immutable
 `InterventionRecipe` contracts over the fixed `ablate`, `scale`,
@@ -291,20 +293,20 @@ immutable `InterventionBudget` bounds, and the failure-safe engine —
 an adapter-supplied `InterventionCapability`, guarantees restoration on
 every path including cancellation, reports a distinct `restore` stage
 when cleanup itself fails, and publishes a `moeatlas.intervention_outcome`
-artifact only after successful restoration. Synthetic modules prove the
-mechanics locally; real-model causal effect, regret, stability, and
-replication evidence stays deferred to the validation ledger. Its second
+artifact only after successful restoration. The live server now applies that
+engine to independently exposed routed-expert modules and publishes paired
+output, optional task-score, latency, invocation, and routing evidence. Actual
+checkpoint certification, repeatability, regret, and stability evidence stays
+deferred to the validation ledger. Its second
 landed slice is the causal evidence summary (see [analysis](analysis.md)):
 `analyze_causal_evidence` in `moeatlas.analysis.causal_evidence` reduces
 paired baseline/intervention observations into per-label effect summaries —
 absolute and relative effects, direction consistency across replications,
 strict stability markers, and explicit zero-effect labels — canonically
 serializable as `moeatlas.causal_evidence` artifacts and feeding Evidence
-Cards' causality/stability sections. What remains deferred is real
-evidence, not contracts: interventions on live checkpoints, adapter
-declarations of unsupported/fused/quantized intervention paths, and actual
-causal/regret measurements on real models stay in Sequences 11–12 ledger
-work until VM/native-output certification exists.
+Cards' causality/stability sections. What remains deferred is GPU evidence:
+native checkpoint runs across model families, fused/packed/quantized paths,
+and replicated causal/regret measurements stay in Sequences 11–12 ledger work.
 
 Sequence 10 (intervention and causal evidence) is complete only when:
 

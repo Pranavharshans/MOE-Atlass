@@ -30,7 +30,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
-from ..core import validate_stable_identifier
+from ..core import stable_digest, validate_stable_identifier
 from ..discovery import DiscoveryReport, scan
 from ..events import EVENT_SCHEMA_VERSION, ExpertEvent, RoutingEvent, TokenEvent, TokenPhase
 from ..loading import HuggingFaceSource, LoadingPlan, LocalSource
@@ -83,11 +83,7 @@ def _safe_validation_error(exc: Exception) -> str:
             continue
         location = entry.get("loc", ())
         if isinstance(location, list | tuple):
-            safe_parts = [
-                str(part)[:80]
-                for part in location
-                if type(part) in {str, int}
-            ]
+            safe_parts = [str(part)[:80] for part in location if type(part) in {str, int}]
             location_text = ".".join(safe_parts) or "value"
         else:
             location_text = "value"
@@ -226,6 +222,8 @@ class TransformersRoutingExecutor:
         store_token_text: bool = False,
         capture_expert_activity: bool = False,
         capture_routing: bool = True,
+        mode: str = "generation",
+        max_new_tokens: int = 128,
     ) -> None:
         if not isinstance(plan, LoadingPlan):
             raise TypeError("plan must be a validated LoadingPlan")
@@ -235,10 +233,20 @@ class TransformersRoutingExecutor:
             raise TypeError("capture_expert_activity must be an exact bool")
         if type(capture_routing) is not bool:
             raise TypeError("capture_routing must be an exact bool")
+        if mode not in {"generation", "teacher_forced"}:
+            raise ValueError("mode must be generation or teacher_forced")
+        if (
+            type(max_new_tokens) is not int
+            or isinstance(max_new_tokens, bool)
+            or max_new_tokens <= 0
+        ):
+            raise TypeError("max_new_tokens must be a strict positive integer")
         self._plan = plan
         self._store_token_text = store_token_text
         self._capture_expert_activity = capture_expert_activity
         self._capture_routing = capture_routing
+        self._mode = mode
+        self._max_new_tokens = max_new_tokens
         self._loaded: LoadedModel | None = None
         self._report: DiscoveryReport | None = None
         self._targets: tuple[StructuredRouterTarget, ...] = ()
@@ -248,6 +256,7 @@ class TransformersRoutingExecutor:
         self._notes: set[str] = set()
         self._outputs: list[object] = []
         self._forward_timings_ms: list[float] = []
+        self._generation_timings_ms: list[float] = []
         self._run_key: str | None = None
         self._published = False
 
@@ -282,6 +291,8 @@ class TransformersRoutingExecutor:
 
         values = tuple(self._forward_timings_ms)
         total = sum(values)
+        generation = tuple(self._generation_timings_ms)
+        generation_total = sum(generation)
         return {
             "scope": "model_forward",
             "capture_routing": self._capture_routing,
@@ -290,7 +301,51 @@ class TransformersRoutingExecutor:
             "mean_ms": total / len(values) if values else None,
             "min_ms": min(values) if values else None,
             "max_ms": max(values) if values else None,
+            "generation_total_ms": generation_total if generation else None,
+            "generation_mean_ms": generation_total / len(generation) if generation else None,
         }
+
+    def intervention_inventory(self) -> tuple[dict[str, Any], ...]:
+        """Load once and expose the structure-bound routed-expert coordinates."""
+
+        from ..interventions import intervention_targets
+
+        self._ensure_loaded()
+        assert self._report is not None
+        return tuple(target.to_dict() for target in intervention_targets(self._report))
+
+    def run_with_intervention(
+        self, recipe: object, execute: Callable[[], Any]
+    ) -> tuple[Any, Any, dict[str, int]]:
+        """Execute one caller-owned run under temporary expert hooks.
+
+        The shared intervention engine owns restoration.  The loaded model is
+        prepared before mutation, so every row executed by ``execute`` observes
+        the same temporary hooks and the model is clean before publication.
+        """
+
+        from ..interventions import (
+            InterventionRecipe,
+            TransformersExpertInterventionCapability,
+            run_intervention,
+        )
+
+        if type(recipe) is not InterventionRecipe:
+            raise TypeError("recipe must be an InterventionRecipe")
+        if not callable(execute):
+            raise TypeError("execute must be callable")
+        loaded = self._ensure_loaded()
+        assert self._report is not None
+        capability = TransformersExpertInterventionCapability(self._report)
+        observed: list[Any] = []
+
+        def observe(_module: object) -> None:
+            observed.append(execute())
+
+        outcome = run_intervention(loaded.model, recipe, capability, observe)
+        if len(observed) != 1:
+            raise RuntimeError("intervention execution did not return exactly one observation")
+        return observed[0], outcome, capability.invocation_counts
 
     def _ensure_loaded(self) -> LoadedModel:
         if self._loaded is not None:
@@ -385,6 +440,126 @@ class TransformersRoutingExecutor:
             if not callable(call):
                 raise TypeError("loaded model is not callable")
             return call(**dict(encoding))
+
+    @staticmethod
+    def _prediction_ids(output: object) -> list[int]:
+        """Extract bounded argmax predictions from common causal-LM outputs."""
+
+        logits = (
+            output.get("logits") if isinstance(output, Mapping) else getattr(output, "logits", None)
+        )
+        if logits is None and isinstance(output, tuple) and output:
+            logits = output[0]
+        if logits is None:
+            return []
+        argmax = getattr(logits, "argmax", None)
+        if callable(argmax):
+            try:
+                return _materialize_ids(argmax(dim=-1))[-256:]
+            except Exception:
+                return []
+        if type(logits) is list and len(logits) == 1 and type(logits[0]) is list:
+            rows = logits[0]
+            predictions: list[int] = []
+            for row in rows[-256:]:
+                if type(row) is not list or not row:
+                    return []
+                predictions.append(max(range(len(row)), key=row.__getitem__))
+            return predictions
+        return []
+
+    def _generate_output(
+        self,
+        model: object,
+        tokenizer: object,
+        encoding: Mapping[str, object],
+        *,
+        prompt_token_count: int,
+    ) -> tuple[list[int], str | None]:
+        generate = getattr(model, "generate", None)
+        if not callable(generate):
+            return [], None
+        torch = sys.modules.get("torch")
+        inference_mode = getattr(torch, "inference_mode", None) if torch is not None else None
+        context = inference_mode() if callable(inference_mode) else nullcontext()
+        self._synchronize_cuda(model)
+        started = time.perf_counter()
+        succeeded = False
+        try:
+            with context:
+                generated = generate(
+                    **dict(encoding),
+                    max_new_tokens=self._max_new_tokens,
+                    do_sample=False,
+                )
+            ids = _materialize_ids(generated)
+            continuation = ids[prompt_token_count:]
+            decode = getattr(tokenizer, "decode", None)
+            text = (
+                decode(continuation, skip_special_tokens=True)
+                if continuation and callable(decode)
+                else None
+            )
+            succeeded = True
+            return continuation, text if isinstance(text, str) else None
+        finally:
+            self._synchronize_cuda(model)
+            if succeeded:
+                elapsed = (time.perf_counter() - started) * 1000.0
+                self._generation_timings_ms.append(elapsed)
+
+    def _output_evidence(
+        self,
+        model: object,
+        tokenizer: object,
+        encoding: Mapping[str, object],
+        forward_output: object,
+        *,
+        prompt_token_count: int,
+        reference: object,
+    ) -> dict[str, Any]:
+        generation_before = len(self._generation_timings_ms)
+        generated_ids: list[int] = []
+        generated_text: str | None = None
+        if self._mode == "generation":
+            generated_ids, generated_text = self._generate_output(
+                model,
+                tokenizer,
+                encoding,
+                prompt_token_count=prompt_token_count,
+            )
+        prediction_ids = generated_ids or self._prediction_ids(forward_output)
+        digest = (
+            f"sha256:{stable_digest({'token_ids': prediction_ids, 'mode': self._mode})}"
+            if prediction_ids
+            else None
+        )
+        evidence: dict[str, Any] = {
+            "output_digest": digest,
+            "output_token_count": len(prediction_ids),
+            "output_mode": (
+                "generated"
+                if generated_ids
+                else "forward_argmax"
+                if prediction_ids
+                else "unavailable"
+            ),
+            "generation_ms": (
+                self._generation_timings_ms[-1]
+                if len(self._generation_timings_ms) > generation_before
+                else None
+            ),
+            "score_name": None,
+            "task_score": None,
+        }
+        if self._store_token_text and generated_text is not None:
+            evidence["output_preview"] = generated_text[:2048]
+        if reference is not None and generated_text is not None:
+            normalized_output = " ".join(generated_text.strip().casefold().split())
+            normalized_reference = " ".join(str(reference).strip().casefold().split())
+            evidence["score_name"] = "normalized_exact_match"
+            evidence["task_score"] = float(normalized_output == normalized_reference)
+        return evidence
 
     def __call__(
         self, *, row_index: int, batch_index: int, values: Mapping[str, Any]
@@ -491,6 +666,14 @@ class TransformersRoutingExecutor:
         self._expert_events.extend(result.expert_events)
         self._notes.update(result.capability_notes)
         self._outputs.append(result.output)
+        output_evidence = self._output_evidence(
+            loaded.model,
+            tokenizer,
+            encoding,
+            result.output,
+            prompt_token_count=len(result.token_events),
+            reference=values.get("reference"),
+        )
         return {
             "schema_version": EXECUTOR_RESULT_SCHEMA_VERSION,
             "event_schema_version": EVENT_SCHEMA_VERSION,
@@ -499,6 +682,8 @@ class TransformersRoutingExecutor:
             "token_count": len(result.token_events),
             "routing_event_count": len(result.routing_events),
             "capability_notes": sorted(result.capability_notes),
+            "forward_ms": self._forward_timings_ms[-1],
+            **output_evidence,
         }
 
     def _encode(

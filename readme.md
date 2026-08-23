@@ -297,8 +297,11 @@ deliberately deferred.
   `ablate`/`scale`/`reroute`/`alter_router` vocabulary, immutable budgets,
   and the failure-safe `run_intervention()` engine that guarantees module
   restoration on every path behind adapter-supplied capabilities.
-  Synthetic modules prove the mechanics; real-model causal claims are
-  deferred to the validation ledger. See [interventions](docs/interventions.md).
+  The local server can run real baseline-derived expert ablation/scaling for
+  independently exposed expert modules and publish paired output, score,
+  latency, invocation, routing, and restoration evidence. Fused or packed
+  expert paths remain explicitly unsupported, and GPU/checkpoint claims still
+  require validation. See [interventions](docs/interventions.md).
   See [runtime](docs/runtime.md).
 - Model-free test harness for the foundation and schemas.
 - Real PyTorch, Transformers, and checkpoint/GPU fidelity explicitly deferred

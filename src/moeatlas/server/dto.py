@@ -142,6 +142,7 @@ class RunStartRequest(_WireModel):
     dataset_config: str | None = Field(default=None, max_length=200)
     dataset_split: str = Field(default="train", min_length=1, max_length=200)
     prompt_column: str = Field(default="prompt", min_length=1, max_length=200)
+    reference_column: str | None = Field(default=None, min_length=1, max_length=200)
     sample_cap: int = Field(default=32, ge=1, le=10_000)
     batch_size: int = Field(default=1, ge=1, le=256)
     max_new_tokens: int = Field(default=128, ge=1, le=1_000_000)
@@ -248,6 +249,33 @@ class InterventionRecipeResponse(_WireModel):
     reason: str | None = None
 
 
+class InterventionStartRequest(_WireModel):
+    """One real baseline-derived expert intervention request."""
+
+    baseline_run_key: str = Field(min_length=5, max_length=80)
+    operation: Literal["ablate", "scale"] = "ablate"
+    targets: tuple[str, ...] = Field(min_length=1, max_length=64)
+    factor: float | None = None
+
+
+class InterventionTargetsResponse(_WireModel):
+    """Discovered independently hookable experts for one baseline run."""
+
+    run_key: str
+    status: Literal["available", "unsupported"]
+    reason: str | None = None
+    targets: tuple[dict[str, Any], ...] = Field(default_factory=tuple)
+
+
+class InterventionEvidenceResponse(_WireModel):
+    """Paired baseline/intervention output and performance evidence."""
+
+    run_key: str
+    status: Literal["available", "unavailable"]
+    reason: str | None = None
+    evidence: dict[str, Any] | None = None
+
+
 __all__ = [
     "AdapterEntryResponse",
     "AdaptersResponse",
@@ -259,6 +287,9 @@ __all__ = [
     "HubSearchResponse",
     "InterventionRecipeRequest",
     "InterventionRecipeResponse",
+    "InterventionStartRequest",
+    "InterventionTargetsResponse",
+    "InterventionEvidenceResponse",
     "JobCreatedResponse",
     "JobDiagnosticEntryResponse",
     "JobDiagnosticsReference",

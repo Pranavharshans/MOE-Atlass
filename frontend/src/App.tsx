@@ -27,6 +27,7 @@ type SourceDraft = {
   datasetConfig: string;
   datasetSplit: string;
   promptColumn: string;
+  referenceColumn: string;
   device: string;
   dtype: "preserve" | "float32" | "float16" | "bfloat16";
   trustRemoteCode: boolean;
@@ -90,6 +91,7 @@ const DEFAULT_SOURCES: SourceDraft = {
   datasetConfig: "",
   datasetSplit: "train",
   promptColumn: "prompt",
+  referenceColumn: "",
   device: "auto",
   dtype: "preserve",
   trustRemoteCode: false,
@@ -378,6 +380,8 @@ function SourceCard({
   onSplitChange,
   promptColumn,
   onPromptColumnChange,
+  referenceColumn,
+  onReferenceColumnChange,
   error,
 }: {
   kind: HubKind;
@@ -391,6 +395,8 @@ function SourceCard({
   onSplitChange?: (value: string) => void;
   promptColumn?: string;
   onPromptColumnChange?: (value: string) => void;
+  referenceColumn?: string;
+  onReferenceColumnChange?: (value: string) => void;
   error: string | null;
 }) {
   const isModel = kind === "model";
@@ -442,6 +448,10 @@ function SourceCard({
           <label className="field-label" htmlFor="dataset-prompt-column">
             Prompt column
             <input id="dataset-prompt-column" className="input-control mt-2" value={promptColumn ?? "prompt"} onChange={(event) => onPromptColumnChange?.(event.target.value)} placeholder="prompt or text" spellCheck={false} />
+          </label>
+          <label className="field-label" htmlFor="dataset-reference-column">
+            Reference column <span className="field-optional">optional</span>
+            <input id="dataset-reference-column" className="input-control mt-2" value={referenceColumn ?? ""} onChange={(event) => onReferenceColumnChange?.(event.target.value)} placeholder="answer or label" spellCheck={false} />
           </label>
         </div>
       ) : null}
@@ -502,7 +512,7 @@ function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => vo
         <main className="space-y-5">
           <div className="grid gap-5 lg:grid-cols-2">
             <SourceCard kind="model" value={sources.modelId} onChange={(value) => update("modelId", value)} revision={sources.modelRevision} onRevisionChange={(value) => update("modelRevision", value)} error={modelError} />
-            <SourceCard kind="dataset" value={sources.datasetId} onChange={(value) => update("datasetId", value)} revision={sources.datasetRevision} onRevisionChange={(value) => update("datasetRevision", value)} config={sources.datasetConfig} onConfigChange={(value) => update("datasetConfig", value)} split={sources.datasetSplit} onSplitChange={(value) => update("datasetSplit", value)} promptColumn={sources.promptColumn} onPromptColumnChange={(value) => update("promptColumn", value)} error={datasetError} />
+            <SourceCard kind="dataset" value={sources.datasetId} onChange={(value) => update("datasetId", value)} revision={sources.datasetRevision} onRevisionChange={(value) => update("datasetRevision", value)} config={sources.datasetConfig} onConfigChange={(value) => update("datasetConfig", value)} split={sources.datasetSplit} onSplitChange={(value) => update("datasetSplit", value)} promptColumn={sources.promptColumn} onPromptColumnChange={(value) => update("promptColumn", value)} referenceColumn={sources.referenceColumn} onReferenceColumnChange={(value) => update("referenceColumn", value)} error={datasetError} />
           </div>
           <section className="research-card">
             <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Runtime policy</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">How the model is loaded</h2></div><Cpu size={19} className="text-cyan" /></div>
@@ -680,6 +690,7 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
         dataset_config: sources.datasetConfig.trim() || null,
         dataset_split: sources.datasetSplit.trim() || "train",
         prompt_column: sources.promptColumn.trim() || "prompt",
+        reference_column: sources.referenceColumn.trim() || null,
         sample_cap: Number(run.sampleCap),
         batch_size: Number(run.batchSize),
         max_new_tokens: Number(run.maxNewTokens),
@@ -781,6 +792,35 @@ type ActivitySummary = {
 
 type ActivityResponse = { status: string; reason?: string | null; summary?: ActivitySummary | null };
 type ArchitectureResponse = { status: string; reason?: string | null; report?: Record<string, unknown> | null };
+type InterventionTarget = {
+  label: string;
+  layer_index: number;
+  expert_index: number;
+  layer_key: string;
+  expert_key: string;
+};
+type InterventionTargetsResponse = {
+  status: "available" | "unsupported";
+  reason?: string | null;
+  targets: InterventionTarget[];
+};
+type InterventionEvidence = {
+  baseline_run_key: string;
+  intervention_run_key: string;
+  restoration_status: string;
+  all_targets_exercised: boolean;
+  row_count: number;
+  changed_output_rows: number;
+  changed_output_fraction?: number | null;
+  score_name?: string | null;
+  baseline_task_score?: number | null;
+  intervention_task_score?: number | null;
+  task_score_delta?: number | null;
+  baseline_mean_latency_ms?: number | null;
+  intervention_mean_latency_ms?: number | null;
+  latency_delta_percent?: number | null;
+  target_invocation_counts: Record<string, number>;
+};
 
 function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return <div className="metric-card"><p className="label-caps text-[0.56rem] text-muted">{label}</p><p className="mt-3 font-mono text-lg text-white">{value}</p><p className="mt-1 text-[0.65rem] text-muted">{detail}</p></div>;
@@ -797,9 +837,14 @@ function RunsPage() {
   const [architecture, setArchitecture] = useState<ArchitectureResponse | null>(null);
   const [comparisonRun, setComparisonRun] = useState("");
   const [comparisonMetric, setComparisonMetric] = useState<"count_deltas" | "share_deltas" | "ratio_deltas">("count_deltas");
-  const [recipeOperation, setRecipeOperation] = useState<"ablate" | "scale" | "reroute" | "alter_router">("ablate");
-  const [recipeTargets, setRecipeTargets] = useState("");
-  const [recipeStatus, setRecipeStatus] = useState<string | null>(null);
+  const [interventionTargets, setInterventionTargets] = useState<InterventionTargetsResponse | null>(null);
+  const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
+  const [interventionOperation, setInterventionOperation] = useState<"ablate" | "scale">("ablate");
+  const [scaleFactor, setScaleFactor] = useState("0.5");
+  const [interventionJobId, setInterventionJobId] = useState<string | null>(null);
+  const [interventionStatus, setInterventionStatus] = useState<string | null>(null);
+  const [interventionEvidence, setInterventionEvidence] = useState<InterventionEvidence | null>(null);
+  const interventionJob = useJob(interventionJobId);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -839,6 +884,47 @@ function RunsPage() {
 
   useEffect(() => {
     if (!selectedRun) {
+      setInterventionTargets(null);
+      setInterventionEvidence(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    Promise.all([
+      fetch(`/api/runs/${encodeURIComponent(selectedRun)}/intervention-targets`, { headers: { Accept: "application/json" }, signal: controller.signal }).then((response) => response.json() as Promise<InterventionTargetsResponse>),
+      fetch(`/api/runs/${encodeURIComponent(selectedRun)}/intervention`, { headers: { Accept: "application/json" }, signal: controller.signal }).then((response) => response.json() as Promise<{ status: string; evidence?: InterventionEvidence | null }>),
+    ]).then(([targets, evidence]) => {
+      setInterventionTargets(targets);
+      setSelectedTargets([]);
+      setInterventionEvidence(evidence.status === "available" ? evidence.evidence ?? null : null);
+    }).catch((cause) => {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      setInterventionTargets(null);
+      setInterventionEvidence(null);
+    });
+    return () => controller.abort();
+  }, [selectedRun]);
+
+  useEffect(() => {
+    if (interventionJob?.state !== "completed") return;
+    const runKey = interventionJob.result?.run_key;
+    if (typeof runKey !== "string") return;
+    if (selectedRun === runKey) return;
+    const controller = new AbortController();
+    fetch("/api/runs", { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then((response) => response.json() as Promise<{ entries?: RunEntry[] }>)
+      .then((document) => {
+        const nextEntries = Array.isArray(document.entries) ? document.entries : [];
+        setEntries(nextEntries);
+        setComparisonRun(selectedRun);
+        setSelectedRun(runKey);
+        setInterventionStatus("Intervention completed; paired evidence is ready.");
+      })
+      .catch(() => setInterventionStatus("Intervention completed; refresh to inspect it."));
+    return () => controller.abort();
+  }, [interventionJob?.state, interventionJob?.result, selectedRun]);
+
+  useEffect(() => {
+    if (!selectedRun) {
       setActivity(null);
       setArchitecture(null);
       return undefined;
@@ -851,17 +937,26 @@ function RunsPage() {
     return () => controller.abort();
   }, [selectedRun]);
 
-  async function prepareRecipe() {
-    const targets = recipeTargets.split(",").map((item) => item.trim()).filter(Boolean).sort();
-    if (!targets.length) {
-      setRecipeStatus("Enter at least one expert or router target.");
+  async function startIntervention() {
+    if (!selectedTargets.length) {
+      setInterventionStatus("Select at least one layer × expert target.");
+      return;
+    }
+    if (interventionOperation === "scale" && (!Number.isFinite(Number(scaleFactor)) || Number(scaleFactor) < 0)) {
+      setInterventionStatus("Scale must be a finite number greater than or equal to zero.");
       return;
     }
     try {
-      const response = await postJson<{ fingerprint: string }>("/api/interventions/recipes", { operation: recipeOperation, targets });
-      setRecipeStatus(`Prepared ${response.fingerprint.slice(0, 18)}… · execution requires a model adapter capability.`);
+      setInterventionStatus("Starting an exact baseline-derived run…");
+      const response = await postJson<{ job_id: string }>("/api/interventions/start", {
+        baseline_run_key: selectedRun,
+        operation: interventionOperation,
+        targets: [...selectedTargets].sort(),
+        factor: interventionOperation === "scale" ? Number(scaleFactor) : null,
+      });
+      setInterventionJobId(response.job_id);
     } catch {
-      setRecipeStatus("Recipe validation failed; check the target labels and operation parameters.");
+      setInterventionStatus("This baseline cannot run that intervention. Use a fresh completed baseline and discovered targets.");
     }
   }
 
@@ -873,11 +968,41 @@ function RunsPage() {
         <>
           <div className="run-selector-row"><label className="field-label" htmlFor="run-selector">Run key<select id="run-selector" className="input-control mt-2" value={selectedRun} onChange={(event) => setSelectedRun(event.target.value)}>{entries.map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key} · {entry.state ?? "unknown"}</option>)}</select></label><div className="runtime-pill"><StatusDot tone={selectedEntry?.state === "completed" ? "good" : "warn"} />{selectedEntry?.state ?? "unknown"}</div><div className="ml-auto flex flex-wrap gap-2"><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=bundle`} download>Export bundle</a><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=csv`} download>CSV</a></div></div>
           <div className="metric-grid"><MetricCard label="Tokens" value={summary?.token_count == null ? "—" : String(summary.token_count)} detail="validated token rows" /><MetricCard label="Assignments" value={summary?.assignment_count == null ? "—" : String(summary.assignment_count)} detail="selected expert routes" /><MetricCard label="Layers" value={summary?.layer_count == null ? "—" : String(summary.layer_count)} detail="published routing layers" /><MetricCard label="Experts" value={summary?.expert_count == null ? "—" : String(summary.expert_count)} detail="routed expert universe" /></div>
+          {interventionEvidence ? <section className="research-card">
+            <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-signal">Paired causal evidence</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Baseline versus intervention</h2></div><span className="source-card-type">{interventionEvidence.all_targets_exercised ? "targets exercised" : "target not exercised"}</span></div>
+            <div className="metric-grid mt-5"><MetricCard label="Outputs changed" value={interventionEvidence.changed_output_fraction == null ? "—" : `${(interventionEvidence.changed_output_fraction * 100).toFixed(1)}%`} detail={`${interventionEvidence.changed_output_rows}/${interventionEvidence.row_count} paired rows`} /><MetricCard label="Task score delta" value={interventionEvidence.task_score_delta == null ? "unavailable" : interventionEvidence.task_score_delta.toFixed(4)} detail={interventionEvidence.score_name ?? "add a reference column for scoring"} /><MetricCard label="Latency delta" value={interventionEvidence.latency_delta_percent == null ? "—" : `${interventionEvidence.latency_delta_percent.toFixed(1)}%`} detail="same run settings" /><MetricCard label="Restoration" value={interventionEvidence.restoration_status} detail="temporary hooks removed" /></div>
+            {!interventionEvidence.all_targets_exercised ? <p className="mt-4 rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal">At least one selected expert was never called by these rows. This run does not establish a causal effect for that target.</p> : null}
+            <div className="mt-4 flex flex-wrap gap-2"><a className="button-secondary" target="_blank" rel="noreferrer" href={`/api/compare/heatmap?baseline_run_key=${encodeURIComponent(interventionEvidence.baseline_run_key)}&comparison_run_key=${encodeURIComponent(interventionEvidence.intervention_run_key)}&metric=count_deltas`}>Open routing delta</a></div>
+          </section> : null}
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
             <section className="research-card"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Routing load</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Layer × expert heatmap</h2></div><div className="flex items-center gap-2"><label className="sr-only" htmlFor="heatmap-metric">Heatmap metric</label><select id="heatmap-metric" className="input-control input-control-compact" value={metric} onChange={(event) => setMetric(event.target.value as typeof metric)}><option value="assignment_counts">Counts</option><option value="assignment_shares">Shares</option><option value="load_ratios">Load ratios</option></select><span className="source-card-type">{summaryState === "loading" ? "loading" : summary?.status ?? "unavailable"}</span></div></div>{summary?.status === "available" && selectedRun ? <iframe className="heatmap-frame-react mt-5" title={`Routing heatmap for ${selectedRun}`} src={`/api/runs/${encodeURIComponent(selectedRun)}/heatmap?metric=${metric}&view=compact`} /> : <div className="empty-heatmap mt-5"><GitBranch size={20} className="text-muted" /><p className="mt-3 text-sm text-white">No published matrix.</p><p className="mt-1 max-w-[32ch] text-center text-xs leading-5 text-muted">{summary?.reason ?? "A validated routing inspection is required before rendering heat."}</p></div>}
               {entries.length > 1 ? <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-line pt-4"><label className="field-label min-w-[15rem]" htmlFor="comparison-run">Compare against<select id="comparison-run" className="input-control mt-2" value={comparisonRun} onChange={(event) => setComparisonRun(event.target.value)}><option value="">Select baseline</option>{entries.filter((entry) => entry.run_key !== selectedRun).map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key}</option>)}</select></label><label className="field-label" htmlFor="comparison-metric">Delta<select id="comparison-metric" className="input-control mt-2" value={comparisonMetric} onChange={(event) => setComparisonMetric(event.target.value as typeof comparisonMetric)}><option value="count_deltas">Counts</option><option value="share_deltas">Shares</option><option value="ratio_deltas">Ratios</option></select></label>{comparisonRun ? <a className="button-secondary" target="_blank" rel="noreferrer" href={`/api/compare/heatmap?baseline_run_key=${encodeURIComponent(comparisonRun)}&comparison_run_key=${encodeURIComponent(selectedRun)}&metric=${comparisonMetric}`}>Open comparison</a> : null}</div> : null}
             </section>
-            <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center gap-2"><ShieldCheck size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Validation</p></div><dl className="contract-list mt-5"><div><dt>Status</dt><dd>{summary?.status ?? "pending"}</dd></div><div><dt>Adapter</dt><dd>{summary?.adapter_name ?? "—"}</dd></div><div><dt>Top-k</dt><dd>{summary?.routed_top_k == null ? "—" : summary.routed_top_k}</dd></div><div><dt>Digest</dt><dd>{summary?.inspection_digest ? summary.inspection_digest.slice(0, 18) + "…" : "—"}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Expert activity</p></div>{activity?.status === "available" && activity.summary ? <><div className="mt-4 grid grid-cols-2 gap-3"><MetricCard label="Active cells" value={String(activity.summary.active_expert_cells ?? "—")} detail="experts with events"/><MetricCard label="Events" value={String(activity.summary.total_event_count ?? "—")} detail="validated expert events"/></div><p className="mt-4 text-xs leading-5 text-muted">Norm summaries are available from persisted expert-event evidence. Empty cells remain explicit zeros.</p></> : <p className="mt-4 text-xs leading-5 text-muted">{activity?.reason ?? "Loading activation evidence…"}</p>}</section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><GitBranch size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Architecture</p></div>{architecture?.status === "available" && architecture.report ? <><dl className="contract-list mt-4"><div><dt>Families</dt><dd>{Array.isArray(architecture.report.architecture_families) ? architecture.report.architecture_families.join(", ") : "generic"}</dd></div><div><dt>Components</dt><dd>{Array.isArray(architecture.report.components) ? architecture.report.components.length : "—"}</dd></div><div><dt>Warnings</dt><dd>{Array.isArray(architecture.report.warnings) ? architecture.report.warnings.length : "0"}</dd></div></dl><p className="mt-3 text-xs leading-5 text-muted">{architecture.report.model_key ? `Manifest ${String(architecture.report.model_key)}` : "Persisted discovery report"}</p></> : <p className="mt-4 text-xs leading-5 text-muted">{architecture?.reason ?? "Architecture evidence is not published for this run yet."}</p>}</section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Intervention recipe</p></div><label className="field-label mt-4" htmlFor="recipe-targets">Targets<input id="recipe-targets" className="input-control mt-2" value={recipeTargets} onChange={(event) => setRecipeTargets(event.target.value)} placeholder="layer:…/expert:…" /></label><label className="field-label mt-3" htmlFor="recipe-operation">Operation<select id="recipe-operation" className="input-control mt-2" value={recipeOperation} onChange={(event) => setRecipeOperation(event.target.value as typeof recipeOperation)}><option value="ablate">Ablate</option><option value="scale">Scale</option><option value="reroute">Reroute</option><option value="alter_router">Alter router</option></select></label><button type="button" className="button-secondary mt-4 w-full justify-between" onClick={() => void prepareRecipe()}>Prepare recipe <ArrowRight size={15}/></button>{recipeStatus ? <p className="mt-3 text-xs leading-5 text-muted" role="status">{recipeStatus}</p> : null}</section></aside>
+            <aside className="space-y-5">
+              <section className="research-card research-card-dark"><div className="flex items-center gap-2"><ShieldCheck size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Validation</p></div><dl className="contract-list mt-5"><div><dt>Status</dt><dd>{summary?.status ?? "pending"}</dd></div><div><dt>Adapter</dt><dd>{summary?.adapter_name ?? "—"}</dd></div><div><dt>Top-k</dt><dd>{summary?.routed_top_k == null ? "—" : summary.routed_top_k}</dd></div><div><dt>Digest</dt><dd>{summary?.inspection_digest ? summary.inspection_digest.slice(0, 18) + "…" : "—"}</dd></div></dl></section>
+              <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Expert activity</p></div>{activity?.status === "available" && activity.summary ? <><div className="mt-4 grid grid-cols-2 gap-3"><MetricCard label="Active cells" value={String(activity.summary.active_expert_cells ?? "—")} detail="experts with events"/><MetricCard label="Events" value={String(activity.summary.total_event_count ?? "—")} detail="validated expert events"/></div><p className="mt-4 text-xs leading-5 text-muted">Norm summaries are available from persisted expert-event evidence. Empty cells remain explicit zeros.</p></> : <p className="mt-4 text-xs leading-5 text-muted">{activity?.reason ?? "Loading activation evidence…"}</p>}</section>
+              <section className="research-card research-card-dark"><div className="flex items-center gap-2"><GitBranch size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Architecture</p></div>{architecture?.status === "available" && architecture.report ? <><dl className="contract-list mt-4"><div><dt>Families</dt><dd>{Array.isArray(architecture.report.architecture_families) ? architecture.report.architecture_families.join(", ") : "generic"}</dd></div><div><dt>Components</dt><dd>{Array.isArray(architecture.report.components) ? architecture.report.components.length : "—"}</dd></div><div><dt>Warnings</dt><dd>{Array.isArray(architecture.report.warnings) ? architecture.report.warnings.length : "0"}</dd></div></dl><p className="mt-3 text-xs leading-5 text-muted">{architecture.report.model_key ? `Manifest ${String(architecture.report.model_key)}` : "Persisted discovery report"}</p></> : <p className="mt-4 text-xs leading-5 text-muted">{architecture?.reason ?? "Architecture evidence is not published for this run yet."}</p>}</section>
+              <section className="research-card research-card-dark">
+                <div className="flex items-center gap-2"><Lightning size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Causal intervention</p></div>
+                {interventionEvidence ? <p className="mt-4 text-xs leading-5 text-muted">This is a derived intervention run. Select its recorded baseline to prepare another intervention.</p> : interventionTargets?.status === "available" ? <>
+                  <label className="field-label mt-4" htmlFor="intervention-targets">Layer × expert targets
+                    <select id="intervention-targets" className="input-control mt-2 min-h-40" multiple value={selectedTargets} onChange={(event) => setSelectedTargets(Array.from(event.target.selectedOptions, (option) => option.value))}>
+                      {interventionTargets.targets.map((target) => <option key={target.label} value={target.label}>L{target.layer_index} × E{target.expert_index}</option>)}
+                    </select>
+                  </label>
+                  <p className="mt-2 text-[0.65rem] leading-5 text-muted">Select one or more independently controllable experts. Hold Ctrl or Command to select several.</p>
+                  <label className="field-label mt-3" htmlFor="intervention-operation">Operation
+                    <select id="intervention-operation" className="input-control mt-2" value={interventionOperation} onChange={(event) => setInterventionOperation(event.target.value as typeof interventionOperation)}><option value="ablate">Disable output</option><option value="scale">Scale output</option></select>
+                  </label>
+                  {interventionOperation === "scale" ? <label className="field-label mt-3" htmlFor="scale-factor">Scale factor<input id="scale-factor" className="input-control mt-2" type="number" min="0" step="0.1" value={scaleFactor} onChange={(event) => setScaleFactor(event.target.value)} /></label> : null}
+                  <button type="button" className="button-primary mt-4 w-full justify-between" disabled={interventionJob?.state === "queued" || interventionJob?.state === "running"} onClick={() => void startIntervention()}>{interventionJob?.state === "queued" || interventionJob?.state === "running" ? "Intervention running…" : "Run intervention"}<ArrowRight size={15}/></button>
+                  {interventionJobId && (interventionJob?.state === "queued" || interventionJob?.state === "running") ? <button type="button" className="button-secondary mt-2 w-full justify-between" onClick={() => void postJson(`/api/jobs/${encodeURIComponent(interventionJobId)}/cancel`, {})}>Cancel intervention<XCircle size={15}/></button> : null}
+                </> : <p className="mt-4 text-xs leading-5 text-muted">{interventionTargets?.reason ?? "Reading intervention targets…"}</p>}
+                {interventionStatus ? <p className="mt-3 text-xs leading-5 text-muted" role="status">{interventionStatus}</p> : null}
+                {interventionJob ? <p className="mt-2 font-mono text-[0.62rem] text-muted">{interventionJob.progress.message}</p> : null}
+                <FailureDiagnostics job={interventionJob} />
+              </section>
+            </aside>
           </div>
         </>
       )}

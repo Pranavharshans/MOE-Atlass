@@ -87,8 +87,13 @@ missing.
   while it is in progress and continues the capture run; it does not cancel
   the parent study.
 - `POST /api/interventions/recipes` — validates and fingerprints a causal
-  intervention recipe. Actual mutation/execution remains adapter-gated; the
-  endpoint never returns a fake causal outcome.
+  intervention recipe.
+- `GET /api/runs/{run_key}/intervention-targets` — lists independently
+  controllable layer × expert coordinates discovered for a completed run.
+- `POST /api/interventions/start` — starts an exact baseline-derived live
+  expert ablation or scaling run.
+- `GET /api/runs/{run_key}/intervention` — returns paired output, optional task
+  score, latency, invocation, and restoration evidence for a derived run.
 
 The application is built with documentation routes disabled
 (`docs_url=None`, `redoc_url=None`, `openapi_url=None`) so no unbounded

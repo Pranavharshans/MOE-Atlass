@@ -138,6 +138,89 @@ def test_json_job_routes_and_intervention_recipe_are_live(tmp_path: Path, monkey
     assert recipe.json()["fingerprint"].startswith("sha256:")
 
 
+def test_real_intervention_route_reconstructs_a_completed_baseline(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from moeatlas.runs.specs import PromptInputSpec
+    from moeatlas.services import (
+        execute_specification,
+        publish_run_metadata,
+        publish_run_report,
+    )
+    from tests.test_interventions_transformers import _model
+    from tests.test_run_contracts import data_provenance, run_specification
+    from tests.test_runtime_generic_expert_capture import scan_report
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    initialize_workspace(workspace)
+    specification = run_specification(
+        workspace=str(workspace),
+        data=data_provenance(input=PromptInputSpec(text="baseline")),
+    )
+    report = execute_specification(
+        specification,
+        executor=lambda **_: {
+            "output_digest": "sha256:baseline",
+            "forward_ms": 1.0,
+        },
+        base_directory=workspace,
+        checkpoint_directory=workspace / "checkpoints",
+    )
+    publish_run_report(workspace, report)
+    publish_run_metadata(
+        workspace,
+        specification,
+        {
+            "model_id": "org/model",
+            "model_revision": "a" * 40,
+            "dataset_id": "org/data",
+            "dataset_revision": "b" * 40,
+            "prompt_column": "text",
+        },
+    )
+    discovery_root = workspace / "discoveries"
+    discovery_root.mkdir()
+    (discovery_root / f"{specification.run_key}.json").write_text(
+        scan_report(_model()).to_json(), encoding="utf-8"
+    )
+
+    import moeatlas.server.app as app_module
+
+    def fake_run(workspace, payload, *, cancel, report_progress, **kwargs):
+        del workspace, cancel, kwargs
+        assert payload["baseline_run_key"] == specification.run_key
+        assert payload["model_revision"] == "a" * 40
+        assert payload["intervention"]["operation"] == "ablate"
+        report_progress(stage="execute", completed=1, total=1, message="intervened")
+        return JobOutcome({"status": "completed", "run_key": "run:" + "9" * 64}, "completed")
+
+    monkeypatch.setattr(app_module, "_run_worker", fake_run)
+    client = TestClient(create_app(workspace, isolate_model_workers=False))
+    targets = client.get(f"/api/runs/{specification.run_key}/intervention-targets")
+    assert targets.status_code == 200
+    assert targets.json()["status"] == "available"
+    selected = targets.json()["targets"][0]["label"]
+
+    created = client.post(
+        "/api/interventions/start",
+        json={
+            "baseline_run_key": specification.run_key,
+            "operation": "ablate",
+            "targets": [selected],
+        },
+    )
+    assert created.status_code == 202
+    job_id = created.json()["job_id"]
+    for _ in range(50):
+        status = client.get(f"/api/jobs/{job_id}")
+        if status.json()["state"] not in {"queued", "running"}:
+            break
+        time.sleep(0.01)
+    assert status.json()["state"] == "completed"
+    assert status.json()["result"]["run_key"] == "run:" + "9" * 64
+
+
 def test_optional_overhead_can_be_skipped_without_cancelling_capture(
     tmp_path: Path,
     monkeypatch,

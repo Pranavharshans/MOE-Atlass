@@ -29,8 +29,11 @@ from .dto import (
     HealthResponse,
     HubSearchEntryResponse,
     HubSearchResponse,
+    InterventionEvidenceResponse,
     InterventionRecipeRequest,
     InterventionRecipeResponse,
+    InterventionStartRequest,
+    InterventionTargetsResponse,
     JobCreatedResponse,
     JobDiagnosticEntryResponse,
     JobDiagnosticsResponse,
@@ -256,6 +259,7 @@ def _run_worker(
         DatasetFormat,
         DatasetInputSpec,
         GenerationConfig,
+        InterventionLineage,
         ModelProvenance,
         PrivacyPolicy,
         ProbeProvenance,
@@ -269,6 +273,7 @@ def _run_worker(
         resolve_huggingface_dataset_revision,
         resolve_huggingface_plan_with_metadata,
     )
+    from ..services.run_metadata import publish_run_metadata
     from ..services.run_service import execute_specification, publish_run_report
     from .jobs import JobOutcome
 
@@ -313,6 +318,10 @@ def _run_worker(
     if cancel.is_set():
         return JobOutcome({"status": "cancelled", "plan_id": plan.plan_id}, "cancelled")
 
+    requested_reference_column = payload.get("reference_column")
+    initial_column_mapping = {"prompt": payload.get("prompt_column", "prompt")}
+    if requested_reference_column is not None:
+        initial_column_mapping["reference"] = requested_reference_column
     input_spec = DatasetInputSpec(
         format=DatasetFormat.HF_DATASETS,
         location=payload["dataset_id"],
@@ -320,7 +329,7 @@ def _run_worker(
         config_name=payload.get("dataset_config"),
         split=payload.get("dataset_split", "train"),
         allow_downloads=allow_downloads,
-        column_mapping={"prompt": payload.get("prompt_column", "prompt")},
+        column_mapping=initial_column_mapping,
         sample_cap=payload.get("sample_cap", 32),
         batch_size=payload.get("batch_size", 1),
         mode=RunMode(payload.get("mode", "generation")),
@@ -360,10 +369,15 @@ def _run_worker(
         )
         if chosen is None:
             raise ValueError("dataset has no bounded string prompt column")
+        resolved_mapping = {"prompt": chosen}
+        if requested_reference_column is not None:
+            if requested_reference_column not in preview:
+                raise ValueError("requested dataset reference column is unavailable")
+            resolved_mapping["reference"] = requested_reference_column
         input_spec = DatasetInputSpec(
             **{
                 **input_spec.model_dump(mode="python"),
-                "column_mapping": {"prompt": chosen},
+                "column_mapping": resolved_mapping,
             }
         )
     model_provenance = ModelProvenance(
@@ -385,12 +399,23 @@ def _run_worker(
         allow_export=bool(payload.get("allow_export", True)),
     )
 
+    intervention_payload = payload.get("intervention")
+    recipe = (
+        _intervention_recipe_object(intervention_payload)
+        if isinstance(intervention_payload, dict)
+        else None
+    )
+    baseline_run_key = payload.get("baseline_run_key")
+    if (recipe is None) != (baseline_run_key is None):
+        raise ValueError("intervention recipe and baseline run key must be provided together")
+
     def make_specification(*, capture_level: int, expert_activity: bool) -> RunSpecification:
         probe_payload = {
             "model": plan.plan_id,
             "capture_level": capture_level,
             "expert_activity": expert_activity,
             "routing_capture": capture_level > 0,
+            "intervention_recipe": recipe.fingerprint if recipe is not None else None,
         }
         return RunSpecification(
             workspace=workspace,
@@ -399,7 +424,7 @@ def _run_worker(
             data=DataProvenance(
                 input=input_spec,
                 row_count=input_spec.sample_cap,
-                preprocessing={"prompt_column": input_spec.column_mapping["prompt"]},
+                preprocessing={"column_mapping": dict(input_spec.column_mapping)},
             ),
             generation=GenerationConfig(
                 max_new_tokens=payload.get("max_new_tokens", 128), do_sample=False
@@ -407,8 +432,19 @@ def _run_worker(
             probe=ProbeProvenance(
                 probe_plan_id=f"plan:{stable_digest(probe_payload)}",
                 capture_level=capture_level,
+                intervention_opt_in=recipe is not None,
             ),
             privacy=privacy,
+            intervention=(
+                InterventionLineage(
+                    baseline_run_key=baseline_run_key,
+                    recipe_fingerprint=recipe.fingerprint,
+                    operation=recipe.operation.value,
+                    targets=recipe.targets,
+                )
+                if recipe is not None
+                else None
+            ),
         )
 
     specification = make_specification(
@@ -416,6 +452,18 @@ def _run_worker(
         expert_activity=bool(payload.get("capture_expert_activity", True)),
     )
     _publish_run_policy(workspace, specification.run_key, specification.privacy)
+    resolved_request = {
+        **payload,
+        "model_revision": model_provenance.model_revision,
+        "dataset_revision": dataset_revision,
+        "prompt_column": input_spec.column_mapping["prompt"],
+        "reference_column": input_spec.column_mapping.get("reference"),
+        "resume_job_id": None,
+        "measure_capture_overhead": False
+        if recipe is not None
+        else bool(payload.get("measure_capture_overhead", False)),
+    }
+    publish_run_metadata(workspace, specification, resolved_request)
     executor_module = import_module("moeatlas.executors." + "transform" + "ers_routing")
     executor_type = getattr(executor_module, "Transform" + "ersRoutingExecutor")
 
@@ -480,6 +528,8 @@ def _run_worker(
             store_token_text=False,
             capture_expert_activity=False,
             capture_routing=False,
+            mode=payload.get("mode", "generation"),
+            max_new_tokens=payload.get("max_new_tokens", 128),
         )
         native_executor.bind_run_key(native_specification.run_key)
         native_execution = None
@@ -539,6 +589,8 @@ def _run_worker(
         store_token_text=payload.get("token_text_policy") == "stored",
         capture_expert_activity=bool(payload.get("capture_expert_activity", True)),
         capture_routing=True,
+        mode=payload.get("mode", "generation"),
+        max_new_tokens=payload.get("max_new_tokens", 128),
     )
     executor.bind_run_key(specification.run_key)
     try:
@@ -548,21 +600,55 @@ def _run_worker(
             total=input_spec.sample_cap,
             message="Starting model execution",
         )
-        execution = execute_specification(
-            specification,
-            executor=executor,
-            base_directory=workspace,
-            should_cancel=cancel.is_set,
-            requested_by="local-server",
-            cancellation_reason="cancelled from research console",
-            on_record=on_record,
-            checkpoint_directory=Path(workspace) / "checkpoints",
-            resume_from=resume_from,
-            max_rows=input_spec.sample_cap or 32,
-        )
+
+        def execute_current_specification() -> Any:
+            return execute_specification(
+                specification,
+                executor=executor,
+                base_directory=workspace,
+                should_cancel=cancel.is_set,
+                requested_by=(
+                    "local-server-intervention" if recipe is not None else "local-server"
+                ),
+                cancellation_reason="cancelled from research console",
+                on_record=on_record,
+                checkpoint_directory=Path(workspace) / "checkpoints",
+                resume_from=resume_from,
+                max_rows=input_spec.sample_cap or 32,
+            )
+
+        intervention_outcome = None
+        invocation_counts: dict[str, int] = {}
+        if recipe is not None:
+            execution, intervention_outcome, invocation_counts = executor.run_with_intervention(
+                recipe,
+                execute_current_specification,
+            )
+        else:
+            execution = execute_current_specification()
+        terminal = execution.final_record.state.value
+        intervention_evidence_document: dict[str, Any] | None = None
+        if recipe is not None and intervention_outcome is not None and terminal == "completed":
+            from ..interventions import build_intervention_evidence
+            from ..services.run_service import load_checkpoint
+
+            assert isinstance(baseline_run_key, str)
+            baseline_checkpoint = load_checkpoint(
+                Path(workspace)
+                / "checkpoints"
+                / f"{baseline_run_key.removeprefix('run:')}.checkpoint.json"
+            )
+            intervention_evidence_document = build_intervention_evidence(
+                baseline_run_key=baseline_run_key,
+                intervention_run_key=execution.run_key,
+                baseline_execution=baseline_checkpoint,
+                intervention_execution=execution.outcome,
+                recipe=recipe,
+                outcome=intervention_outcome,
+                invocation_counts=invocation_counts,
+            )
         publish_run_report(workspace, execution)
         receipt = executor.publish_run_artifacts(workspace)
-        terminal = execution.final_record.state.value
         checkpoint_path: str | None = None
         if execution.checkpoint_path:
             checkpoint = Path(execution.checkpoint_path)
@@ -594,6 +680,28 @@ def _run_worker(
             "resource_admission": resource_admission.to_dict(),
             "repository_size_bytes": hub_metadata.repository_size_bytes,
         }
+        if recipe is not None and intervention_outcome is not None:
+            payload_out["baseline_run_key"] = baseline_run_key
+            payload_out["intervention_recipe_fingerprint"] = recipe.fingerprint
+            payload_out["target_invocation_counts"] = invocation_counts
+            if intervention_evidence_document is not None:
+                from ..interventions import publish_intervention_evidence
+
+                evidence_path = publish_intervention_evidence(
+                    workspace, intervention_evidence_document
+                )
+                payload_out["intervention_evidence_path"] = evidence_path.relative_to(
+                    Path(workspace)
+                ).as_posix()
+                payload_out["intervention_summary"] = {
+                    key: intervention_evidence_document[key]
+                    for key in (
+                        "changed_output_fraction",
+                        "task_score_delta",
+                        "latency_delta_percent",
+                        "all_targets_exercised",
+                    )
+                }
         if overhead_report is not None:
             overhead_report["captured"] = executor.timing_summary()
             overhead_report.update(
@@ -736,16 +844,20 @@ def _isolated_job_worker(
 
 
 def _intervention_recipe(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    recipe = _intervention_recipe_object(payload)
+    return recipe.to_dict(), recipe.fingerprint
+
+
+def _intervention_recipe_object(payload: dict[str, Any]) -> Any:
     from ..interventions.recipes import InterventionOperation, InterventionRecipe
 
-    recipe = InterventionRecipe(
+    return InterventionRecipe(
         operation=InterventionOperation(payload["operation"]),
         targets=tuple(payload["targets"]),
         factor=payload.get("factor"),
         bias=payload.get("bias"),
         alternates=tuple(tuple(item) for item in payload.get("alternates", ())),
     )
-    return recipe.to_dict(), recipe.fingerprint
 
 
 def create_app(
@@ -1528,6 +1640,157 @@ def create_app(
                 "Recipe validated; causal execution still requires an adapter "
                 "capability for this model."
             ),
+        )
+
+    @app.get(
+        "/api/runs/{run_key}/intervention-targets",
+        response_model=InterventionTargetsResponse,
+    )
+    def run_intervention_targets(run_key: str) -> InterventionTargetsResponse:
+        stable_run_key = _validated_run_key(run_key)
+        workspace_path, _ = _catalog_entry(stable_run_key)
+        candidate = _safe_discovery_document(workspace_path, stable_run_key)
+        if candidate is None:
+            return InterventionTargetsResponse(
+                run_key=stable_run_key,
+                status="unsupported",
+                reason="a published discovery report is required",
+            )
+        try:
+            from ..discovery import DiscoveryReport
+            from ..interventions import intervention_targets
+
+            payload = candidate.read_bytes()
+            if len(payload) > max_artifact_bytes:
+                raise ValueError
+            report = DiscoveryReport.model_validate_json(payload)
+            targets = tuple(target.to_dict() for target in intervention_targets(report))
+        except Exception:
+            return InterventionTargetsResponse(
+                run_key=stable_run_key,
+                status="unsupported",
+                reason=(
+                    "this model does not expose independently controllable experts; "
+                    "packed or fused experts are not changed by a visual guess"
+                ),
+            )
+        return InterventionTargetsResponse(
+            run_key=stable_run_key,
+            status="available",
+            targets=targets,
+        )
+
+    @app.post("/api/interventions/start", response_model=JobCreatedResponse, status_code=202)
+    def start_intervention(request: InterventionStartRequest) -> JobCreatedResponse:
+        baseline_run_key = _validated_run_key(request.baseline_run_key)
+        workspace_path, entry = _catalog_entry(baseline_run_key)
+        if entry.state != "completed":
+            raise HTTPException(status_code=409, detail="baseline run must be completed")
+        try:
+            from ..discovery import DiscoveryReport
+            from ..interventions import intervention_targets
+            from ..services import load_checkpoint, read_run_metadata
+
+            metadata = read_run_metadata(workspace_path, baseline_run_key)
+            baseline_specification = metadata["specification"]
+            if baseline_specification.get("intervention") is not None:
+                raise ValueError("derived intervention runs cannot be used as baselines")
+            checkpoint = load_checkpoint(
+                workspace_path
+                / "checkpoints"
+                / f"{baseline_run_key.removeprefix('run:')}.checkpoint.json"
+            )
+            if checkpoint.next_batch_index != checkpoint.total_batches or checkpoint.failures:
+                raise ValueError("baseline checkpoint is incomplete")
+            if not checkpoint.results or any(
+                not isinstance(result.result.get("output_digest"), str)
+                for result in checkpoint.results
+            ):
+                raise ValueError("baseline has no comparable output evidence")
+            discovery_path = _safe_discovery_document(workspace_path, baseline_run_key)
+            if discovery_path is None:
+                raise ValueError("baseline has no discovery evidence")
+            report = DiscoveryReport.model_validate_json(discovery_path.read_bytes())
+            inventory = {target.label for target in intervention_targets(report)}
+            requested_targets = tuple(sorted(request.targets))
+            if any(target not in inventory for target in requested_targets):
+                raise ValueError("one or more targets are outside the discovered expert universe")
+            recipe = _intervention_recipe_object(
+                {
+                    "operation": request.operation,
+                    "targets": requested_targets,
+                    "factor": request.factor,
+                }
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "baseline cannot support a real intervention; run one fresh completed "
+                    "baseline with this version and choose a discovered expert target"
+                ),
+            ) from exc
+
+        payload = {
+            **metadata["request"],
+            "baseline_run_key": baseline_run_key,
+            "intervention": recipe.to_dict(),
+            "resume_job_id": None,
+            "measure_capture_overhead": False,
+        }
+        if isolate_model_workers:
+
+            def worker(cancel: Any, progress: Any) -> Any:
+                return _isolated_job_worker(
+                    _run_process_entry,
+                    {
+                        "workspace": bound_workspace,
+                        "request": payload,
+                        "resume_from": None,
+                    },
+                    cancel=cancel,
+                    report_progress=progress,
+                )
+        else:
+
+            def worker(cancel: Any, progress: Any) -> Any:
+                return _run_worker(
+                    bound_workspace,
+                    payload,
+                    cancel=cancel,
+                    report_progress=progress,
+                )
+
+        job_id = jobs.submit("intervention", worker)
+        snapshot = jobs.snapshot(job_id)
+        assert snapshot is not None
+        return JobCreatedResponse(job_id=job_id, kind="intervention", state=snapshot["state"])
+
+    @app.get(
+        "/api/runs/{run_key}/intervention",
+        response_model=InterventionEvidenceResponse,
+    )
+    def run_intervention_evidence(run_key: str) -> InterventionEvidenceResponse:
+        stable_run_key = _validated_run_key(run_key)
+        workspace_path, _ = _catalog_entry(stable_run_key)
+        try:
+            from ..interventions import read_intervention_evidence
+
+            evidence = read_intervention_evidence(
+                workspace_path,
+                stable_run_key,
+                max_bytes=min(max_artifact_bytes, _DEFAULT_ARTIFACT_BYTES),
+            )
+        except Exception:
+            return InterventionEvidenceResponse(
+                run_key=stable_run_key,
+                status="unavailable",
+                reason="paired intervention evidence is unavailable for this run",
+            )
+        return InterventionEvidenceResponse(
+            run_key=stable_run_key,
+            status="available",
+            evidence=evidence,
         )
 
     @app.get("/api/adapters", response_model=AdaptersResponse)

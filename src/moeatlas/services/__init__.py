@@ -54,6 +54,13 @@ from .run_inputs import (
     prepare_input_rows,
     prepare_prompt_rows,
 )
+from .run_metadata import (
+    RUN_METADATA_ARTIFACT_TYPE,
+    RUN_METADATA_SCHEMA_VERSION,
+    RunMetadataError,
+    publish_run_metadata,
+    read_run_metadata,
+)
 from .run_service import (
     CHECKPOINT_MANIFEST_TYPE,
     CHECKPOINT_SCHEMA_VERSION,
@@ -89,6 +96,8 @@ __all__ = [
     "ROW_FAILURE_KINDS",
     "RUN_ENGINE_SCHEMA_VERSION",
     "RUN_INPUTS_SCHEMA_VERSION",
+    "RUN_METADATA_ARTIFACT_TYPE",
+    "RUN_METADATA_SCHEMA_VERSION",
     "RUN_SERVICE_SCHEMA_VERSION",
     "DatasetReadError",
     "RETENTION_SCHEMA_VERSION",
@@ -108,6 +117,7 @@ __all__ = [
     "RunEngineError",
     "RunExecutionReport",
     "RunInputError",
+    "RunMetadataError",
     "RunServiceError",
     "WorkspaceSnapshot",
     "build_initial_record",
@@ -123,10 +133,12 @@ __all__ = [
     "plan_input_batches",
     "prepare_input_rows",
     "prepare_prompt_rows",
+    "publish_run_metadata",
     "project_dataset_rows",
     "publish_run_report",
     "query_runs",
     "read_dataset_rows",
+    "read_run_metadata",
     "record_run_record",
     "register_run",
     "resolve_dataset_location",

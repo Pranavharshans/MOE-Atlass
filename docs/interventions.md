@@ -42,10 +42,33 @@ schema version, recipe fingerprint, operation, targets — as a canonical
 Error stages are fixed: `contract`, `capture`, `apply`, `execute`,
 `restore`. Error messages are safe and never echo input contents.
 
+## Live baseline-derived workflow
+
+The local server can now execute real `ablate` and `scale` recipes against
+independently exposed routed-expert modules. A completed baseline records its
+resolved model and dataset revisions, chosen columns, row budget, generation
+settings, and privacy policy. `POST /api/interventions/start` reconstructs
+that exact request, adds immutable `InterventionLineage`, installs temporary
+expert hooks, executes the same ordered rows, and restores every hook before
+publishing evidence.
+
+The paired `moeatlas.intervention_evidence` artifact records output-digest
+changes, optional normalized exact-match score deltas when a reference column
+was explicitly configured, row latency deltas, per-target invocation counts,
+and restoration status. Routing deltas remain available through the ordinary
+run-comparison heatmap. A target with zero invocations is explicitly marked as
+not exercised and cannot support a causal claim.
+
+The UI exposes only coordinates derived from the baseline discovery report.
+Runs created before reconstruction metadata and output digests were added
+must be repeated once as a fresh baseline.
+
 ## Honest scope
 
-Synthetic modules prove the mechanics locally. Real-model causal claims —
-effect sizes, regret, stability, and replication on actual checkpoints —
-are deferred to the validation ledger until native-output certification;
-unsupported, fused, or quantized paths surface explicit limitations rather
-than silent degradation.
+Local tests prove the mechanics without a model stack. Real checkpoint
+certification remains a VM/GPU validation step. Models whose experts are
+packed into a fused kernel, do not expose independent forward-hook modules,
+or return a non-tensor expert payload are reported as unsupported rather than
+silently approximated. One changed output is not enough to label an expert as
+task-specialized: use scored task rows, negative-control datasets, repeated
+runs, and multiple target controls before making that claim.
