@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass, field
 
 import pytest
 from pydantic import ValidationError
@@ -113,6 +114,67 @@ def test_synthetic_scan_detects_expected_components_and_facts() -> None:
     ]
     assert len(shared_candidates) == 2
     assert {candidate.layer_index for candidate in shared_candidates} == {0, 1}
+
+
+def test_nested_composite_config_uses_text_topology_and_exact_sources() -> None:
+    """Composite configs are read structurally, without a family allowlist."""
+
+    @dataclass
+    class TextConfig:
+        num_experts: int = 4
+        num_experts_per_tok: int = 2
+
+    @dataclass
+    class VisionConfig:
+        # A multimodal config can carry unrelated expert-like fields.
+        num_experts: int = 8
+        num_experts_per_tok: int = 1
+
+    @dataclass
+    class CompositeConfig:
+        text_config: TextConfig = field(default_factory=TextConfig)
+        vision_config: VisionConfig = field(default_factory=VisionConfig)
+
+    class CompositeMoE(SyntheticMoE):
+        def __init__(self) -> None:
+            super().__init__()
+            self.config = CompositeConfig()
+
+    report = scan(CompositeMoE(), _model_manifest())
+
+    assert report.facts.expert_count == 4
+    assert report.facts.routed_top_k == 2
+    assert report.facts.expert_count_source == "config.text_config.num_experts"
+    assert report.facts.routed_top_k_source == "config.text_config.num_experts_per_tok"
+    assert not any("conflicting expert_count" in warning for warning in report.warnings)
+    assert not any("conflicting routed_top_k" in warning for warning in report.warnings)
+
+
+def test_nested_config_conflicts_remain_explicit_within_same_role() -> None:
+    @dataclass
+    class TextConfig:
+        num_experts: int = 4
+        num_local_experts: int = 6
+        num_experts_per_tok: int = 2
+
+    @dataclass
+    class CompositeConfig:
+        text_config: TextConfig = field(default_factory=TextConfig)
+
+    class CompositeModel:
+        config = CompositeConfig()
+
+        def named_modules(self):
+            yield "", self
+
+        def named_parameters(self):
+            return iter(())
+
+    report = scan(CompositeModel(), _model_manifest())
+
+    assert report.facts.expert_count == 6
+    assert report.facts.expert_count_source == "config.text_config.num_local_experts"
+    assert any("conflicting expert_count configuration" in warning for warning in report.warnings)
 
 
 def test_discovery_report_is_json_round_trip_safe_and_deterministic() -> None:

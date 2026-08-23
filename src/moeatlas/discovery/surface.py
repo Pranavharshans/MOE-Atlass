@@ -8,6 +8,7 @@ iterator fails partway through and returning deterministic warnings.
 from __future__ import annotations
 
 import operator
+import re
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -35,6 +36,17 @@ _CONFIG_ALIASES: dict[str, tuple[str, ...]] = {
         "num_shared_experts",
         "shared_expert_count",
     ),
+}
+
+# Composite Hugging Face configurations commonly keep the language-model
+# settings below ``text_config`` (or an equivalent nested object).  Discovery
+# must inspect that structure without knowing a model family, while remaining
+# bounded and side-effect free for arbitrary user supplied objects.
+_MAX_CONFIG_DEPTH = 6
+_MAX_CONFIG_SURFACES = 128
+_CONFIG_ROLE_TOKENS: dict[str, frozenset[str]] = {
+    "text": frozenset({"text", "language", "decoder", "llm", "backbone"}),
+    "vision": frozenset({"vision", "image", "video", "audio", "speech"}),
 }
 
 
@@ -225,6 +237,92 @@ def _surface_value(surface: object, field_name: str) -> object:
     return safe_getattr(surface, field_name)
 
 
+def _structured_items(surface: object) -> tuple[tuple[str, object], ...]:
+    """Return safe child fields for a nested configuration surface.
+
+    Config classes are normally mappings or plain objects with a ``__dict__``.
+    We deliberately do not call arbitrary conversion methods such as
+    ``to_dict``: config inspection should not execute model code.  Private
+    fields are ignored because they are implementation bookkeeping rather than
+    declared model configuration.
+    """
+
+    if isinstance(surface, list | tuple):
+        return tuple(
+            (str(index), value)
+            for index, value in enumerate(surface[:32])
+            if isinstance(value, Mapping | list | tuple)
+            or isinstance(safe_getattr(value, "__dict__"), Mapping)
+        )
+    if isinstance(surface, Mapping):
+        try:
+            items = surface.items()
+        except Exception:
+            return ()
+    else:
+        attributes = safe_getattr(surface, "__dict__")
+        if not isinstance(attributes, Mapping):
+            return ()
+        try:
+            items = attributes.items()
+        except Exception:
+            return ()
+
+    children: list[tuple[str, object]] = []
+    for key, value in items:
+        if not isinstance(key, str) or not key or key.startswith("_"):
+            continue
+        if isinstance(value, Mapping | list | tuple) or isinstance(
+            safe_getattr(value, "__dict__"), Mapping
+        ):
+            children.append((key, value))
+    return tuple(sorted(children, key=lambda item: item[0]))
+
+
+def _iter_config_surfaces(root: object) -> tuple[tuple[str, object], ...]:
+    """Collect bounded nested config objects with deterministic source paths."""
+
+    surfaces: list[tuple[str, object]] = []
+    pending: list[tuple[str, object, int]] = [("config", root, 0)]
+    seen: set[int] = set()
+    while pending and len(surfaces) < _MAX_CONFIG_SURFACES:
+        path, surface, depth = pending.pop(0)
+        identity = id(surface)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        surfaces.append((path, surface))
+        if depth >= _MAX_CONFIG_DEPTH:
+            continue
+        children = _structured_items(surface)
+        pending.extend((f"{path}.{name}", value, depth + 1) for name, value in children)
+    return tuple(surfaces)
+
+
+def _config_role(source: str) -> str:
+    """Classify a nested source by generic modality/stack role."""
+
+    tokens = frozenset(
+        token.lower()
+        for part in source.split(".")[1:-1]
+        for token in re.findall(r"[A-Za-z0-9]+", part)
+    )
+    for role, role_tokens in _CONFIG_ROLE_TOKENS.items():
+        if tokens & role_tokens:
+            return role
+    return "generic"
+
+
+def _source_priority(source: str, alias_index: int) -> tuple[int, int, int, int, str]:
+    """Prefer direct config fields, then text-like composite config fields."""
+
+    parts = source.split(".")
+    surface_rank = 0 if parts[0] == "config" else 1
+    depth = max(0, len(parts) - 2)
+    role_rank = {"text": 0, "generic": 1, "vision": 2}.get(_config_role(source), 3)
+    return surface_rank, depth, role_rank, alias_index, source
+
+
 def _positive_int(value: object) -> int | None:
     if isinstance(value, bool):
         return None
@@ -236,18 +334,30 @@ def _positive_int(value: object) -> int | None:
 
 
 def collect_config(model: object, warnings: list[str]) -> ConfigSnapshot:
-    """Read known fact aliases from config first, then direct model fields."""
+    """Read known fact aliases from nested config, then direct model fields.
+
+    The returned source path is the exact field that supplied each value, for
+    example ``config.text_config.num_experts``.  Nested modality-specific
+    configs are considered independently, so unrelated ``vision_config``
+    values do not create a false conflict with the language-model topology.
+    """
 
     config = safe_getattr(model, "config")
-    surfaces: list[tuple[str, object]] = []
+    surfaces: list[tuple[str, object, int]] = []
     if config is not _MISSING and config is not None:
-        surfaces.append(("config", config))
-    surfaces.append(("model", model))
+        surfaces.extend(
+            (surface_name, surface, 0)
+            for surface_name, surface in _iter_config_surfaces(config)
+        )
+    # Direct model aliases remain supported for lightweight wrappers.  We do
+    # not recurse through the model object because that would traverse module
+    # internals and potentially inspect arbitrary runtime state.
+    surfaces.append(("model", model, 1))
 
-    observations: dict[str, list[tuple[str, int]]] = defaultdict(list)
+    observations: dict[str, list[tuple[str, int, int]]] = defaultdict(list)
     for semantic_name, aliases in _CONFIG_ALIASES.items():
-        for surface_name, surface in surfaces:
-            for alias in aliases:
+        for surface_name, surface, _surface_rank in surfaces:
+            for alias_index, alias in enumerate(aliases):
                 raw_value = _surface_value(surface, alias)
                 if raw_value is _MISSING or raw_value is None:
                     continue
@@ -257,7 +367,9 @@ def collect_config(model: object, warnings: list[str]) -> ConfigSnapshot:
                         f"{surface_name}.{alias} is not a positive integer; field ignored"
                     )
                     continue
-                observations[semantic_name].append((f"{surface_name}.{alias}", normalized))
+                observations[semantic_name].append(
+                    (f"{surface_name}.{alias}", normalized, alias_index)
+                )
 
     selected: dict[str, tuple[int | None, str | None]] = {}
     for semantic_name in _CONFIG_ALIASES:
@@ -265,11 +377,20 @@ def collect_config(model: object, warnings: list[str]) -> ConfigSnapshot:
         if not values:
             selected[semantic_name] = (None, None)
             continue
-        unique_values = sorted({value for _, value in values})
+
+        ordered = sorted(
+            values,
+            key=lambda item: _source_priority(item[0], item[2]),
+        )
+        selected_role = _config_role(ordered[0][0])
+        role_values = [item for item in ordered if _config_role(item[0]) == selected_role]
+        unique_values = sorted({value for _, value, _ in role_values})
         if len(unique_values) > 1:
-            formatted = ", ".join(f"{source}={value}" for source, value in values)
+            formatted = ", ".join(
+                f"{source}={value}" for source, value, _ in role_values
+            )
             warnings.append(f"conflicting {semantic_name} configuration fields: {formatted}")
-        selected[semantic_name] = (values[0][1], values[0][0])
+        selected[semantic_name] = (ordered[0][1], ordered[0][0])
 
     return ConfigSnapshot(
         expert_count=selected["expert_count"][0],
