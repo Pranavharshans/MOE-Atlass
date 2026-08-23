@@ -309,6 +309,33 @@ def test_hf_hub_dataset_streams_a_bounded_prefix_with_explicit_options(
     ]
 
 
+def test_hf_hub_dataset_preview_does_not_reject_a_larger_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def load_dataset(**_kwargs: object):
+        return iter(
+            [
+                {"text": "first"},
+                {"text": "second"},
+                {"text": "third"},
+            ]
+        )
+
+    fake_datasets = types.ModuleType("datasets")
+    fake_datasets.load_dataset = load_dataset  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "datasets", fake_datasets)
+    spec = DatasetInputSpec(
+        format=DatasetFormat.HF_DATASETS,
+        location="org/benchmark",
+        revision="a" * 40,
+        allow_downloads=True,
+    )
+
+    rows = read_dataset_rows(spec, base_directory=tmp_path, max_rows=1)
+
+    assert [row.values["text"] for row in rows] == ["first"]
+
+
 def test_hf_hub_requires_explicit_download_opt_in(tmp_path: Path) -> None:
     spec = DatasetInputSpec(format=DatasetFormat.HF_DATASETS, location="org/benchmark")
     with pytest.raises(DatasetReadError, match="allow_downloads=True") as caught:

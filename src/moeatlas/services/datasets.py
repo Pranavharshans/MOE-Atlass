@@ -350,9 +350,11 @@ def _load_hf_rows(
     try:
         dataset = load_dataset(**kwargs)
         rows: list[dict[str, Any]] = []
-        for number, value in enumerate(
-            itertools.islice(iter(dataset), max_rows + 1), start=1
-        ):
+        # Hub datasets are streamed as a bounded prefix. Unlike local files,
+        # the remote dataset may be arbitrarily larger than the execution
+        # sample cap; reading one sentinel row and treating it as a budget
+        # violation makes every normal multi-row Hub dataset fail preview.
+        for number, value in enumerate(itertools.islice(iter(dataset), max_rows), start=1):
             if not isinstance(value, Mapping) or not all(type(key) is str for key in value):
                 raise DatasetReadError(
                     "format", f"HF dataset row {number} is not a string-keyed object"
