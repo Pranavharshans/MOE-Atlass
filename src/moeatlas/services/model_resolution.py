@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -58,6 +59,27 @@ class ModelResolutionError(RuntimeError):
             self.__cause__ = cause
 
 
+@dataclass(frozen=True, slots=True)
+class HubRevisionMetadata:
+    """Bounded public Hub evidence used before checkpoint download."""
+
+    resolved_revision: str
+    evidence_source: str
+    repository_size_bytes: int | None = None
+
+    def __post_init__(self) -> None:
+        if _COMMIT.fullmatch(self.resolved_revision) is None:
+            raise ValueError("resolved_revision must be an immutable commit")
+        if not isinstance(self.evidence_source, str) or not self.evidence_source:
+            raise ValueError("evidence_source must be a non-empty string")
+        if self.repository_size_bytes is not None and (
+            type(self.repository_size_bytes) is not int
+            or isinstance(self.repository_size_bytes, bool)
+            or self.repository_size_bytes < 0
+        ):
+            raise ValueError("repository_size_bytes must be non-negative or null")
+
+
 def _validated_identifier(value: object, field_name: str) -> str:
     if type(value) is not str or not value or value != value.strip():
         raise ModelResolutionError("identity", f"{field_name} is invalid")
@@ -91,7 +113,7 @@ def _fetch_revision(
     revision: str,
     *,
     timeout: float = _DEFAULT_TIMEOUT_SECONDS,
-) -> tuple[str, str]:
+) -> HubRevisionMetadata:
     if kind not in {"models", "datasets"}:
         raise ValueError("kind must be models or datasets")
     url = _api_url(kind, identifier, revision)
@@ -111,9 +133,7 @@ def _fetch_revision(
             "request", "the public Hub revision could not be resolved", cause=exc
         ) from exc
     except (OSError, URLError, TimeoutError) as exc:
-        raise ModelResolutionError(
-            "request", "the public Hub is unavailable", cause=exc
-        ) from exc
+        raise ModelResolutionError("request", "the public Hub is unavailable", cause=exc) from exc
     if len(body) > _MAX_RESPONSE_BYTES:
         raise ModelResolutionError(
             "response", "the public Hub response exceeded the metadata budget"
@@ -130,10 +150,45 @@ def _fetch_revision(
         )
     resolved = payload.get("sha")
     if type(resolved) is not str or _COMMIT.fullmatch(resolved) is None:
-        raise ModelResolutionError(
-            "response", "the public Hub did not return an immutable commit"
+        raise ModelResolutionError("response", "the public Hub did not return an immutable commit")
+    repository_size = payload.get("usedStorage")
+    if type(repository_size) is not int or isinstance(repository_size, bool) or repository_size < 0:
+        repository_size = None
+        siblings = payload.get("siblings")
+        if isinstance(siblings, list):
+            sizes = [
+                entry.get("size")
+                for entry in siblings
+                if isinstance(entry, dict)
+                and type(entry.get("size")) is int
+                and not isinstance(entry.get("size"), bool)
+                and entry.get("size") >= 0
+            ]
+            if sizes:
+                repository_size = sum(sizes)
+    return HubRevisionMetadata(
+        resolved_revision=resolved,
+        evidence_source=url,
+        repository_size_bytes=repository_size,
+    )
+
+
+def resolve_huggingface_revision_metadata(
+    identifier: str,
+    requested_revision: str = "main",
+    *,
+    kind: str = "models",
+) -> HubRevisionMetadata:
+    """Resolve immutable identity plus a bounded repository-size estimate."""
+
+    stable_identifier = _validated_identifier(identifier, "repository identifier")
+    stable_revision = _validated_revision(requested_revision, "requested revision")
+    if _COMMIT.fullmatch(stable_revision):
+        return HubRevisionMetadata(
+            resolved_revision=stable_revision,
+            evidence_source="caller supplied immutable commit",
         )
-    return resolved, url
+    return _fetch_revision(kind, stable_identifier, stable_revision)
 
 
 def resolve_huggingface_revision(
@@ -144,11 +199,8 @@ def resolve_huggingface_revision(
 ) -> tuple[str, str]:
     """Resolve one model/dataset revision to a lowercase 40-character commit."""
 
-    stable_identifier = _validated_identifier(identifier, "repository identifier")
-    stable_revision = _validated_revision(requested_revision, "requested revision")
-    if _COMMIT.fullmatch(stable_revision):
-        return stable_revision, "caller supplied immutable commit"
-    return _fetch_revision(kind, stable_identifier, stable_revision)
+    metadata = resolve_huggingface_revision_metadata(identifier, requested_revision, kind=kind)
+    return metadata.resolved_revision, metadata.evidence_source
 
 
 def resolve_huggingface_plan(
@@ -162,6 +214,28 @@ def resolve_huggingface_plan(
 ) -> LoadingPlan:
     """Build a fully resolved, download-enabled Hugging Face ``LoadingPlan``."""
 
+    plan, _ = resolve_huggingface_plan_with_metadata(
+        model_id,
+        requested_revision,
+        device=device,
+        dtype=dtype,
+        trust_remote_code=trust_remote_code,
+        allow_downloads=allow_downloads,
+    )
+    return plan
+
+
+def resolve_huggingface_plan_with_metadata(
+    model_id: str,
+    requested_revision: str = "main",
+    *,
+    device: str = DeviceKind.AUTO.value,
+    dtype: str = DTypePolicy.PRESERVE.value,
+    trust_remote_code: bool = False,
+    allow_downloads: bool = True,
+) -> tuple[LoadingPlan, HubRevisionMetadata]:
+    """Build one loading plan and retain its pre-download size evidence."""
+
     stable_model_id = _validated_identifier(model_id, "model identifier")
     stable_requested = _validated_revision(requested_revision, "model revision")
     if type(allow_downloads) is not bool or type(trust_remote_code) is not bool:
@@ -174,9 +248,7 @@ def resolve_huggingface_plan(
         source = HuggingFaceSource(
             model_id=stable_model_id,
             requested_revision=stable_requested,
-            tokenizer=TokenizerRequest(
-                identifier=stable_model_id, inherit_model_revision=True
-            ),
+            tokenizer=TokenizerRequest(identifier=stable_model_id, inherit_model_revision=True),
             download_policy=DownloadPolicy.ALLOW_DOWNLOADS
             if allow_downloads
             else DownloadPolicy.OFFLINE,
@@ -199,26 +271,26 @@ def resolve_huggingface_plan(
             "offline loading requires an immutable model commit revision",
         )
 
-    resolved_revision, evidence_source = resolve_huggingface_revision(
+    metadata = resolve_huggingface_revision_metadata(
         stable_model_id, stable_requested, kind="models"
     )
     evidence = ImmutableRevisionEvidence(
         kind=RevisionEvidenceKind.GIT_COMMIT,
-        digest=resolved_revision,
-        evidence_source=evidence_source,
+        digest=metadata.resolved_revision,
+        evidence_source=metadata.evidence_source,
     )
     resolution = ResolvedSource(
         source_type=source.source_type,
         model_id=source.model_id,
         requested_model_revision=source.requested_revision,
-        resolved_model_revision=resolved_revision,
+        resolved_model_revision=metadata.resolved_revision,
         resolved_model_revision_evidence=evidence,
         requested_tokenizer_revision=source.requested_revision,
-        resolved_tokenizer_revision=resolved_revision,
+        resolved_tokenizer_revision=metadata.resolved_revision,
         resolved_tokenizer_revision_evidence=evidence,
         resolution_method="huggingface_public_api",
     )
-    return LoadingPlan(source=source, config=config, resolution=resolution)
+    return LoadingPlan(source=source, config=config, resolution=resolution), metadata
 
 
 def resolve_huggingface_dataset_revision(
@@ -244,8 +316,11 @@ def resolve_huggingface_dataset_revision(
 __all__ = [
     "HUB_RESOLUTION_SCHEMA_VERSION",
     "HUGGINGFACE_API_ORIGIN",
+    "HubRevisionMetadata",
     "ModelResolutionError",
     "resolve_huggingface_dataset_revision",
     "resolve_huggingface_plan",
+    "resolve_huggingface_plan_with_metadata",
     "resolve_huggingface_revision",
+    "resolve_huggingface_revision_metadata",
 ]

@@ -15,6 +15,7 @@ from moeatlas.services import initialize_workspace
 from moeatlas.services.model_resolution import (
     resolve_huggingface_plan,
     resolve_huggingface_revision,
+    resolve_huggingface_revision_metadata,
 )
 
 
@@ -78,6 +79,27 @@ def test_hub_branch_resolution_uses_bounded_fixed_metadata_request(monkeypatch) 
     assert commit == "b" * 40
     assert source.endswith("/datasets/org/data?revision=main")
     assert seen["timeout"] == 20.0
+
+
+def test_hub_resolution_retains_bounded_repository_size(monkeypatch) -> None:
+    import moeatlas.services.model_resolution as resolution
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self, limit: int) -> bytes:
+            del limit
+            return ('{"sha":"' + "c" * 40 + '","usedStorage":123456789}').encode()
+
+    monkeypatch.setattr(resolution, "urlopen", lambda request, timeout: Response())
+
+    metadata = resolve_huggingface_revision_metadata("org/model", "main")
+    assert metadata.resolved_revision == "c" * 40
+    assert metadata.repository_size_bytes == 123456789
 
 
 def test_json_job_routes_and_intervention_recipe_are_live(tmp_path: Path, monkeypatch) -> None:

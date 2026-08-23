@@ -88,6 +88,18 @@ from .mixtral_routing import MixtralRoutingDecoder
 from .model_loader import load_huggingface, load_local
 from .prompt_prefill import MixtralPromptPrefillError, run_mixtral_prompt_prefill
 from .qwen3_5_routing import Qwen3_5RoutingDecoder
+from .resource_admission import (
+    RESOURCE_ADMISSION_SCHEMA_VERSION,
+    ResourceAdmission,
+    ResourceAdmissionError,
+    ResourceAdmissionStatus,
+    ResourceSnapshot,
+    admit_huggingface_model,
+    cached_snapshot_bytes,
+    estimate_hub_checkpoint_bytes,
+    evaluate_resource_admission,
+    observe_resource_snapshot,
+)
 from .routing import RoutingCaptureError, RoutingCaptureSession, RoutingCaptureTarget
 from .routing_forward import (
     MixtralRoutingForwardResult,
@@ -149,6 +161,16 @@ __all__ = [
     "RuntimeLoadError",
     "RuntimeObservation",
     "RuntimeValidationError",
+    "RESOURCE_ADMISSION_SCHEMA_VERSION",
+    "ResourceAdmission",
+    "ResourceAdmissionError",
+    "ResourceAdmissionStatus",
+    "ResourceSnapshot",
+    "admit_huggingface_model",
+    "cached_snapshot_bytes",
+    "estimate_hub_checkpoint_bytes",
+    "evaluate_resource_admission",
+    "observe_resource_snapshot",
     "DEPENDENCY_PREFLIGHT_SCHEMA_VERSION",
     "DependencyCheck",
     "DependencyPreflightError",

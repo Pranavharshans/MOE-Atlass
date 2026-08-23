@@ -174,8 +174,8 @@ def _discovery_worker(
 ) -> Any:
     """Resolve, load, and scan one model without touching the browser thread."""
 
-    from ..runtime import classify_capture_support, load_and_scan
-    from ..services.model_resolution import resolve_huggingface_plan
+    from ..runtime import admit_huggingface_model, classify_capture_support, load_and_scan
+    from ..services.model_resolution import resolve_huggingface_plan_with_metadata
     from .jobs import JobOutcome
 
     if cancel.is_set():
@@ -186,13 +186,28 @@ def _discovery_worker(
         total=1,
         message="Resolving immutable Hub revision",
     )
-    plan = resolve_huggingface_plan(
+    plan, hub_metadata = resolve_huggingface_plan_with_metadata(
         payload["model_id"],
         payload.get("model_revision", "main"),
         device=payload.get("device", "auto"),
         dtype=payload.get("dtype", "preserve"),
         trust_remote_code=bool(payload.get("trust_remote_code", False)),
         allow_downloads=bool(payload.get("allow_downloads", True)),
+    )
+    report_progress(
+        stage="resources",
+        completed=0,
+        total=1,
+        message="Checking cache disk and accelerator capacity",
+    )
+    resource_admission = admit_huggingface_model(
+        plan.source.model_id,
+        plan.resolution.resolved_model_revision
+        if plan.resolution
+        else plan.source.requested_revision,
+        device=payload.get("device", "auto"),
+        dtype=payload.get("dtype", "preserve"),
+        allow_network=bool(payload.get("allow_downloads", True)),
     )
     report_progress(stage="load", completed=0, total=1, message="Loading model and tokenizer")
     if cancel.is_set():
@@ -212,6 +227,8 @@ def _discovery_worker(
             else None,
             "plan_id": plan.plan_id,
             "security_warnings": list(plan.security_warnings),
+            "resource_admission": resource_admission.to_dict(),
+            "repository_size_bytes": hub_metadata.repository_size_bytes,
             "capture_support": capture_support.to_dict(),
             "report": _json_document(discovery),
         },
@@ -246,10 +263,11 @@ def _run_worker(
         RunSpecification,
         TokenTextPolicy,
     )
+    from ..runtime import admit_huggingface_model
     from ..services.datasets import read_dataset_rows
     from ..services.model_resolution import (
         resolve_huggingface_dataset_revision,
-        resolve_huggingface_plan,
+        resolve_huggingface_plan_with_metadata,
     )
     from ..services.run_service import execute_specification, publish_run_report
     from .jobs import JobOutcome
@@ -262,7 +280,7 @@ def _run_worker(
         total=2,
         message="Resolving model and dataset revisions",
     )
-    plan = resolve_huggingface_plan(
+    plan, hub_metadata = resolve_huggingface_plan_with_metadata(
         payload["model_id"],
         payload.get("model_revision", "main"),
         device=payload.get("device", "auto"),
@@ -271,6 +289,21 @@ def _run_worker(
         allow_downloads=bool(payload.get("allow_downloads", True)),
     )
     allow_downloads = bool(payload.get("allow_downloads", True))
+    report_progress(
+        stage="resources",
+        completed=0,
+        total=1,
+        message="Checking cache disk and accelerator capacity",
+    )
+    resource_admission = admit_huggingface_model(
+        plan.source.model_id,
+        plan.resolution.resolved_model_revision
+        if plan.resolution
+        else plan.source.requested_revision,
+        device=payload.get("device", "auto"),
+        dtype=payload.get("dtype", "preserve"),
+        allow_network=allow_downloads,
+    )
     dataset_revision = resolve_huggingface_dataset_revision(
         payload["dataset_id"],
         payload.get("dataset_revision", "main"),
@@ -558,6 +591,8 @@ def _run_worker(
             "plan_id": plan.plan_id,
             "resolved_model_revision": model_provenance.model_revision,
             "resolved_dataset_revision": dataset_revision,
+            "resource_admission": resource_admission.to_dict(),
+            "repository_size_bytes": hub_metadata.repository_size_bytes,
         }
         if overhead_report is not None:
             overhead_report["captured"] = executor.timing_summary()
