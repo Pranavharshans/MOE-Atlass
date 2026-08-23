@@ -317,6 +317,18 @@ def test_huggingface_uses_resolved_revisions_audited_kwargs_and_observed_manifes
         result.manifest.provenance.metadata["model_revision_evidence_source"]
         == "sha256:" + hashlib.sha256(b"fake hub resolver").hexdigest()
     )
+    assert result.manifest.provenance.metadata["parameter_dtype_inventory"] == {
+        "audit_version": "1.0",
+        "status": "unavailable",
+        "reason": "model exposes no named parameters",
+        "tensor_count": 0,
+        "unsized_tensor_count": 0,
+        "element_count": 0,
+        "logical_bytes": 0,
+        "mixed_dtype": False,
+        "dtype_rows": [],
+        "inventory_digest": None,
+    }
     result.close()
     result.close()
     assert close_log == ["model", "tokenizer", "config"]

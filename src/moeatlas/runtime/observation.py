@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any
 
@@ -19,6 +21,8 @@ from .contracts import ModelObservationError
 
 _GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _MISSING = object()
+_PARAMETER_AUDIT_VERSION = "1.0"
+_DEFAULT_PARAMETER_TENSOR_BUDGET = 1_000_000
 
 
 def _device_string(value: Any) -> str | None:
@@ -127,6 +131,160 @@ def observed_dtype(model: object) -> tuple[DType, tuple[str, ...]]:
     if name in mapping:
         return mapping[name], ()
     return DType.UNKNOWN, ("loaded model dtype was unavailable or not a known core DType",)
+
+
+def observed_parameter_dtype_inventory(
+    model: object,
+    *,
+    max_parameter_tensors: int = _DEFAULT_PARAMETER_TENSOR_BUDGET,
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Audit every named parameter without retaining names or tensor objects.
+
+    The returned inventory is deliberately aggregate-only.  A digest binds it
+    to the exact ordered ``(name, dtype, numel, element_size)`` observations,
+    while the public rows expose enough evidence to detect mixed or silently
+    unconverted parameter pools without publishing model internals.
+
+    ``logical_bytes`` is the tensor-level ``numel * element_size`` total.  It
+    is not advertised as allocated GPU memory because wrapper parameters and
+    compressed storage formats can have different physical representations.
+    """
+
+    if type(max_parameter_tensors) is not int or isinstance(
+        max_parameter_tensors, bool
+    ):
+        raise TypeError("max_parameter_tensors must be an exact integer")
+    if max_parameter_tensors <= 0:
+        raise ValueError("max_parameter_tensors must be positive")
+    try:
+        named_parameters = getattr(model, "named_parameters", None)
+    except Exception as exc:
+        raise ModelObservationError("could not inspect model named_parameters") from exc
+    if not callable(named_parameters):
+        return (
+            {
+                "audit_version": _PARAMETER_AUDIT_VERSION,
+                "status": "unavailable",
+                "reason": "model does not expose callable named_parameters",
+                "tensor_count": 0,
+                "unsized_tensor_count": 0,
+                "element_count": 0,
+                "logical_bytes": 0,
+                "mixed_dtype": False,
+                "dtype_rows": [],
+                "inventory_digest": None,
+            },
+            ("parameter dtype inventory is unavailable",),
+        )
+
+    buckets: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
+    digest_rows: list[tuple[str, str, int, int]] = []
+    unsized_tensor_count = 0
+    try:
+        parameters = named_parameters()
+        for index, entry in enumerate(parameters):
+            if index >= max_parameter_tensors:
+                raise ModelObservationError(
+                    "parameter dtype inventory exceeded the tensor budget"
+                )
+            if type(entry) is not tuple or len(entry) != 2:
+                raise ModelObservationError(
+                    "model named_parameters yielded an invalid entry"
+                )
+            name, parameter = entry
+            if type(name) is not str or not name:
+                raise ModelObservationError(
+                    "model named_parameters yielded an invalid name"
+                )
+            dtype = _dtype_name(getattr(parameter, "dtype", None)) or "unknown"
+            numel_function = getattr(parameter, "numel", None)
+            element_size_function = getattr(parameter, "element_size", None)
+            if not callable(numel_function) or not callable(element_size_function):
+                numel = -1
+                element_size = -1
+            else:
+                numel = numel_function()
+                element_size = element_size_function()
+                if (
+                    type(numel) is not int
+                    or isinstance(numel, bool)
+                    or numel < 0
+                    or type(element_size) is not int
+                    or isinstance(element_size, bool)
+                    or element_size <= 0
+                ):
+                    numel = -1
+                    element_size = -1
+            bucket = buckets[dtype]
+            bucket[0] += 1
+            if numel >= 0 and element_size > 0:
+                bucket[1] += numel
+                bucket[2] += numel * element_size
+                bucket[3] += 1
+            else:
+                unsized_tensor_count += 1
+            digest_rows.append((name, dtype, numel, element_size))
+    except ModelObservationError:
+        raise
+    except Exception as exc:
+        raise ModelObservationError("could not audit model parameter dtypes") from exc
+
+    if not digest_rows:
+        return (
+            {
+                "audit_version": _PARAMETER_AUDIT_VERSION,
+                "status": "unavailable",
+                "reason": "model exposes no named parameters",
+                "tensor_count": 0,
+                "unsized_tensor_count": 0,
+                "element_count": 0,
+                "logical_bytes": 0,
+                "mixed_dtype": False,
+                "dtype_rows": [],
+                "inventory_digest": None,
+            },
+            ("parameter dtype inventory is unavailable",),
+        )
+
+    dtype_rows = [
+        {
+            "dtype": dtype,
+            "tensor_count": values[0],
+            "sized_tensor_count": values[3],
+            "element_count": values[1],
+            "logical_bytes": values[2],
+        }
+        for dtype, values in sorted(buckets.items())
+    ]
+    digest_payload = json.dumps(
+        digest_rows,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    inventory = {
+        "audit_version": _PARAMETER_AUDIT_VERSION,
+        "status": "partial" if unsized_tensor_count else "available",
+        "reason": (
+            "one or more parameters did not expose exact size metadata"
+            if unsized_tensor_count
+            else None
+        ),
+        "tensor_count": len(digest_rows),
+        "unsized_tensor_count": unsized_tensor_count,
+        "element_count": sum(row["element_count"] for row in dtype_rows),
+        "logical_bytes": sum(row["logical_bytes"] for row in dtype_rows),
+        "mixed_dtype": len(dtype_rows) > 1,
+        "dtype_rows": dtype_rows,
+        "inventory_digest": f"sha256:{hashlib.sha256(digest_payload).hexdigest()}",
+    }
+    warning_rows = []
+    if inventory["mixed_dtype"]:
+        warning_rows.append("loaded model parameters use multiple dtypes")
+    if unsized_tensor_count:
+        warning_rows.append("parameter dtype inventory has incomplete size metadata")
+    warnings = tuple(warning_rows)
+    return inventory, warnings
 
 
 def _config_field(config: object, name: str) -> Any:
@@ -277,6 +435,7 @@ __all__ = [
     "observed_architecture",
     "observed_device_map",
     "observed_dtype",
+    "observed_parameter_dtype_inventory",
     "requested_device_warnings",
     "requested_dtype_warnings",
     "safe_evidence_source",

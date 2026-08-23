@@ -42,6 +42,7 @@ from .observation import (
     observed_architecture,
     observed_device_map,
     observed_dtype,
+    observed_parameter_dtype_inventory,
     requested_device_warnings,
     requested_dtype_warnings,
     safe_evidence_source,
@@ -431,6 +432,9 @@ def _load_transformers(
         model_config_object, config_warnings = model_config(model, loaded_config)
         architecture, architecture_warnings = observed_architecture(model, model_config_object)
         observed_model_dtype, dtype_warnings = observed_dtype(model)
+        parameter_dtype_inventory, parameter_dtype_warnings = (
+            observed_parameter_dtype_inventory(model)
+        )
         observed_map, device_warnings = observed_device_map(model)
         if isinstance(plan.source, HuggingFaceSource):
             validate_exposed_commits(model, model_config_object, tokenizer, resolution)
@@ -441,6 +445,7 @@ def _load_transformers(
                         *config_warnings,
                         *architecture_warnings,
                         *dtype_warnings,
+                        *parameter_dtype_warnings,
                         *requested_dtype_warnings(plan, observed_model_dtype),
                         *device_warnings,
                         *requested_device_warnings(plan, observed_map),
@@ -459,6 +464,7 @@ def _load_transformers(
             "remote_code_compatibility_bridges": tuple(
                 bridge.name for bridge in compatibility_bridges
             ),
+            "parameter_dtype_inventory": parameter_dtype_inventory,
         }
         artifacts = RuntimeArtifacts(
             model=model,
