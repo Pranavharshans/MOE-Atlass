@@ -36,6 +36,7 @@ from moeatlas.runtime import (
     RuntimeLoadError,
     RuntimeValidationError,
     load_and_scan,
+    load_scan_and_observe,
 )
 from moeatlas.runtime.model_loader import _CleanupStack
 
@@ -143,6 +144,48 @@ def test_load_and_scan_dispatches_exact_plan_and_loaded_identity(
     assert loaded.closed is True
     assert loaded.model is None
     assert loaded.tokenizer is None
+
+
+def test_load_scan_and_observe_uses_live_model_before_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan(SourceKind.HUGGINGFACE)
+    model = SyntheticMoE()
+    loaded = _loaded(plan, model=model, cleanup=lambda: None)
+
+    monkeypatch.setattr(runtime_scan, "load_huggingface", lambda received: loaded)
+
+    report, observation = load_scan_and_observe(
+        plan,
+        lambda observed_model, observed_report: (
+            observed_model is model,
+            observed_report.model_key,
+            loaded.closed,
+        ),
+    )
+
+    assert observation == (True, report.model_key, False)
+    assert loaded.closed is True
+    assert loaded.model is None
+
+
+def test_load_scan_and_observe_closes_after_observer_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan(SourceKind.HUGGINGFACE)
+    loaded = _loaded(plan, cleanup=lambda: None)
+    failure = RuntimeError("observer failed")
+
+    monkeypatch.setattr(runtime_scan, "load_huggingface", lambda received: loaded)
+
+    def fail(_model: object, _report: DiscoveryReport) -> None:
+        raise failure
+
+    with pytest.raises(RuntimeError) as raised:
+        load_scan_and_observe(plan, fail)
+
+    assert raised.value is failure
+    assert loaded.closed is True
 
 
 @pytest.mark.parametrize("source_type", [SourceKind.INSTANCE, SourceKind.CUSTOM])

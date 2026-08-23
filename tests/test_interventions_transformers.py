@@ -6,6 +6,8 @@ import pytest
 
 from moeatlas.core import ComponentKind
 from moeatlas.interventions import (
+    ExpertBackendDiscoveryStatus,
+    ExpertExecutionMode,
     ExpertWeightLayout,
     InterventionOperation,
     InterventionRecipe,
@@ -13,6 +15,8 @@ from moeatlas.interventions import (
     TransformersExpertInterventionCapability,
     TransformersInterventionError,
     classify_intervention_capability,
+    discover_huggingface_expert_backends,
+    inspect_intervention_capability,
     intervention_targets,
     run_intervention,
 )
@@ -144,9 +148,7 @@ def test_packed_experts_are_separate_from_unresolved_execution_backend() -> None
     packed = packed.model_copy(
         update={
             "components": [
-                component.model_copy(
-                    update={"tensor_shapes": {"gate_up_proj": [4, 16, 8]}}
-                )
+                component.model_copy(update={"tensor_shapes": {"gate_up_proj": [4, 16, 8]}})
                 if component.component_key == packed_container.component_key
                 else component
                 for component in packed.components
@@ -186,3 +188,82 @@ def test_opaque_expert_storage_is_not_mislabeled_as_fused() -> None:
     assert capability.tier is InterventionSupportTier.OPAQUE_EXPERTS
     assert capability.weight_layout is ExpertWeightLayout.OPAQUE
     assert capability.fused_backend is None
+
+
+def test_huggingface_backend_discovery_preserves_each_submodel_scope() -> None:
+    model = _model()
+    model.get_experts_implementation = lambda: {  # type: ignore[attr-defined]
+        "": "grouped_mm",
+        "language_model": "sonicmoe",
+        "vision_model": None,
+    }
+
+    evidence = discover_huggingface_expert_backends(model)
+
+    assert evidence.status is ExpertBackendDiscoveryStatus.OBSERVED
+    assert [item.scope for item in evidence.backends] == [
+        "",
+        "language_model",
+        "vision_model",
+    ]
+    assert evidence.backends[0].mode is ExpertExecutionMode.GROUPED_MATMUL
+    assert evidence.backends[0].fused is False
+    assert evidence.backends[1].mode is ExpertExecutionMode.FUSED
+    assert evidence.backends[1].fused is True
+    assert evidence.backends[2].mode is ExpertExecutionMode.UNRESOLVED
+    assert evidence.backends[2].fused is None
+
+
+def test_unknown_huggingface_backend_is_not_guessed_as_fused() -> None:
+    model = _model()
+    model.get_experts_implementation = lambda: {"": "vendor_kernel"}  # type: ignore[attr-defined]
+
+    evidence = discover_huggingface_expert_backends(model)
+
+    assert evidence.status is ExpertBackendDiscoveryStatus.OBSERVED
+    assert len(evidence.backends) == 1
+    assert evidence.backends[0].mode is ExpertExecutionMode.CUSTOM
+    assert evidence.backends[0].fused is None
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [[], {"": 7}, {7: "eager"}, {"": "\n"}, {"text": "eager", " text ": "eager"}],
+)
+def test_invalid_huggingface_backend_snapshot_fails_closed(snapshot: object) -> None:
+    model = _model()
+    model.get_experts_implementation = lambda: snapshot  # type: ignore[attr-defined]
+
+    evidence = discover_huggingface_expert_backends(model)
+
+    assert evidence.status is ExpertBackendDiscoveryStatus.INVALID
+    assert evidence.backends == ()
+
+
+def test_missing_huggingface_backend_interface_is_nonfatal() -> None:
+    evidence = discover_huggingface_expert_backends(_model())
+
+    assert evidence.status is ExpertBackendDiscoveryStatus.UNAVAILABLE
+    assert evidence.backends == ()
+
+
+def test_live_capability_combines_static_layout_and_backend_evidence() -> None:
+    model = _model()
+    model.get_experts_implementation = lambda: {"": "grouped_mm"}  # type: ignore[attr-defined]
+
+    capability = inspect_intervention_capability(scan_report(model), model)
+
+    assert capability.weight_layout is ExpertWeightLayout.INDEXED_MODULES
+    assert capability.execution_backend == "grouped_mm"
+    assert capability.fused_backend is False
+    assert capability.backend_discovery is not None
+    assert capability.backend_discovery.status is ExpertBackendDiscoveryStatus.OBSERVED
+    assert capability.to_dict()["execution_backends"] == [
+        {
+            "scope": "",
+            "implementation": "grouped_mm",
+            "mode": "grouped_matmul",
+            "fused": False,
+            "source": "model.get_experts_implementation",
+        }
+    ]

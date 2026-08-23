@@ -184,7 +184,7 @@ def _discovery_worker(
         RuntimeQualificationError,
         admit_huggingface_model,
         classify_capture_support,
-        load_and_scan,
+        load_scan_and_observe,
         qualify_huggingface_runtime,
     )
     from ..services.model_resolution import resolve_huggingface_plan_with_metadata
@@ -235,11 +235,14 @@ def _discovery_worker(
     report_progress(stage="load", completed=0, total=1, message="Loading model and tokenizer")
     if cancel.is_set():
         return JobOutcome({"status": "cancelled", "plan_id": plan.plan_id}, "cancelled")
-    discovery = load_and_scan(plan)
-    from ..interventions import classify_intervention_capability
+    from ..interventions import inspect_intervention_capability
+
+    discovery, intervention_capability = load_scan_and_observe(
+        plan,
+        lambda model, report: inspect_intervention_capability(report, model),
+    )
 
     capture_support = classify_capture_support(discovery)
-    intervention_capability = classify_intervention_capability(discovery)
     report_progress(
         stage="discover", completed=1, total=1, message="Static architecture scan complete"
     )

@@ -114,7 +114,7 @@ from .routing_forward import (
     run_qwen3_5_routing_forward,
     run_routing_forward,
 )
-from .scan import load_and_scan
+from .scan import load_and_scan, load_scan_and_observe
 
 __all__ = [
     "CleanupCallback",
@@ -209,6 +209,7 @@ __all__ = [
     "load_custom",
     "load_huggingface",
     "load_and_scan",
+    "load_scan_and_observe",
     "load_instance",
     "load_local",
 ]

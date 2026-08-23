@@ -9,7 +9,7 @@ existing discovery scanner remains read-only and STRUCTURE-only.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeVar
 
 from ..core import CapabilityLabel, ModelManifest
 from ..discovery import DiscoveryReport
@@ -25,6 +25,8 @@ from .contracts import (
     _attach_pending_cleanup,
 )
 from .model_loader import load_huggingface, load_local
+
+_Observation = TypeVar("_Observation")
 
 
 def _select_loader(plan: LoadingPlan) -> Callable[[LoadingPlan], LoadedModel]:
@@ -98,15 +100,21 @@ def _close_after_success(loaded: Any) -> None:
         raise cleanup_error
 
 
-def load_and_scan(plan: LoadingPlan) -> DiscoveryReport:
-    """Load a resolved HF/local source once, then perform static discovery.
+def load_scan_and_observe(
+    plan: LoadingPlan,
+    observer: Callable[[object, DiscoveryReport], _Observation],
+) -> tuple[DiscoveryReport, _Observation]:
+    """Load once, scan, and run one read-only observer before cleanup.
 
     The exact ``plan`` object is handed to the selected loader.  The loaded
-    model and manifest are handed unchanged to ``discovery.scan``.  Cleanup is
-    attempted for every scan outcome, including ``BaseException`` control-flow
-    exits; a cleanup failure never replaces a scan error or publishes a report.
+    model and manifest are handed unchanged to ``discovery.scan`` and then to
+    the supplied observer with the validated report. Cleanup is attempted for
+    every outcome, including ``BaseException`` control-flow exits; a cleanup
+    failure never replaces a scan/observer error or publishes partial evidence.
     """
 
+    if not callable(observer):
+        raise TypeError("observer must be callable")
     loader = _select_loader(plan)
     loaded = loader(plan)
     try:
@@ -115,11 +123,19 @@ def load_and_scan(plan: LoadingPlan) -> DiscoveryReport:
         if not isinstance(manifest, ModelManifest):
             raise RuntimeValidationError("runtime loader did not return a ModelManifest")
         report = _validate_report(discovery_scan(model, manifest), manifest)
+        observation = observer(model, report)
     except BaseException as body_error:
         _close_after_body_error(loaded, body_error)
         raise
     _close_after_success(loaded)
+    return report, observation
+
+
+def load_and_scan(plan: LoadingPlan) -> DiscoveryReport:
+    """Load a resolved HF/local source once, scan it, then release the runtime."""
+
+    report, _observation = load_scan_and_observe(plan, lambda _model, _report: None)
     return report
 
 
-__all__ = ["load_and_scan"]
+__all__ = ["load_and_scan", "load_scan_and_observe"]

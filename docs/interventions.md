@@ -63,6 +63,14 @@ The UI exposes only coordinates derived from the baseline discovery report.
 Runs created before reconstruction metadata and output digests were added
 must be repeated once as a fresh baseline.
 
+During discovery, MoEAtlas also reads the loaded model's public Hugging Face
+`get_experts_implementation()` snapshot before releasing model memory. Each
+top-level or nested-model scope is retained separately. Built-in `eager`,
+`batched_mm`, and `grouped_mm` declarations are distinguished from the fused
+`sonicmoe` backend; accelerated or custom registrations remain unresolved
+unless their semantics are known. The package uses duck typing and does not
+import Transformers during ordinary model-free use.
+
 ## Honest scope
 
 Local tests prove the mechanics without a model stack. Real checkpoint
@@ -70,7 +78,9 @@ certification remains a VM/GPU validation step. Models whose expert weights
 are packed into tensors are reported separately from models whose execution
 backend is fused. Static discovery reports the weight layout but leaves the
 execution backend unresolved; it never treats packed storage as proof of
-kernel fusion. Models that do not expose independent forward-hook modules or
+kernel fusion. A backend name is declaration evidence, not proof that a
+particular forward exercised it; that requires the runtime handshake. Models
+that do not expose independent forward-hook modules or
 return a non-tensor expert payload are reported as unsupported rather than
 silently approximated. One changed output is not enough to label an expert as
 task-specialized: use scored task rows, negative-control datasets, repeated

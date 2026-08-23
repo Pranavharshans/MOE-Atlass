@@ -11,7 +11,8 @@ reported as successfully ablated without runtime evidence.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any
 
@@ -45,6 +46,65 @@ class ExpertWeightLayout(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
+class ExpertExecutionMode(str, Enum):
+    """Observed execution strategy declared by a loaded expert backend."""
+
+    REFERENCE = "reference"
+    BATCHED_MATMUL = "batched_matmul"
+    GROUPED_MATMUL = "grouped_matmul"
+    ACCELERATED = "accelerated"
+    FUSED = "fused"
+    CUSTOM = "custom"
+    UNRESOLVED = "unresolved"
+
+
+class ExpertBackendDiscoveryStatus(str, Enum):
+    """Whether a loaded model supplied trustworthy backend declarations."""
+
+    OBSERVED = "observed"
+    UNRESOLVED = "unresolved"
+    UNAVAILABLE = "unavailable"
+    INVALID = "invalid"
+
+
+@dataclass(frozen=True, slots=True)
+class ExpertBackendEvidence:
+    """One bounded Hugging Face model/submodel backend declaration."""
+
+    scope: str
+    implementation: str | None
+    mode: ExpertExecutionMode
+    fused: bool | None
+    source: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scope": self.scope,
+            "implementation": self.implementation,
+            "mode": self.mode.value,
+            "fused": self.fused,
+            "source": self.source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ExpertBackendDiscovery:
+    """Non-fatal result of inspecting the optional Transformers interface."""
+
+    status: ExpertBackendDiscoveryStatus
+    backends: tuple[ExpertBackendEvidence, ...]
+    reason: str
+    source: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status.value,
+            "backends": [item.to_dict() for item in self.backends],
+            "reason": self.reason,
+            "source": self.source,
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class InterventionCapabilityReport:
     """Model-neutral, evidence-bound intervention support declaration."""
@@ -57,6 +117,8 @@ class InterventionCapabilityReport:
     weight_layout: ExpertWeightLayout
     execution_backend: str | None = None
     fused_backend: bool | None = None
+    execution_backends: tuple[ExpertBackendEvidence, ...] = ()
+    backend_discovery: ExpertBackendDiscovery | None = None
 
     @property
     def live_supported(self) -> bool:
@@ -73,6 +135,10 @@ class InterventionCapabilityReport:
             "weight_layout": self.weight_layout.value,
             "execution_backend": self.execution_backend,
             "fused_backend": self.fused_backend,
+            "execution_backends": [item.to_dict() for item in self.execution_backends],
+            "backend_discovery": (
+                self.backend_discovery.to_dict() if self.backend_discovery is not None else None
+            ),
         }
 
 
@@ -191,6 +257,174 @@ def classify_intervention_capability(report: DiscoveryReport) -> InterventionCap
         target_format=None,
         reason="no routed expert intervention targets were discovered",
         weight_layout=ExpertWeightLayout.UNAVAILABLE,
+    )
+
+
+_KNOWN_HUGGINGFACE_BACKENDS: dict[str, tuple[ExpertExecutionMode, bool | None]] = {
+    "eager": (ExpertExecutionMode.REFERENCE, False),
+    "batched_mm": (ExpertExecutionMode.BATCHED_MATMUL, False),
+    "grouped_mm": (ExpertExecutionMode.GROUPED_MATMUL, False),
+    # DeepGEMM accelerates grouped expert matrix multiplications. It is not
+    # sufficient evidence that routing, activation, and combination are one
+    # fused operation.
+    "deepgemm": (ExpertExecutionMode.ACCELERATED, None),
+    # SonicMoE is registered by Transformers as a fused expert implementation.
+    "sonicmoe": (ExpertExecutionMode.FUSED, True),
+}
+
+
+def _safe_backend_text(value: str, *, field: str, allow_empty: bool) -> str:
+    if len(value) > 128 or any(ord(character) < 32 for character in value):
+        raise TransformersInterventionError(f"Hugging Face expert backend {field} is malformed")
+    normalized = value.strip()
+    if not allow_empty and not normalized:
+        raise TransformersInterventionError(f"Hugging Face expert backend {field} is malformed")
+    return normalized
+
+
+def discover_huggingface_expert_backends(
+    model: object,
+) -> ExpertBackendDiscovery:
+    """Read the loaded model's public Transformers expert-backend snapshot.
+
+    The implementation is deliberately duck-typed: importing MoEAtlas never
+    imports Transformers, while real ``PreTrainedModel`` instances can expose
+    ``get_experts_implementation()`` at runtime. Unknown registered backends
+    remain custom and their fusion status remains unresolved.
+    """
+
+    try:
+        getter = getattr(model, "get_experts_implementation", None)
+    except Exception:
+        return ExpertBackendDiscovery(
+            status=ExpertBackendDiscoveryStatus.INVALID,
+            backends=(),
+            reason="loaded model expert backend interface could not be inspected",
+            source=None,
+        )
+    if not callable(getter):
+        return ExpertBackendDiscovery(
+            status=ExpertBackendDiscoveryStatus.UNAVAILABLE,
+            backends=(),
+            reason="loaded model does not expose the Hugging Face expert backend interface",
+            source=None,
+        )
+    try:
+        snapshot = getter()
+    except Exception:
+        return ExpertBackendDiscovery(
+            status=ExpertBackendDiscoveryStatus.INVALID,
+            backends=(),
+            reason="loaded model expert backend snapshot failed",
+            source="model.get_experts_implementation",
+        )
+    if not isinstance(snapshot, Mapping) or len(snapshot) > 64:
+        return ExpertBackendDiscovery(
+            status=ExpertBackendDiscoveryStatus.INVALID,
+            backends=(),
+            reason="loaded model returned an invalid expert backend snapshot",
+            source="model.get_experts_implementation",
+        )
+    evidence: list[ExpertBackendEvidence] = []
+    scopes: set[str] = set()
+    for raw_scope, raw_implementation in snapshot.items():
+        if type(raw_scope) is not str or (
+            raw_implementation is not None and type(raw_implementation) is not str
+        ):
+            return ExpertBackendDiscovery(
+                status=ExpertBackendDiscoveryStatus.INVALID,
+                backends=(),
+                reason="loaded model returned an invalid expert backend snapshot",
+                source="model.get_experts_implementation",
+            )
+        try:
+            scope = _safe_backend_text(raw_scope, field="scope", allow_empty=True)
+        except TransformersInterventionError:
+            return ExpertBackendDiscovery(
+                status=ExpertBackendDiscoveryStatus.INVALID,
+                backends=(),
+                reason="loaded model returned an invalid expert backend scope",
+                source="model.get_experts_implementation",
+            )
+        if scope in scopes:
+            return ExpertBackendDiscovery(
+                status=ExpertBackendDiscoveryStatus.INVALID,
+                backends=(),
+                reason="loaded model returned duplicate expert backend scopes",
+                source="model.get_experts_implementation",
+            )
+        scopes.add(scope)
+        if raw_implementation is None:
+            implementation = None
+            mode = ExpertExecutionMode.UNRESOLVED
+            fused = None
+        else:
+            try:
+                implementation = _safe_backend_text(
+                    raw_implementation, field="implementation", allow_empty=False
+                )
+            except TransformersInterventionError:
+                return ExpertBackendDiscovery(
+                    status=ExpertBackendDiscoveryStatus.INVALID,
+                    backends=(),
+                    reason="loaded model returned an invalid expert backend implementation",
+                    source="model.get_experts_implementation",
+                )
+            mode, fused = _KNOWN_HUGGINGFACE_BACKENDS.get(
+                implementation,
+                (ExpertExecutionMode.CUSTOM, None),
+            )
+        evidence.append(
+            ExpertBackendEvidence(
+                scope=scope,
+                implementation=implementation,
+                mode=mode,
+                fused=fused,
+                source="model.get_experts_implementation",
+            )
+        )
+    backends = tuple(sorted(evidence, key=lambda item: item.scope))
+    status = (
+        ExpertBackendDiscoveryStatus.OBSERVED
+        if any(item.implementation is not None for item in backends)
+        else ExpertBackendDiscoveryStatus.UNRESOLVED
+    )
+    reason = (
+        "loaded model declared its active Hugging Face expert backend"
+        if status is ExpertBackendDiscoveryStatus.OBSERVED
+        else "loaded model exposed the interface but no active expert backend"
+    )
+    return ExpertBackendDiscovery(
+        status=status,
+        backends=backends,
+        reason=reason,
+        source="model.get_experts_implementation",
+    )
+
+
+def inspect_intervention_capability(
+    report: DiscoveryReport,
+    model: object,
+) -> InterventionCapabilityReport:
+    """Combine static storage evidence with the live HF backend declaration."""
+
+    capability = classify_intervention_capability(report)
+    backend_discovery = discover_huggingface_expert_backends(model)
+    backends = backend_discovery.backends
+    implementations = {item.implementation for item in backends if item.implementation is not None}
+    execution_backend = None
+    if len(implementations) == 1:
+        execution_backend = next(iter(implementations))
+    elif len(implementations) > 1:
+        execution_backend = "mixed"
+    fused_values = {item.fused for item in backends if item.fused is not None}
+    fused_backend = next(iter(fused_values)) if len(fused_values) == 1 else None
+    return replace(
+        capability,
+        execution_backend=execution_backend,
+        fused_backend=fused_backend,
+        execution_backends=backends,
+        backend_discovery=backend_discovery,
     )
 
 
@@ -319,6 +553,10 @@ def parse_intervention_target(label: str) -> tuple[int, int]:
 
 
 __all__ = [
+    "ExpertBackendDiscovery",
+    "ExpertBackendDiscoveryStatus",
+    "ExpertBackendEvidence",
+    "ExpertExecutionMode",
     "ExpertInterventionTarget",
     "ExpertWeightLayout",
     "InterventionCapabilityReport",
@@ -327,5 +565,7 @@ __all__ = [
     "TransformersInterventionError",
     "intervention_targets",
     "classify_intervention_capability",
+    "discover_huggingface_expert_backends",
+    "inspect_intervention_capability",
     "parse_intervention_target",
 ]
