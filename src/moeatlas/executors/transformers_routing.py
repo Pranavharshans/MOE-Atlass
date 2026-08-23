@@ -22,8 +22,11 @@ steps.
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -173,6 +176,7 @@ class TransformersRoutingExecutor:
         *,
         store_token_text: bool = False,
         capture_expert_activity: bool = False,
+        capture_routing: bool = True,
     ) -> None:
         if not isinstance(plan, LoadingPlan):
             raise TypeError("plan must be a validated LoadingPlan")
@@ -180,9 +184,12 @@ class TransformersRoutingExecutor:
             raise TypeError("store_token_text must be an exact bool")
         if type(capture_expert_activity) is not bool:
             raise TypeError("capture_expert_activity must be an exact bool")
+        if type(capture_routing) is not bool:
+            raise TypeError("capture_routing must be an exact bool")
         self._plan = plan
         self._store_token_text = store_token_text
         self._capture_expert_activity = capture_expert_activity
+        self._capture_routing = capture_routing
         self._loaded: LoadedModel | None = None
         self._report: DiscoveryReport | None = None
         self._targets: tuple[StructuredRouterTarget, ...] = ()
@@ -191,6 +198,7 @@ class TransformersRoutingExecutor:
         self._expert_events: list[ExpertEvent] = []
         self._notes: set[str] = set()
         self._outputs: list[object] = []
+        self._forward_timings_ms: list[float] = []
         self._run_key: str | None = None
         self._published = False
 
@@ -207,6 +215,33 @@ class TransformersRoutingExecutor:
         if self._token_events:
             raise RuntimeError("the run key cannot be rebound after rows executed")
         self._run_key = run_key
+
+    @property
+    def capture_routing(self) -> bool:
+        """Whether this executor installs routing/activity capture hooks."""
+
+        return self._capture_routing
+
+    def timing_summary(self) -> dict[str, Any]:
+        """Return forward-only timing evidence collected by this executor.
+
+        Timings deliberately exclude model loading, tokenization, persistence,
+        and browser/server overhead.  GPU adapters synchronize around the
+        forward when CUDA is available so asynchronous kernels are not
+        reported as artificially cheap host calls.
+        """
+
+        values = tuple(self._forward_timings_ms)
+        total = sum(values)
+        return {
+            "scope": "model_forward",
+            "capture_routing": self._capture_routing,
+            "successful_rows": len(values),
+            "total_ms": total,
+            "mean_ms": total / len(values) if values else None,
+            "min_ms": min(values) if values else None,
+            "max_ms": max(values) if values else None,
+        }
 
     def _ensure_loaded(self) -> LoadedModel:
         if self._loaded is not None:
@@ -234,6 +269,55 @@ class TransformersRoutingExecutor:
         self._report = report
         return loaded
 
+    @staticmethod
+    def _synchronize_cuda(model: object) -> None:
+        """Synchronize only when the loaded model is running on CUDA."""
+
+        torch = sys.modules.get("torch")
+        if torch is None:
+            return
+        device = _model_input_device(model)
+        device_type = getattr(device, "type", None)
+        if device_type is None:
+            device_type = str(device).split(":", 1)[0] if device is not None else ""
+        if device_type != "cuda":
+            return
+        cuda = getattr(torch, "cuda", None)
+        synchronize = getattr(cuda, "synchronize", None)
+        if callable(synchronize):
+            synchronize(device)
+
+    def _timed_forward(self, model: object, forward: Callable[[], object]) -> object:
+        """Run one forward and retain a successful model-forward duration."""
+
+        self._synchronize_cuda(model)
+        started = time.perf_counter()
+        succeeded = False
+        try:
+            output = forward()
+            succeeded = True
+            return output
+        finally:
+            self._synchronize_cuda(model)
+            if succeeded:
+                self._forward_timings_ms.append((time.perf_counter() - started) * 1000.0)
+
+    @staticmethod
+    def _native_forward(model: object, encoding: Mapping[str, object]) -> object:
+        """Execute one model forward without installing any capture hooks."""
+
+        torch = sys.modules.get("torch")
+        if torch is None:
+            context = nullcontext()
+        else:
+            inference_mode = getattr(torch, "inference_mode", None)
+            context = inference_mode() if callable(inference_mode) else nullcontext()
+        with context:
+            call = getattr(model, "__call__", None)
+            if not callable(call):
+                raise TypeError("loaded model is not callable")
+            return call(**dict(encoding))
+
     def __call__(
         self, *, row_index: int, batch_index: int, values: Mapping[str, Any]
     ) -> dict[str, Any]:
@@ -248,7 +332,6 @@ class TransformersRoutingExecutor:
 
         loaded = self._ensure_loaded()
         assert self._report is not None
-        targets = structured_router_targets(self._report)
         tokenizer = loaded.tokenizer
         if tokenizer is None or not callable(tokenizer):
             raise RowFailure("dependency", _TOKENIZER_MISSING_FAILURE)
@@ -261,41 +344,59 @@ class TransformersRoutingExecutor:
             raise
         except Exception:
             raise RowFailure("execution", "model input placement failed") from None
-        max_events = len(token_events) * len(targets) * targets[0].routed_top_k
-        config = getattr(loaded.model, "config", None)
         try:
-            if self._capture_expert_activity:
-                try:
-                    result = run_structured_expert_forward(
-                        loaded.model,
-                        self._report,
-                        token_events,
-                        dict(encoding),
-                        max_events=max_events,
-                        max_expert_events=max_events,
-                        config=config,
-                    )
-                except (ProbeResolutionError, StructuredCaptureError):
-                    # Routing remains valid evidence when a family dispatches
-                    # experts through an opaque fused kernel.  Retry the
-                    # routing-only capture and carry the limitation as a
-                    # capability note rather than claiming activations.
-                    result = run_structured_routing_forward(
-                        loaded.model,
-                        self._report,
-                        token_events,
-                        dict(encoding),
-                        max_events=max_events,
-                        config=config,
-                    )
-                    result = StructuredRoutingForwardResult(
-                        output=result.output,
-                        token_events=result.token_events,
-                        routing_events=result.routing_events,
-                        capability_notes=(*result.capability_notes, "expert_activity_unavailable"),
-                    )
-            else:
-                result = run_structured_routing_forward(
+            if not self._capture_routing:
+                self._timed_forward(
+                    loaded.model,
+                    lambda: self._native_forward(loaded.model, encoding),
+                )
+                return {
+                    "schema_version": EXECUTOR_RESULT_SCHEMA_VERSION,
+                    "capture_routing": False,
+                    "prompt": prompt,
+                    "sequence_id": sequence_id,
+                    "token_count": len(token_events),
+                }
+
+            targets = structured_router_targets(self._report)
+            max_events = len(token_events) * len(targets) * targets[0].routed_top_k
+            config = getattr(loaded.model, "config", None)
+
+            def captured_forward() -> StructuredRoutingForwardResult:
+                if self._capture_expert_activity:
+                    try:
+                        return run_structured_expert_forward(
+                            loaded.model,
+                            self._report,
+                            token_events,
+                            dict(encoding),
+                            max_events=max_events,
+                            max_expert_events=max_events,
+                            config=config,
+                        )
+                    except (ProbeResolutionError, StructuredCaptureError):
+                        # Routing remains valid evidence when a family dispatches
+                        # experts through an opaque fused kernel.  Retry the
+                        # routing-only capture and carry the limitation as a
+                        # capability note rather than claiming activations.
+                        result = run_structured_routing_forward(
+                            loaded.model,
+                            self._report,
+                            token_events,
+                            dict(encoding),
+                            max_events=max_events,
+                            config=config,
+                        )
+                        return StructuredRoutingForwardResult(
+                            output=result.output,
+                            token_events=result.token_events,
+                            routing_events=result.routing_events,
+                            capability_notes=(
+                                *result.capability_notes,
+                                "expert_activity_unavailable",
+                            ),
+                        )
+                return run_structured_routing_forward(
                     loaded.model,
                     self._report,
                     token_events,
@@ -303,6 +404,8 @@ class TransformersRoutingExecutor:
                     max_events=max_events,
                     config=config,
                 )
+
+            result = self._timed_forward(loaded.model, captured_forward)
         except StructuredCaptureError:
             raise
         except (KeyboardInterrupt, SystemExit):

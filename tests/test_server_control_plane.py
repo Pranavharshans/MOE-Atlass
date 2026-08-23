@@ -105,6 +105,66 @@ def test_json_job_routes_and_intervention_recipe_are_live(tmp_path: Path, monkey
     assert recipe.json()["fingerprint"].startswith("sha256:")
 
 
+def test_optional_overhead_can_be_skipped_without_cancelling_capture(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    initialize_workspace(workspace)
+
+    import moeatlas.server.app as app_module
+
+    def fake_run(
+        workspace,
+        payload,
+        *,
+        cancel,
+        report_progress,
+        resume_from=None,
+        skip_overhead=None,
+    ):
+        del workspace, payload, resume_from
+        assert skip_overhead is not None
+        report_progress(stage="overhead", completed=0, total=1, message="synthetic overhead")
+        while not skip_overhead():
+            if cancel.is_set():
+                return JobOutcome({"status": "cancelled"}, "cancelled")
+            time.sleep(0.005)
+        report_progress(stage="execute", completed=1, total=1, message="synthetic capture")
+        return JobOutcome(
+            {"status": "completed", "capture_overhead": {"status": "skipped"}},
+            "completed",
+        )
+
+    monkeypatch.setattr(app_module, "_run_worker", fake_run)
+    client = TestClient(create_app(workspace))
+    created = client.post(
+        "/api/runs/start",
+        json={
+            "model_id": "org/model",
+            "dataset_id": "org/data",
+            "measure_capture_overhead": True,
+        },
+    )
+    assert created.status_code == 202
+    job_id = created.json()["job_id"]
+    for _ in range(50):
+        status = client.get(f"/api/jobs/{job_id}")
+        if status.json()["progress"]["stage"] == "overhead":
+            break
+        time.sleep(0.01)
+    skipped = client.post(f"/api/jobs/{job_id}/skip-overhead")
+    assert skipped.status_code == 200
+    for _ in range(100):
+        status = client.get(f"/api/jobs/{job_id}")
+        if status.json()["state"] not in {"queued", "running"}:
+            break
+        time.sleep(0.01)
+    assert status.json()["state"] == "completed"
+    assert status.json()["result"]["capture_overhead"]["status"] == "skipped"
+
+
 def test_export_honors_persisted_privacy_policy(tmp_path: Path) -> None:
     from moeatlas.runs.specs import PrivacyPolicy, RunSpecification
     from moeatlas.server.app import _publish_run_policy

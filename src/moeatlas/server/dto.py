@@ -154,6 +154,7 @@ class RunStartRequest(_WireModel):
     trust_remote_code: bool = False
     allow_downloads: bool = True
     capture_expert_activity: bool = True
+    measure_capture_overhead: bool = False
     resume_job_id: str | None = Field(default=None, max_length=100)
 
 

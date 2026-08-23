@@ -39,6 +39,7 @@ type RunDraft = {
   maxNewTokens: string;
   tokenTextPolicy: "redacted" | "stored";
   allowExport: boolean;
+  measureCaptureOverhead: boolean;
 };
 
 type HubSuggestion = {
@@ -86,6 +87,7 @@ const DEFAULT_RUN: RunDraft = {
   maxNewTokens: "128",
   tokenTextPolicy: "redacted",
   allowExport: true,
+  measureCaptureOverhead: false,
 };
 
 const NAVIGATION: Array<{ id: NavigationItem; label: string; icon: Icon }> = [
@@ -600,6 +602,9 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
   const batchError = validatePositiveSetting(run.batchSize, "Batch size", 4096);
   const tokenError = validatePositiveSetting(run.maxNewTokens, "Max new tokens", 1_000_000);
   const ready = !modelError && !datasetError && !sampleError && !batchError && !tokenError;
+  const running = job?.state === "queued" || job?.state === "running";
+  const overhead = (job?.result?.capture_overhead ?? null) as Record<string, unknown> | null;
+  const overheadRunning = running && job?.progress.stage === "overhead";
 
   function update(field: keyof RunDraft, value: string | boolean) {
     setRun((current) => ({ ...current, [field]: value } as RunDraft));
@@ -630,6 +635,7 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
         trust_remote_code: sources.trustRemoteCode,
         allow_downloads: true,
         capture_expert_activity: true,
+        measure_capture_overhead: run.measureCaptureOverhead,
         resume_job_id: resumeJobId,
       });
       window.localStorage.setItem("moeatlas-run-job", created.job_id);
@@ -641,7 +647,15 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
     }
   }
 
-  const running = job?.state === "queued" || job?.state === "running";
+  async function skipOverhead() {
+    if (!jobId || !overheadRunning) return;
+    try {
+      await postJson(`/api/jobs/${encodeURIComponent(jobId)}/skip-overhead`, {});
+    } catch {
+      setRequestError("The optional overhead pass could not be skipped.");
+    }
+  }
+
   const canResume = job?.state === "cancelled" && typeof job.result?.checkpoint_path === "string";
 
   if (modelError || datasetError) {
@@ -652,7 +666,7 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
 
   return (
     <div className="space-y-6">
-      <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Run / Capture</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Set the capture budget.</h1><p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">This starts a real server-side model run over the selected dataset. Progress, checkpoints, routing, and activation evidence remain tied to the resulting run key.</p></div><div className="research-header-meta"><StatusDot tone={job?.state === "failed" ? "warn" : ready ? "good" : "quiet"} /><span>{job?.state === "running" ? `${job.progress.stage} · ${job.progress.completed}/${job.progress.total ?? "?"}` : job?.state === "completed" ? "Capture complete" : job?.state === "cancelled" ? "Capture cancelled" : ready ? "Ready to run" : "Invalid budget"}</span></div></header>
+      <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Run / Capture</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Set the capture budget.</h1><p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">This starts a real server-side model run over the selected dataset. Progress, checkpoints, routing, and activation evidence remain tied to the resulting run key.</p></div><div className="research-header-meta"><StatusDot tone={job?.state === "failed" ? "warn" : ready ? "good" : "quiet"} /><span>{job?.state === "running" ? job.progress.stage === "overhead" ? `Native baseline · ${job.progress.completed}/${job.progress.total ?? "?"}` : `${job.progress.stage} · ${job.progress.completed}/${job.progress.total ?? "?"}` : job?.state === "completed" ? "Capture complete" : job?.state === "cancelled" ? "Capture cancelled" : ready ? "Ready to run" : "Invalid budget"}</span></div></header>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <main className="space-y-5">
           <section className="research-card">
@@ -670,9 +684,13 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
             <div className="mt-6"><span className="field-label">Token text</span><div className="mt-2 inline-flex rounded-xl border border-line bg-ink p-1" role="group" aria-label="Token text policy"><button type="button" className={`runner-tab ${run.tokenTextPolicy === "redacted" ? "runner-tab-active" : ""}`} aria-pressed={run.tokenTextPolicy === "redacted"} onClick={() => update("tokenTextPolicy", "redacted")}>Redacted (default)</button><button type="button" className={`runner-tab ${run.tokenTextPolicy === "stored" ? "runner-tab-active" : ""}`} aria-pressed={run.tokenTextPolicy === "stored"} onClick={() => update("tokenTextPolicy", "stored")}>Store token text</button></div></div>
             <div className="mt-5"><label className="toggle-row"><input className="check-control" type="checkbox" checked={run.allowExport} onChange={(event) => update("allowExport", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Allow artifact export</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Persist this decision with the run; disabled exports cannot be re-enabled from the UI.</span></span></label></div>
           </section>
+          <section className="research-card">
+            <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Optional benchmark lane</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Measure capture overhead</h2></div><Pulse size={19} className="text-cyan" /></div>
+            <label className="toggle-row mt-5"><input className="check-control" type="checkbox" checked={run.measureCaptureOverhead} disabled={running || starting} onChange={(event) => update("measureCaptureOverhead", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Run native baseline first</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Adds a forward-only pass with routing capture disabled. It is off by default and can be skipped while running.</span></span></label>
+          </section>
           <section className="research-card"><div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Worker boundary</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Execution handoff</h2></div><WifiHigh size={19} className="text-cyan" /></div><div className="mt-5 flex flex-wrap items-center gap-3"><span className="runtime-pill"><StatusDot />Bound server</span><span className="text-xs text-muted">The server resolves its own accelerator and model cache.</span></div><p className="mt-4 text-xs leading-5 text-muted">Use the same UI on a local machine or inside a provider VM. Only the server process needs access to the model and dataset; no SSH or path selector is involved.</p></section>
         </main>
-        <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Run contract</p><GitBranch size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Model</dt><dd>{sources.modelId}</dd></div><div><dt>Dataset</dt><dd>{sources.datasetId}</dd></div><div><dt>Prompt</dt><dd>{sources.promptColumn}</dd></div><div><dt>Rows</dt><dd>{run.sampleCap}</dd></div><div><dt>Batch</dt><dd>{run.batchSize}</dd></div><div><dt>Mode</dt><dd>{run.mode.replace("_", " ")}</dd></div><div><dt>Tokens</dt><dd>{run.tokenTextPolicy}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Live state</p></div><p className="mt-4 text-xs leading-5 text-muted">{job?.progress.message ?? "The executor will resolve the model, stream bounded dataset rows, and publish immutable evidence."}</p>{job?.progress.total ? <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, (job.progress.completed / job.progress.total) * 100)}%` }} /></div> : null}</section><button type="button" className="button-primary w-full justify-between" disabled={!ready || starting || running} onClick={() => void startRun()}>{starting ? "Starting capture…" : running ? "Capture running…" : job?.state === "completed" ? "Capture complete" : "Start capture"}<ArrowRight size={16} weight="bold" /></button>{jobId && running ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void postJson(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {})}>Cancel capture <XCircle size={16} /></button> : null}{canResume && jobId ? <button type="button" className="button-secondary w-full justify-between" disabled={starting} onClick={() => void startRun(jobId)}>Resume from checkpoint <ArrowRight size={16} /></button> : null}{job?.state === "completed" ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("runs")}>Inspect evidence <ArrowRight size={16} /></button> : null}{requestError || job?.error ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError ?? job?.error}</p> : null}</aside>
+        <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Run contract</p><GitBranch size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Model</dt><dd>{sources.modelId}</dd></div><div><dt>Dataset</dt><dd>{sources.datasetId}</dd></div><div><dt>Prompt</dt><dd>{sources.promptColumn}</dd></div><div><dt>Rows</dt><dd>{run.sampleCap}</dd></div><div><dt>Batch</dt><dd>{run.batchSize}</dd></div><div><dt>Mode</dt><dd>{run.mode.replace("_", " ")}</dd></div><div><dt>Tokens</dt><dd>{run.tokenTextPolicy}</dd></div><div><dt>Overhead</dt><dd>{run.measureCaptureOverhead ? "optional native pass" : "off"}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Live state</p></div><p className="mt-4 text-xs leading-5 text-muted">{job?.progress.message ?? "The executor will resolve the model, stream bounded dataset rows, and publish immutable evidence."}</p>{job?.progress.total ? <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, (job.progress.completed / job.progress.total) * 100)}%` }} /></div> : null}</section>{overhead ? <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Overhead result</p></div><dl className="contract-list mt-4"><div><dt>Status</dt><dd>{String(overhead.status ?? "unknown")}</dd></div><div><dt>Native forward</dt><dd>{typeof (overhead.native as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.native as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Captured forward</dt><dd>{typeof (overhead.captured as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.captured as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Delta</dt><dd>{typeof overhead.delta_percent === "number" ? `${(overhead.delta_percent as number).toFixed(2)}%` : "—"}</dd></div></dl></section> : null}<button type="button" className="button-primary w-full justify-between" disabled={!ready || starting || running} onClick={() => void startRun()}>{starting ? "Starting capture…" : running ? "Capture running…" : job?.state === "completed" ? "Capture complete" : "Start capture"}<ArrowRight size={16} weight="bold" /></button>{jobId && overheadRunning ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void skipOverhead()}>Skip overhead measurement <XCircle size={16} /></button> : null}{jobId && running ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void postJson(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {})}>{overheadRunning ? "Cancel study" : "Cancel capture"} <XCircle size={16} /></button> : null}{canResume && jobId ? <button type="button" className="button-secondary w-full justify-between" disabled={starting} onClick={() => void startRun(jobId)}>Resume from checkpoint <ArrowRight size={16} /></button> : null}{job?.state === "completed" ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("runs")}>Inspect evidence <ArrowRight size={16} /></button> : null}{requestError || job?.error ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError ?? job?.error}</p> : null}</aside>
       </div>
     </div>
   );

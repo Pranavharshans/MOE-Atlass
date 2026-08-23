@@ -50,6 +50,7 @@ class _Job:
     result: dict[str, Any] | None = None
     error: str | None = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    optional_skip_event: threading.Event | None = None
     future: Future[Any] | None = None
 
 
@@ -63,13 +64,21 @@ class JobManager:
         self._lock = threading.RLock()
         self._jobs: dict[str, _Job] = {}
 
-    def submit(self, kind: str, worker: JobWorker) -> str:
+    def submit(
+        self,
+        kind: str,
+        worker: JobWorker,
+        *,
+        optional_skip_event: threading.Event | None = None,
+    ) -> str:
         if type(kind) is not str or not kind or len(kind) > 64:
             raise ValueError("job kind must be a bounded non-empty string")
         if not callable(worker):
             raise TypeError("job worker must be callable")
+        if optional_skip_event is not None and not isinstance(optional_skip_event, threading.Event):
+            raise TypeError("optional_skip_event must be a threading.Event or None")
         job_id = f"job:{uuid.uuid4().hex}"
-        job = _Job(job_id=job_id, kind=kind)
+        job = _Job(job_id=job_id, kind=kind, optional_skip_event=optional_skip_event)
         with self._lock:
             self._jobs[job_id] = job
             job.future = self._executor.submit(self._run, job, worker)
@@ -173,6 +182,24 @@ class JobManager:
                 **job.progress,
                 "stage": "cancelling",
                 "message": "Cancellation requested; waiting for the current safe boundary",
+            }
+            return True
+
+    def skip_optional(self, job_id: str) -> bool:
+        """Skip a running optional phase without cancelling the parent job."""
+
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.optional_skip_event is None:
+                return False
+            if job.state in {"completed", "cancelled", "failed"}:
+                return False
+            if job.progress.get("stage") != "overhead":
+                return False
+            job.optional_skip_event.set()
+            job.progress = {
+                **job.progress,
+                "message": "Optional phase skip requested; waiting for a safe boundary",
             }
             return True
 

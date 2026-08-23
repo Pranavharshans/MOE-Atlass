@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -54,6 +55,8 @@ _INSPECTION_DIRECTORY = "inspections"
 _DISCOVERY_DIRECTORY = "discoveries"
 _EXPORT_DIRECTORY = "exports"
 _POLICY_DIRECTORY = "policies"
+_BENCHMARK_DIRECTORY = "benchmarks"
+_CAPTURE_OVERHEAD_DIRECTORY = "capture-overhead"
 _MAX_JOB_PAYLOAD_BYTES = 5_000_000
 
 _STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
@@ -124,6 +127,47 @@ def _publish_run_policy(workspace: object, run_key: str, policy: object) -> None
         raise
 
 
+def _publish_capture_overhead(workspace: object, run_key: str, document: dict[str, Any]) -> str:
+    """Persist one optional native-versus-captured timing report atomically."""
+
+    root = Path(workspace)
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError("workspace must be an existing non-symlink directory")
+    benchmark_root = root / _BENCHMARK_DIRECTORY
+    if benchmark_root.exists() and benchmark_root.is_symlink():
+        raise RuntimeError("benchmark directory must not be a symlink")
+    directory = benchmark_root / _CAPTURE_OVERHEAD_DIRECTORY
+    if directory.exists() and directory.is_symlink():
+        raise RuntimeError("capture-overhead directory must not be a symlink")
+    directory.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(
+        document,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if len(payload) > 256_000:
+        raise ValueError("capture-overhead report exceeds the serving budget")
+    target = directory / f"{run_key}.json"
+    if target.exists():
+        if target.is_symlink() or not target.is_file() or target.read_bytes() != payload:
+            raise RuntimeError("capture-overhead report conflicts with the run")
+        return target.relative_to(root).as_posix()
+    fd, staged_name = tempfile.mkstemp(
+        dir=str(directory), prefix=f".{run_key}.", suffix=".staging"
+    )
+    staged = Path(staged_name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+        os.replace(staged, target)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+    return target.relative_to(root).as_posix()
+
+
 def _discovery_worker(
     payload: dict[str, Any],
     *,
@@ -182,6 +226,7 @@ def _run_worker(
     cancel: Any,
     report_progress: Any,
     resume_from: str | None = None,
+    skip_overhead: Any = None,
 ) -> Any:
     """Compose the resolved plan, dataset input, executor, and run service."""
 
@@ -288,12 +333,6 @@ def _run_worker(
                 "column_mapping": {"prompt": chosen},
             }
         )
-    probe_payload = {
-        "model": plan.plan_id,
-        "capture_level": 5,
-        "expert_activity": bool(payload.get("capture_expert_activity", True)),
-    }
-    probe_id = f"plan:{stable_digest(probe_payload)}"
     model_provenance = ModelProvenance(
         loading_plan_id=plan.plan_id,
         model_id=plan.source.model_id,
@@ -307,52 +346,171 @@ def _run_worker(
         ),
         quantization=QuantizationPolicy.NONE,
     )
-    specification = RunSpecification(
-        workspace=workspace,
-        created_by="local-server",
-        model=model_provenance,
-        data=DataProvenance(
-            input=input_spec,
-            row_count=input_spec.sample_cap,
-            preprocessing={"prompt_column": input_spec.column_mapping["prompt"]},
-        ),
-        generation=GenerationConfig(
-            max_new_tokens=payload.get("max_new_tokens", 128), do_sample=False
-        ),
-        probe=ProbeProvenance(probe_plan_id=probe_id, capture_level=5),
-        privacy=PrivacyPolicy(
-            token_text=TokenTextPolicy(payload.get("token_text_policy", "redacted")),
-            retain_raw_payloads=bool(payload.get("retain_raw_payloads", False)),
-            allow_export=bool(payload.get("allow_export", True)),
-        ),
+    privacy = PrivacyPolicy(
+        token_text=TokenTextPolicy(payload.get("token_text_policy", "redacted")),
+        retain_raw_payloads=bool(payload.get("retain_raw_payloads", False)),
+        allow_export=bool(payload.get("allow_export", True)),
+    )
+
+    def make_specification(*, capture_level: int, expert_activity: bool) -> RunSpecification:
+        probe_payload = {
+            "model": plan.plan_id,
+            "capture_level": capture_level,
+            "expert_activity": expert_activity,
+            "routing_capture": capture_level > 0,
+        }
+        return RunSpecification(
+            workspace=workspace,
+            created_by="local-server",
+            model=model_provenance,
+            data=DataProvenance(
+                input=input_spec,
+                row_count=input_spec.sample_cap,
+                preprocessing={"prompt_column": input_spec.column_mapping["prompt"]},
+            ),
+            generation=GenerationConfig(
+                max_new_tokens=payload.get("max_new_tokens", 128), do_sample=False
+            ),
+            probe=ProbeProvenance(
+                probe_plan_id=f"plan:{stable_digest(probe_payload)}",
+                capture_level=capture_level,
+            ),
+            privacy=privacy,
+        )
+
+    specification = make_specification(
+        capture_level=5,
+        expert_activity=bool(payload.get("capture_expert_activity", True)),
     )
     _publish_run_policy(workspace, specification.run_key, specification.privacy)
     executor_module = import_module("moeatlas.executors." + "transform" + "ers_routing")
     executor_type = getattr(executor_module, "Transform" + "ersRoutingExecutor")
-    executor = executor_type(
-        plan,
-        store_token_text=payload.get("token_text_policy") == "stored",
-        capture_expert_activity=bool(payload.get("capture_expert_activity", True)),
-    )
-    executor.bind_run_key(specification.run_key)
 
-    def on_record(record: Any) -> None:
+    def on_record(record: Any, *, phase: str | None = None) -> None:
         progress = getattr(record, "progress", None)
         if progress is None:
             report_progress(
-                stage=str(getattr(record, "state", "running")),
+                stage=phase or str(getattr(record, "state", "running")),
                 completed=0,
                 total=None,
                 message="Run lifecycle updated",
             )
             return
         report_progress(
-            stage=progress.stage,
+            stage=phase or progress.stage,
             completed=progress.completed_units,
             total=progress.total_units,
             message=(f"{progress.completed_units}/{progress.total_units or '?'} rows processed"),
         )
 
+    def timing_delta(native: dict[str, Any], captured: dict[str, Any]) -> dict[str, float | None]:
+        native_total = native.get("total_ms")
+        captured_total = captured.get("total_ms")
+        if not isinstance(native_total, int | float) or not isinstance(
+            captured_total, int | float
+        ):
+            return {"delta_ms": None, "delta_percent": None}
+        delta = float(captured_total) - float(native_total)
+        return {
+            "delta_ms": delta,
+            "delta_percent": (delta / float(native_total)) * 100.0
+            if native_total > 0
+            else None,
+        }
+
+    measure_overhead = bool(payload.get("measure_capture_overhead", False)) and resume_from is None
+    overhead_report: dict[str, Any] | None = None
+    if measure_overhead:
+        if skip_overhead is None:
+            def skip_overhead() -> bool:
+                return False
+
+        overhead_report = {
+            "schema_version": "1.0",
+            "status": "pending",
+            "scope": "model_forward",
+            "model_id": model_provenance.model_id,
+            "model_revision": model_provenance.model_revision,
+            "dataset_id": payload["dataset_id"],
+            "dataset_revision": dataset_revision,
+            "dataset_split": payload.get("dataset_split", "train"),
+            "sample_cap": input_spec.sample_cap,
+            "batch_size": input_spec.batch_size,
+            "capture_run_key": specification.run_key,
+            "native_run_key": None,
+            "native": None,
+            "captured": None,
+            "delta_ms": None,
+            "delta_percent": None,
+        }
+        native_specification = make_specification(capture_level=0, expert_activity=False)
+        overhead_report["native_run_key"] = native_specification.run_key
+        native_executor = executor_type(
+            plan,
+            store_token_text=False,
+            capture_expert_activity=False,
+            capture_routing=False,
+        )
+        native_executor.bind_run_key(native_specification.run_key)
+        native_execution = None
+        try:
+            if cancel.is_set():
+                return JobOutcome(
+                    {
+                        "status": "cancelled",
+                        "capture_overhead": {**overhead_report, "status": "cancelled"},
+                    },
+                    "cancelled",
+                )
+            if skip_overhead():
+                overhead_report["status"] = "skipped"
+            else:
+                report_progress(
+                    stage="overhead",
+                    completed=0,
+                    total=input_spec.sample_cap,
+                    message="Measuring native baseline with capture disabled",
+                )
+                native_execution = execute_specification(
+                    native_specification,
+                    executor=native_executor,
+                    base_directory=workspace,
+                    should_cancel=lambda: cancel.is_set() or skip_overhead(),
+                    requested_by="local-server-overhead",
+                    cancellation_reason="optional overhead measurement skipped",
+                    on_record=lambda record: on_record(record, phase="overhead"),
+                    checkpoint_directory=Path(workspace) / "checkpoints" / "overhead",
+                    max_rows=input_spec.sample_cap or 32,
+                )
+                if cancel.is_set():
+                    overhead_report["status"] = "cancelled"
+                    return JobOutcome(
+                        {
+                            "status": "cancelled",
+                            "capture_overhead": {
+                                **overhead_report,
+                                "native": native_executor.timing_summary(),
+                            },
+                        },
+                        "cancelled",
+                    )
+                if skip_overhead() and native_execution.final_record.state.value == "cancelled":
+                    overhead_report["status"] = "skipped"
+                elif native_execution.final_record.state.value == "failed":
+                    overhead_report["status"] = "failed"
+                else:
+                    overhead_report["status"] = "native_complete"
+                overhead_report["native"] = native_executor.timing_summary()
+        finally:
+            native_executor.close()
+
+    executor = executor_type(
+        plan,
+        store_token_text=payload.get("token_text_policy") == "stored",
+        capture_expert_activity=bool(payload.get("capture_expert_activity", True)),
+        capture_routing=True,
+    )
+    executor.bind_run_key(specification.run_key)
     try:
         report_progress(
             stage="execute",
@@ -397,6 +555,23 @@ def _run_worker(
             "resolved_model_revision": model_provenance.model_revision,
             "resolved_dataset_revision": dataset_revision,
         }
+        if overhead_report is not None:
+            overhead_report["captured"] = executor.timing_summary()
+            overhead_report.update(
+                timing_delta(overhead_report["native"] or {}, overhead_report["captured"])
+            )
+            if terminal == "cancelled":
+                overhead_report["status"] = "capture_cancelled"
+            elif terminal == "failed":
+                overhead_report["status"] = "capture_failed"
+            elif overhead_report["status"] == "native_complete":
+                overhead_report["status"] = "completed"
+            payload_out["capture_overhead"] = overhead_report
+            payload_out["capture_overhead_path"] = _publish_capture_overhead(
+                workspace,
+                specification.run_key,
+                overhead_report,
+            )
         return JobOutcome(
             payload_out,
             "cancelled"
@@ -723,6 +898,14 @@ def create_app(
                     status_code=400, detail="resume checkpoint is unavailable"
                 ) from exc
             resume_from = str(checkpoint_path)
+            # A resumed capture uses its original durable checkpoint and must
+            # not silently spend another full model pass on the optional lane.
+            payload["measure_capture_overhead"] = False
+        skip_overhead_event = (
+            threading.Event()
+            if bool(payload.get("measure_capture_overhead", False)) and resume_from is None
+            else None
+        )
         job_id = jobs.submit(
             "run",
             lambda cancel, progress: _run_worker(
@@ -731,7 +914,11 @@ def create_app(
                 cancel=cancel,
                 report_progress=progress,
                 resume_from=resume_from,
+                skip_overhead=(
+                    skip_overhead_event.is_set if skip_overhead_event is not None else None
+                ),
             ),
+            optional_skip_event=skip_overhead_event,
         )
         snapshot = jobs.snapshot(job_id)
         assert snapshot is not None
@@ -754,6 +941,19 @@ def create_app(
         if snapshot is None:
             raise HTTPException(status_code=404, detail="job is not registered")
         jobs.cancel(job_id)
+        updated = jobs.snapshot(job_id)
+        assert updated is not None
+        return _job_response(updated)
+
+    @app.post("/api/jobs/{job_id}/skip-overhead", response_model=JobResponse)
+    def skip_overhead(job_id: str) -> JobResponse:
+        if type(job_id) is not str or not job_id.startswith("job:") or len(job_id) != 36:
+            raise HTTPException(status_code=404, detail="job is not registered")
+        snapshot = jobs.snapshot(job_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="job is not registered")
+        if not jobs.skip_optional(job_id):
+            raise HTTPException(status_code=409, detail="overhead measurement is not running")
         updated = jobs.snapshot(job_id)
         assert updated is not None
         return _job_response(updated)

@@ -65,10 +65,16 @@ missing.
   loads the selected model, and returns a generic static `DiscoveryReport`.
 - `POST /api/runs/start` — resolves model and dataset revisions, infers a
   common string prompt column when needed, executes the bounded dataset, and
-  publishes routing plus expert evidence. Include `resume_job_id` for a
-  cancelled job with a durable checkpoint.
+  publishes routing plus expert evidence. Set `measure_capture_overhead: true`
+  to add an optional native, capture-disabled forward pass before the evidence
+  run; its forward-only timing report is persisted under
+  `benchmarks/capture-overhead/`. Include `resume_job_id` for a cancelled job
+  with a durable checkpoint; resumed runs do not repeat the optional pass.
 - `POST /api/jobs/{job_id}/cancel` — requests cooperative cancellation at a
   safe batch boundary.
+- `POST /api/jobs/{job_id}/skip-overhead` — skips only the optional native pass
+  while it is in progress and continues the capture run; it does not cancel
+  the parent study.
 - `POST /api/interventions/recipes` — validates and fingerprints a causal
   intervention recipe. Actual mutation/execution remains adapter-gated; the
   endpoint never returns a fake causal outcome.

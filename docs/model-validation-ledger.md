@@ -572,10 +572,12 @@ Benchmark artifacts: Status: implemented at the model-free boundary.
 Plan/result contracts (canonical-JSON workloads, content-addressed plan
 fingerprints, caller-supplied environment/timestamp provenance,
 one-result-per-case collection, pinned `release_evidence: false`) are
-covered by synthetic contract tests. No model, tokenizer, download, or GPU
-participates. Real performance measurements on provisioned infrastructure
-remain deferred VM/GPU evidence; developer-machine timing is never
-promoted to release evidence by this API.
+covered by synthetic contract tests. The server also exposes an opt-in,
+cancellable native-versus-captured forward-timing lane and persists its
+provenance-bound report, but no model, tokenizer, download, or GPU
+participates in local certification. Real performance measurements on
+provisioned infrastructure remain deferred VM/GPU evidence; developer-machine
+timing is never promoted to release evidence by this API.
 
 Final model-free PRD audit: Status: complete. `docs/prd-audit.md` traces
 every PRD v1 acceptance area to its implementation surface, local

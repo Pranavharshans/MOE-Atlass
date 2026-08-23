@@ -180,6 +180,25 @@ def test_missing_tokenizer_is_a_dependency_failure(fake_loader) -> None:
     assert excinfo.value.message == "loaded model did not resolve a tokenizer"
 
 
+def test_native_forward_mode_skips_capture_and_reports_timing(fake_loader) -> None:
+    executor = TransformersRoutingExecutor(_loading_plan(), capture_routing=False)
+    executor.bind_run_key("run:" + "0" * 64)
+
+    result = executor(row_index=0, batch_index=0, values={"prompt": "hi"})
+
+    assert result["capture_routing"] is False
+    assert executor._token_events == []
+    timing = executor.timing_summary()
+    assert timing["capture_routing"] is False
+    assert timing["successful_rows"] == 1
+    assert isinstance(timing["total_ms"], float)
+
+
+def test_capture_routing_requires_an_exact_boolean() -> None:
+    with pytest.raises(TypeError, match="capture_routing must be an exact bool"):
+        TransformersRoutingExecutor(_loading_plan(), capture_routing=1)  # type: ignore[arg-type]
+
+
 def test_capture_mismatch_surfaces_as_execution_evidence(fake_loader) -> None:
     from moeatlas.runtime import StructuredCaptureError
 
