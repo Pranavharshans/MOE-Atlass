@@ -165,6 +165,44 @@ class JobProgressResponse(_WireModel):
     message: str = ""
 
 
+class JobDiagnosticsReference(_WireModel):
+    """Safe pointer to bounded diagnostics for one known server job."""
+
+    endpoint: str
+    available: bool = False
+    entry_count: int = 0
+    truncated: bool = False
+
+
+class JobDiagnosticEntryResponse(_WireModel):
+    """One sanitized structured job diagnostic record."""
+
+    schema_version: str = "1.0"
+    sequence: int
+    at: str
+    event: str
+    kind: str | None = None
+    stage: str | None = None
+    completed: int | None = None
+    total: int | None = None
+    message: str | None = None
+    exception_type: str | None = None
+    exception_message: str | None = None
+    traceback: str | None = None
+
+
+class JobDiagnosticsResponse(_WireModel):
+    """Bounded diagnostics read through the existing server control plane."""
+
+    job_id: str
+    kind: str
+    state: Literal["queued", "running", "completed", "cancelled", "failed"]
+    available: bool = False
+    entry_count: int = 0
+    truncated: bool = False
+    entries: tuple[JobDiagnosticEntryResponse, ...] = Field(default_factory=tuple)
+
+
 class JobResponse(_WireModel):
     job_id: str
     kind: str
@@ -172,6 +210,7 @@ class JobResponse(_WireModel):
     progress: JobProgressResponse
     result: dict[str, Any] | None = None
     error: str | None = None
+    diagnostics: JobDiagnosticsReference | None = None
 
 
 class JobCreatedResponse(_WireModel):
@@ -221,6 +260,9 @@ __all__ = [
     "InterventionRecipeRequest",
     "InterventionRecipeResponse",
     "JobCreatedResponse",
+    "JobDiagnosticEntryResponse",
+    "JobDiagnosticsReference",
+    "JobDiagnosticsResponse",
     "JobProgressResponse",
     "JobResponse",
     "RoutingShardEntryResponse",

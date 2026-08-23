@@ -14,6 +14,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 JobWorker = Callable[[threading.Event, Callable[..., None]], Any]
@@ -52,17 +53,22 @@ class _Job:
     cancel_event: threading.Event = field(default_factory=threading.Event)
     optional_skip_event: threading.Event | None = None
     future: Future[Any] | None = None
+    diagnostic_ref: dict[str, Any] = field(default_factory=dict)
+    last_logged_progress: tuple[str, int, int | None] | None = None
 
 
 class JobManager:
     """Thread-backed, bounded lifecycle state for discovery and run jobs."""
 
-    def __init__(self, *, max_workers: int = 2) -> None:
+    def __init__(self, *, max_workers: int = 2, workspace: str | Path | None = None) -> None:
         if type(max_workers) is not int or isinstance(max_workers, bool) or max_workers <= 0:
             raise ValueError("max_workers must be a positive integer")
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="moeatlas")
         self._lock = threading.RLock()
         self._jobs: dict[str, _Job] = {}
+        from .job_diagnostics import JobDiagnosticStore
+
+        self._diagnostics = JobDiagnosticStore(workspace)
 
     def submit(
         self,
@@ -79,6 +85,7 @@ class JobManager:
             raise TypeError("optional_skip_event must be a threading.Event or None")
         job_id = f"job:{uuid.uuid4().hex}"
         job = _Job(job_id=job_id, kind=kind, optional_skip_event=optional_skip_event)
+        job.diagnostic_ref = self._diagnostics.start(job_id, kind).to_dict()
         with self._lock:
             self._jobs[job_id] = job
             job.future = self._executor.submit(self._run, job, worker)
@@ -93,6 +100,7 @@ class JobManager:
                 "total": None,
                 "message": "Worker started",
             }
+        self._diagnostics.record(job.job_id, event="started", kind=job.kind, stage="starting")
 
         def report(
             *,
@@ -118,6 +126,27 @@ class JobManager:
                     "total": total,
                     "message": (message if isinstance(message, str) else "")[:240],
                 }
+                signature = (stage[:80], completed, total)
+                # A row-level worker can report thousands of progress updates;
+                # keep diagnostics bounded while preserving stage transitions
+                # and periodic progress checkpoints for failed jobs.
+                should_log = (
+                    job.last_logged_progress is None
+                    or job.last_logged_progress[0] != signature[0]
+                    or completed == 0
+                    or (completed > 0 and completed % 32 == 0)
+                )
+                if should_log:
+                    job.last_logged_progress = signature
+            if should_log:
+                self._diagnostics.record(
+                    job.job_id,
+                    event="progress",
+                    kind=job.kind,
+                    stage=stage,
+                    completed=completed,
+                    total=total,
+                )
 
         try:
             result = worker(job.cancel_event, report)
@@ -138,6 +167,13 @@ class JobManager:
                         "stage": "cancelled",
                         "message": "Cancellation was acknowledged",
                     }
+            self._diagnostics.record(
+                job.job_id,
+                event=job.state,
+                kind=job.kind,
+                stage=job.progress.get("stage"),
+                message=job.progress.get("message"),
+            )
         except BaseException as exc:  # workers must never take down the server thread
             with self._lock:
                 job.state = "failed"
@@ -147,6 +183,13 @@ class JobManager:
                     "stage": "failed",
                     "message": "Worker failed; inspect the server log for details",
                 }
+            self._diagnostics.record(
+                job.job_id,
+                event="failed",
+                kind=job.kind,
+                stage="failed",
+                exc=exc,
+            )
         finally:
             # A failed optional-runtime load can leave reserved CUDA blocks in
             # the long-lived server process even when the worker has returned.
@@ -178,6 +221,7 @@ class JobManager:
                 "progress": dict(job.progress),
                 "result": dict(job.result) if job.result is not None else None,
                 "error": job.error,
+                "diagnostics": dict(self._diagnostics.reference(job.job_id).to_dict()),
             }
 
     def cancel(self, job_id: str) -> bool:
@@ -193,6 +237,12 @@ class JobManager:
                 "stage": "cancelling",
                 "message": "Cancellation requested; waiting for the current safe boundary",
             }
+            self._diagnostics.record(
+                job.job_id,
+                event="cancel_requested",
+                kind=job.kind,
+                stage="cancelling",
+            )
             return True
 
     def skip_optional(self, job_id: str) -> bool:
@@ -211,7 +261,28 @@ class JobManager:
                 **job.progress,
                 "message": "Optional phase skip requested; waiting for a safe boundary",
             }
+            self._diagnostics.record(
+                job.job_id,
+                event="optional_phase_skip_requested",
+                kind=job.kind,
+                stage="overhead",
+            )
             return True
+
+    def diagnostics(self, job_id: str) -> dict[str, Any] | None:
+        """Return persisted diagnostics only for a known in-process job."""
+
+        with self._lock:
+            if job_id not in self._jobs:
+                return None
+            job = self._jobs[job_id]
+            result = self._diagnostics.read(job_id)
+            return {
+                "job_id": job.job_id,
+                "kind": job.kind,
+                "state": job.state,
+                **result,
+            }
 
     def result(self, job_id: str) -> dict[str, Any] | None:
         snapshot = self.snapshot(job_id)

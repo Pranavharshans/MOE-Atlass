@@ -10,6 +10,13 @@ does not open SSH sessions or proxy provider terminals.
 Errors exposed to the browser use fixed safe details and never echo prompts,
 Hub response bodies, credentials, or local paths. Model/dataset downloads are
 performed only after an explicit user request with `allow_downloads: true`.
+Each submitted job also gets a bounded JSONL diagnostic record under the
+workspace's private `logs/jobs/` directory. Tracebacks are formatted without
+local-variable capture and redacted before persistence. The ordinary job
+response exposes only a safe diagnostics reference; the
+`/api/jobs/{job_id}/diagnostics` endpoint reads records only for a job known to
+the running server and returns the bounded sanitized entries. Diagnostic write
+failures never change the job outcome or bypass model cleanup.
 
 FastAPI is an optional dependency (`pip install moeatlas[server]`). The
 wire DTOs in `moeatlas.server.dto` stay importable without it;
@@ -60,7 +67,11 @@ missing.
   or private revision resolution may use an `HF_TOKEN` or
   `HUGGINGFACE_HUB_TOKEN` already configured in the server process.
 - `/api/jobs/{job_id}` — queued/running/completed/cancelled/failed state and
-  monotonic progress for discovery and run jobs.
+  monotonic progress for discovery and run jobs, plus a safe diagnostics
+  reference.
+- `/api/jobs/{job_id}/diagnostics` — bounded, structured, sanitized stage and
+  exception-chain evidence for a known job. Unknown job IDs return the same
+  fixed 404 as the status endpoint.
 - `POST /api/discovery` — resolves an HF revision to an immutable commit,
   loads the selected model, and returns a generic static `DiscoveryReport`.
 - `POST /api/runs/start` — resolves model and dataset revisions, infers a

@@ -32,6 +32,8 @@ from .dto import (
     InterventionRecipeRequest,
     InterventionRecipeResponse,
     JobCreatedResponse,
+    JobDiagnosticEntryResponse,
+    JobDiagnosticsResponse,
     JobProgressResponse,
     JobResponse,
     RoutingShardEntryResponse,
@@ -634,7 +636,7 @@ def create_app(
     # Model jobs are VRAM-exclusive. A single worker prevents a retry or a
     # discovery/run pair from loading a second checkpoint concurrently while a
     # prior failure is still unwinding its runtime cleanup.
-    jobs = JobManager(max_workers=1)
+    jobs = JobManager(max_workers=1, workspace=bound_workspace)
 
     @asynccontextmanager
     async def _lifespan(_: Any):
@@ -796,6 +798,7 @@ def create_app(
             ),
             result=snapshot.get("result"),
             error=snapshot.get("error"),
+            diagnostics=snapshot.get("diagnostics"),
         )
 
     @app.get("/healthz", response_model=HealthResponse)
@@ -935,6 +938,35 @@ def create_app(
         if snapshot is None:
             raise HTTPException(status_code=404, detail="job is not registered")
         return _job_response(snapshot)
+
+    @app.get("/api/jobs/{job_id}/diagnostics", response_model=JobDiagnosticsResponse)
+    def job_diagnostics(job_id: str) -> JobDiagnosticsResponse:
+        """Read bounded, sanitized diagnostics for a known in-process job."""
+
+        if type(job_id) is not str or not job_id.startswith("job:") or len(job_id) != 36:
+            raise HTTPException(status_code=404, detail="job is not registered")
+        document = jobs.diagnostics(job_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail="job is not registered")
+        entries: list[JobDiagnosticEntryResponse] = []
+        for entry in document.get("entries", ()):
+            if not isinstance(entry, dict):
+                continue
+            try:
+                entries.append(JobDiagnosticEntryResponse.model_validate(entry))
+            except Exception:
+                # A malformed/truncated line is not allowed to widen the wire
+                # contract or turn diagnostics into a second failure surface.
+                continue
+        return JobDiagnosticsResponse(
+            job_id=document["job_id"],
+            kind=document["kind"],
+            state=document["state"],
+            available=bool(document.get("available", False)),
+            entry_count=len(entries),
+            truncated=bool(document.get("truncated", False)),
+            entries=tuple(entries),
+        )
 
     @app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
     def cancel_job(job_id: str) -> JobResponse:
