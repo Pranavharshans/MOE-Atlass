@@ -147,6 +147,16 @@ class JobManager:
                     "stage": "failed",
                     "message": "Worker failed; inspect the server log for details",
                 }
+        finally:
+            # A failed optional-runtime load can leave reserved CUDA blocks in
+            # the long-lived server process even when the worker has returned.
+            # Keep this lazy so the model stack remains optional for the server.
+            try:
+                from ..runtime.memory import release_accelerator_memory
+
+                release_accelerator_memory()
+            except Exception:
+                pass
 
     @staticmethod
     def _safe_error(exc: BaseException) -> str:

@@ -210,6 +210,26 @@ def test_capture_mismatch_surfaces_as_execution_evidence(fake_loader) -> None:
         executor(row_index=0, batch_index=0, values={"prompt": "hi"})
 
 
+def test_loader_is_closed_when_executor_discovery_fails(fake_loader, monkeypatch) -> None:
+    """A failed topology scan must not retain the model for a later retry."""
+
+    loaded = _loaded(_loading_plan())
+    fake_loader["loaded"] = loaded
+
+    def fail_scan(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("synthetic scan failure")
+
+    import moeatlas.executors.transformers_routing as executor_module
+
+    monkeypatch.setattr(executor_module, "scan", fail_scan)
+    executor = TransformersRoutingExecutor(_loading_plan())
+    executor.bind_run_key("run:" + "0" * 64)
+
+    with pytest.raises(RowFailure, match="model loading failed"):
+        executor(row_index=0, batch_index=0, values={"prompt": "hi"})
+    assert loaded.closed is True
+
+
 # ---------------------------------------------------------------------------
 # Happy path over the shared run service and store
 # ---------------------------------------------------------------------------

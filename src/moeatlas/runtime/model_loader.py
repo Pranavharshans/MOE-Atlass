@@ -36,6 +36,7 @@ from .contracts import (
     _attach_pending_cleanup,
 )
 from .loader import _load_artifacts, _resolution_for
+from .memory import release_accelerator_memory
 from .observation import (
     model_config,
     observed_architecture,
@@ -87,14 +88,19 @@ class _CleanupStack:
 
 
 def _cleanup_stack_on_failure(stack: _CleanupStack, original: BaseException) -> None:
-    if not stack.pending:
-        return
-    pending = PendingRuntimeCleanup(stack)
     try:
-        pending.retry()
-    except RuntimeCleanupError as cleanup_error:
-        _attach_pending_cleanup(original, pending)
-        _add_cleanup_note(original, cleanup_error)
+        if not stack.pending:
+            return
+        pending = PendingRuntimeCleanup(stack)
+        try:
+            pending.retry()
+        except RuntimeCleanupError as cleanup_error:
+            _attach_pending_cleanup(original, pending)
+            _add_cleanup_note(original, cleanup_error)
+    finally:
+        # ``from_pretrained`` can reserve CUDA blocks before it returns a
+        # model object, so the normal ownership stack may be empty on OOM.
+        release_accelerator_memory()
 
 
 def _import_optional(name: str) -> Any:

@@ -8,6 +8,7 @@ from typing import Self
 
 from ..core import DType, ModelManifest
 from ..loading import LoadingPlan
+from .memory import release_accelerator_memory
 
 
 class RuntimeLoadError(RuntimeError):
@@ -172,25 +173,28 @@ class LoadedModel:
 
         if self._closed:
             return
-        if not self._owns_cleanup or self._cleanup_callback is None:
-            self._closed = True
-            return
-
-        callback = self._cleanup_callback
         try:
-            callback()
-        except RuntimeCleanupError:
-            self._closed = False
-            raise
-        except BaseException as exc:
-            self._closed = False
-            raise RuntimeCleanupError((exc,)) from exc
+            if not self._owns_cleanup or self._cleanup_callback is None:
+                self._closed = True
+                return
 
-        self._cleanup_callback = None
-        self._owns_cleanup = False
-        self._closed = True
-        self.model = None
-        self.tokenizer = None
+            callback = self._cleanup_callback
+            try:
+                callback()
+            except RuntimeCleanupError:
+                self._closed = False
+                raise
+            except BaseException as exc:
+                self._closed = False
+                raise RuntimeCleanupError((exc,)) from exc
+
+            self._cleanup_callback = None
+            self._owns_cleanup = False
+            self._closed = True
+            self.model = None
+            self.tokenizer = None
+        finally:
+            release_accelerator_memory()
 
     def __enter__(self) -> Self:
         if self._closed:

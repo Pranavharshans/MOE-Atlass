@@ -631,7 +631,10 @@ def create_app(
 
     from .jobs import JobManager
 
-    jobs = JobManager(max_workers=2)
+    # Model jobs are VRAM-exclusive. A single worker prevents a retry or a
+    # discovery/run pair from loading a second checkpoint concurrently while a
+    # prior failure is still unwinding its runtime cleanup.
+    jobs = JobManager(max_workers=1)
 
     @asynccontextmanager
     async def _lifespan(_: Any):

@@ -44,6 +44,7 @@ from ..runtime.generic_capture import (
     run_structured_routing_forward,
     structured_router_targets,
 )
+from ..runtime.memory import release_accelerator_memory
 from ..services.run_engine import RowFailure
 
 EXECUTOR_RESULT_SCHEMA_VERSION = "1.0"
@@ -246,6 +247,7 @@ class TransformersRoutingExecutor:
     def _ensure_loaded(self) -> LoadedModel:
         if self._loaded is not None:
             return self._loaded
+        loaded: LoadedModel | None = None
         try:
             from ..runtime.model_loader import load_huggingface, load_local
 
@@ -260,10 +262,28 @@ class TransformersRoutingExecutor:
                 )
             report = scan(loaded.model, loaded.manifest)
         except RowFailure:
+            if loaded is not None:
+                try:
+                    loaded.close()
+                except Exception:
+                    pass
+            release_accelerator_memory()
             raise
         except (KeyboardInterrupt, SystemExit):
+            if loaded is not None:
+                try:
+                    loaded.close()
+                except Exception:
+                    pass
+            release_accelerator_memory()
             raise
         except Exception:
+            if loaded is not None:
+                try:
+                    loaded.close()
+                except Exception:
+                    pass
+            release_accelerator_memory()
             raise RowFailure("dependency", _LOAD_FAILURE) from None
         self._loaded = loaded
         self._report = report
@@ -552,6 +572,8 @@ class TransformersRoutingExecutor:
             loaded.close()
         except Exception:
             pass  # publication succeeded; cleanup problems never replace it
+        finally:
+            release_accelerator_memory()
 
     def close(self) -> None:
         """Release a loaded model when execution ends before publication."""
