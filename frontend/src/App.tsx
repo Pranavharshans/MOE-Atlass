@@ -84,6 +84,26 @@ type JobDiagnosticEntry = {
   traceback?: string | null;
 };
 
+type OperationCapabilityStatus = "available" | "run_validation_required" | "not_implemented" | "unavailable";
+type OperationCapability = {
+  operation: string;
+  label: string;
+  status: OperationCapabilityStatus;
+  reason: string;
+  evidence: string[];
+  changes_routing: boolean;
+  skips_compute?: boolean | null;
+};
+type InterventionCapability = {
+  live_supported: boolean;
+  tier: string;
+  reason: string;
+  weight_layout: string;
+  execution_backend?: string | null;
+  fused_backend?: boolean | null;
+  operation_capabilities: OperationCapability[];
+};
+
 const DEFAULT_SOURCES: SourceDraft = {
   modelId: "",
   modelRevision: "main",
@@ -566,6 +586,30 @@ function GateRow({ label, detail, tone = "quiet" }: { label: string; detail: str
   );
 }
 
+const OPERATION_STATUS_LABELS: Record<OperationCapabilityStatus, string> = {
+  available: "Available",
+  run_validation_required: "Run validation",
+  not_implemented: "Not implemented",
+  unavailable: "Unavailable",
+};
+
+function OperationCapabilityList({ operations, compact = false }: { operations: OperationCapability[]; compact?: boolean }) {
+  return <div className="divide-y divide-line">{operations.map((operation) => {
+    const available = operation.status === "available";
+    const pending = operation.status === "run_validation_required";
+    return <div key={operation.operation} className={compact ? "py-3" : "grid gap-2 py-4 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-5"}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium text-white">{operation.label}</span>
+        <span className={`shrink-0 font-mono text-[0.58rem] uppercase tracking-[0.08em] ${available ? "text-cyan" : pending ? "text-signal" : "text-muted"}`}>{OPERATION_STATUS_LABELS[operation.status]}</span>
+      </div>
+      <div>
+        <p className="text-[0.68rem] leading-5 text-muted">{operation.reason}</p>
+        {!compact && operation.evidence.length ? <p className="mt-1 font-mono text-[0.58rem] leading-4 text-muted/70">{operation.evidence.join(" · ")}</p> : null}
+      </div>
+    </div>;
+  })}</div>;
+}
+
 function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => void }) {
   const [sources] = useState<SourceDraft>(() => readStored("moeatlas-analysis-sources", DEFAULT_SOURCES));
   const [jobId, setJobId] = useState<string | null>(() => readStored<string | null>("moeatlas-discovery-job", null));
@@ -576,6 +620,8 @@ function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
   const report = (result.report ?? null) as Record<string, unknown> | null;
   const facts = (report?.facts ?? {}) as Record<string, unknown>;
   const captureSupport = (result.capture_support ?? {}) as Record<string, unknown>;
+  const interventionCapability = (result.intervention_capability ?? null) as InterventionCapability | null;
+  const operationCapabilities = Array.isArray(interventionCapability?.operation_capabilities) ? interventionCapability.operation_capabilities : [];
   const hasContract = !validateHubId(sources.modelId, "Model ID") && !validateHubId(sources.datasetId, "Dataset ID");
 
   if (!hasContract) {
@@ -634,6 +680,14 @@ function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
             <div className="flex items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Inspection gates</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">What the server must prove</h2></div><GitBranch size={19} className="text-cyan" /></div>
             <div className="mt-5 divide-y divide-line"><GateRow label="Model configuration" detail={available ? "READY" : running ? "RUNNING" : "PENDING"} tone={available ? "good" : running ? "quiet" : "quiet"} /><GateRow label="MoE topology" detail={available ? `${facts.expert_count ?? "?"} experts · ${facts.routed_top_k ?? "?"}-way` : running ? "SCANNING" : "PENDING"} tone={available ? "good" : "quiet"} /><GateRow label="Capture support" detail={available ? String(captureSupport.grade ?? "topology_only").replaceAll("_", " ").toUpperCase() : "DEFERRED"} tone={captureSupport.routing_capture === "candidate" ? "warn" : available ? "quiet" : "quiet"} /><GateRow label="Router payload" detail={captureSupport.routing_capture === "candidate" ? "UNPROVEN · RUN REQUIRED" : "UNAVAILABLE"} tone={captureSupport.routing_capture === "candidate" ? "warn" : "quiet"} /><GateRow label="Dataset schema" detail="validated at run" /><GateRow label="Immutable revision evidence" detail={typeof result.resolved_revision === "string" ? result.resolved_revision.slice(0, 12) + "…" : "PENDING"} tone={typeof result.resolved_revision === "string" ? "good" : "quiet"} /></div>
           </section>
+          {available && interventionCapability ? <section className="research-card">
+            <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Capability matrix</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">What this runtime can do now</h2><p className="mt-2 text-xs leading-5 text-muted">Each verdict names one exact operation. Detecting a backend does not automatically make every intervention safe.</p></div><Lightning size={19} className="shrink-0 text-signal" /></div>
+            <dl className="contract-grid mt-5">
+              <div><dt>Expert storage</dt><dd>{interventionCapability.weight_layout.replaceAll("_", " ")}</dd></div>
+              <div><dt>Expert backend</dt><dd>{interventionCapability.execution_backend ?? "unresolved"}</dd></div>
+            </dl>
+            <div className="mt-4"><OperationCapabilityList operations={operationCapabilities} /></div>
+          </section> : null}
           {available ? <section className="research-card"><div className="flex items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Discovered architecture</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Evidence, not a family allowlist.</h2></div><ShieldCheck size={19} className="text-cyan" /></div><div className="mt-5 grid gap-3 sm:grid-cols-3"><MetricCard label="Experts" value={String(facts.expert_count ?? "—")} detail={String(facts.expert_count_source ?? "scanner")}/><MetricCard label="Top-k" value={String(facts.routed_top_k ?? "—")} detail={String(facts.routed_top_k_source ?? "scanner")}/><MetricCard label="Hook targets" value={String(captureSupport.router_target_count ?? "—")} detail="static router candidates"/></div><p className="mt-4 text-xs leading-5 text-muted">The scan identifies topology and hook candidates generically. Candidate means structurally addressable—not captured. A real forward must still validate the router payload, complete top-k assignments, and any expert activity.</p></section> : null}
         </main>
         <aside className="space-y-5">
@@ -839,6 +893,7 @@ type InterventionTargetsResponse = {
   status: "available" | "unsupported";
   reason?: string | null;
   targets: InterventionTarget[];
+  capability?: InterventionCapability | null;
 };
 type InterventionEvidence = {
   baseline_run_key: string;
@@ -1223,6 +1278,7 @@ function RunsPage() {
               <section className="research-card research-card-dark"><div className="flex items-center gap-2"><GitBranch size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Architecture</p></div>{architecture?.status === "available" && architecture.report ? <><dl className="contract-list mt-4"><div><dt>Families</dt><dd>{Array.isArray(architecture.report.architecture_families) ? architecture.report.architecture_families.join(", ") : "generic"}</dd></div><div><dt>Components</dt><dd>{Array.isArray(architecture.report.components) ? architecture.report.components.length : "—"}</dd></div><div><dt>Warnings</dt><dd>{Array.isArray(architecture.report.warnings) ? architecture.report.warnings.length : "0"}</dd></div></dl><p className="mt-3 text-xs leading-5 text-muted">{architecture.report.model_key ? `Manifest ${String(architecture.report.model_key)}` : "Persisted discovery report"}</p></> : <p className="mt-4 text-xs leading-5 text-muted">{architecture?.reason ?? "Architecture evidence is not published for this run yet."}</p>}</section>
               <section className="research-card research-card-dark">
                 <div className="flex items-center gap-2"><Lightning size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Causal intervention</p></div>
+                {interventionTargets?.capability?.operation_capabilities?.length ? <div className="mt-4 border-y border-line"><OperationCapabilityList operations={interventionTargets.capability.operation_capabilities} compact /></div> : null}
                 {interventionEvidence ? <p className="mt-4 text-xs leading-5 text-muted">This is a derived intervention run. Select its recorded baseline to prepare another intervention.</p> : interventionTargets?.status === "available" ? <>
                   <label className="field-label mt-4" htmlFor="intervention-targets">Layer × expert targets
                     <select id="intervention-targets" className="input-control mt-2 min-h-40" multiple value={selectedTargets} onChange={(event) => setSelectedTargets(Array.from(event.target.selectedOptions, (option) => option.value))}>

@@ -80,6 +80,30 @@ every temporary registry entry before returning. The run records `verified`,
 than allowing later rows to use a dirty model. This handshake adds no separate
 baseline or overhead-measurement run.
 
+## Operation capability matrix
+
+Discovery and the run-specific intervention endpoint publish one verdict per
+operation instead of a single generic support flag:
+
+- `capture_routing` is a run-validation candidate when static router targets
+  exist; it becomes evidence only after a real forward.
+- `zero_contribution` and `scale_contribution` are available only for the
+  independently exposed expert hooks implemented today. They do not alter
+  routing and do not skip expert compute.
+- `exclude_and_renormalize` is reported as not implemented when a router seam
+  exists because safe execution still needs writable top-k weights and exact
+  renormalization.
+- `reroute_next_best` is reported as not implemented because capture of chosen
+  experts does not prove access to next-best logits or writable dispatch.
+- `skip_compute` is distinct from zeroing an already-computed output and remains
+  not implemented until a pre-dispatch adapter proves that the selected kernel
+  was bypassed.
+
+Every row includes its status, bounded reason, structural/runtime evidence,
+and whether the requested semantics change routing or skip compute. The UI
+uses the same report and does not show a packed or fused seam as an executable
+intervention.
+
 ## Honest scope
 
 Local tests prove the mechanics without a model stack. Real checkpoint

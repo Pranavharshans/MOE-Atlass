@@ -1748,26 +1748,36 @@ def create_app(
             )
         try:
             from ..discovery import DiscoveryReport
-            from ..interventions import intervention_targets
+            from ..interventions import (
+                classify_intervention_capability,
+                intervention_targets,
+            )
 
             payload = candidate.read_bytes()
             if len(payload) > max_artifact_bytes:
                 raise ValueError
             report = DiscoveryReport.model_validate_json(payload)
+            capability = classify_intervention_capability(report)
+        except Exception:
+            return InterventionTargetsResponse(
+                run_key=stable_run_key,
+                status="unsupported",
+                reason="the published discovery report is invalid",
+            )
+        try:
             targets = tuple(target.to_dict() for target in intervention_targets(report))
         except Exception:
             return InterventionTargetsResponse(
                 run_key=stable_run_key,
                 status="unsupported",
-                reason=(
-                    "this model does not expose independently controllable experts; "
-                    "packed or fused experts are not changed by a visual guess"
-                ),
+                reason=capability.reason,
+                capability=capability.to_dict(),
             )
         return InterventionTargetsResponse(
             run_key=stable_run_key,
             status="available",
             targets=targets,
+            capability=capability.to_dict(),
         )
 
     @app.post("/api/interventions/start", response_model=JobCreatedResponse, status_code=202)

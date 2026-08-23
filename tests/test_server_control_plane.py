@@ -200,6 +200,11 @@ def test_real_intervention_route_reconstructs_a_completed_baseline(
     targets = client.get(f"/api/runs/{specification.run_key}/intervention-targets")
     assert targets.status_code == 200
     assert targets.json()["status"] == "available"
+    operations = {
+        item["operation"]: item for item in targets.json()["capability"]["operation_capabilities"]
+    }
+    assert operations["zero_contribution"]["status"] == "available"
+    assert operations["exclude_and_renormalize"]["status"] == "not_implemented"
     selected = targets.json()["targets"][0]["label"]
 
     created = client.post(

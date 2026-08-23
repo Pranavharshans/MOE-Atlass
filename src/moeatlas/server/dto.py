@@ -280,6 +280,7 @@ class InterventionTargetsResponse(_WireModel):
     status: Literal["available", "unsupported"]
     reason: str | None = None
     targets: tuple[dict[str, Any], ...] = Field(default_factory=tuple)
+    capability: dict[str, Any] | None = None
 
 
 class InterventionEvidenceResponse(_WireModel):

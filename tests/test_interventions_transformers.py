@@ -8,10 +8,12 @@ from moeatlas.core import ComponentKind
 from moeatlas.interventions import (
     ExpertBackendDiscoveryStatus,
     ExpertExecutionMode,
+    ExpertOperation,
     ExpertWeightLayout,
     InterventionOperation,
     InterventionRecipe,
     InterventionSupportTier,
+    OperationCapabilityStatus,
     TransformersExpertInterventionCapability,
     TransformersInterventionError,
     classify_intervention_capability,
@@ -267,3 +269,77 @@ def test_live_capability_combines_static_layout_and_backend_evidence() -> None:
             "source": "model.get_experts_implementation",
         }
     ]
+
+
+def test_operation_report_distinguishes_capture_contribution_and_compute() -> None:
+    capability = classify_intervention_capability(scan_report(_model()))
+    operations = {item.operation: item for item in capability.operation_capabilities}
+
+    assert tuple(operations) == tuple(ExpertOperation)
+    assert (
+        operations[ExpertOperation.CAPTURE_ROUTING].status
+        is OperationCapabilityStatus.RUN_VALIDATION_REQUIRED
+    )
+    assert (
+        operations[ExpertOperation.ZERO_CONTRIBUTION].status is OperationCapabilityStatus.AVAILABLE
+    )
+    assert (
+        operations[ExpertOperation.SCALE_CONTRIBUTION].status is OperationCapabilityStatus.AVAILABLE
+    )
+    assert (
+        operations[ExpertOperation.EXCLUDE_AND_RENORMALIZE].status
+        is OperationCapabilityStatus.NOT_IMPLEMENTED
+    )
+    assert operations[ExpertOperation.ZERO_CONTRIBUTION].changes_routing is False
+    assert operations[ExpertOperation.ZERO_CONTRIBUTION].skips_compute is False
+    assert operations[ExpertOperation.SKIP_COMPUTE].skips_compute is True
+
+
+def test_packed_backend_report_does_not_claim_packed_intervention_support() -> None:
+    report = scan_report(_model())
+    packed = report.model_copy(
+        update={
+            "candidates": [
+                candidate
+                for candidate in report.candidates
+                if candidate.kind is not ComponentKind.EXPERT
+            ],
+            "components": [
+                component.model_copy(update={"tensor_shapes": {"weights": [4, 16, 8]}})
+                if component.kind is ComponentKind.EXPERT_CONTAINER
+                else component
+                for component in report.components
+                if component.kind is not ComponentKind.EXPERT
+            ],
+        }
+    )
+    model = _model()
+    model.get_experts_implementation = lambda: {"": "grouped_mm"}  # type: ignore[attr-defined]
+
+    capability = inspect_intervention_capability(packed, model)
+    operations = {item.operation: item for item in capability.operation_capabilities}
+
+    assert capability.weight_layout is ExpertWeightLayout.PACKED_TENSORS
+    assert (
+        operations[ExpertOperation.ZERO_CONTRIBUTION].status
+        is OperationCapabilityStatus.NOT_IMPLEMENTED
+    )
+    assert (
+        "runtime.expert_backend=grouped_mm"
+        in operations[ExpertOperation.ZERO_CONTRIBUTION].evidence
+    )
+
+
+def test_dense_operation_report_is_explicitly_unavailable() -> None:
+    class DenseModel:
+        config = type("Config", (), {"num_hidden_layers": 2})()
+
+        def named_modules(self):
+            yield "", self
+
+    capability = classify_intervention_capability(scan_report(DenseModel()))
+
+    assert all(
+        operation.status is OperationCapabilityStatus.UNAVAILABLE
+        for operation in capability.operation_capabilities
+    )

@@ -19,7 +19,11 @@ from typing import Any
 from moeatlas.core import ComponentKind
 from moeatlas.discovery import DiscoveryReport
 from moeatlas.interventions.recipes import InterventionOperation, InterventionRecipe
-from moeatlas.runtime.generic_capture import StructuredCaptureError, structured_expert_targets
+from moeatlas.runtime.generic_capture import (
+    StructuredCaptureError,
+    structured_expert_targets,
+    structured_router_targets,
+)
 
 _TARGET = re.compile(r"^layer:(0|[1-9][0-9]*)/expert:(0|[1-9][0-9]*)$")
 
@@ -65,6 +69,50 @@ class ExpertBackendDiscoveryStatus(str, Enum):
     UNRESOLVED = "unresolved"
     UNAVAILABLE = "unavailable"
     INVALID = "invalid"
+
+
+class ExpertOperation(str, Enum):
+    """Stable user-facing expert observation and intervention operations."""
+
+    CAPTURE_ROUTING = "capture_routing"
+    ZERO_CONTRIBUTION = "zero_contribution"
+    SCALE_CONTRIBUTION = "scale_contribution"
+    EXCLUDE_AND_RENORMALIZE = "exclude_and_renormalize"
+    REROUTE_NEXT_BEST = "reroute_next_best"
+    SKIP_COMPUTE = "skip_compute"
+
+
+class OperationCapabilityStatus(str, Enum):
+    """Whether one exact operation can be executed with current evidence."""
+
+    AVAILABLE = "available"
+    RUN_VALIDATION_REQUIRED = "run_validation_required"
+    NOT_IMPLEMENTED = "not_implemented"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class OperationCapability:
+    """One precise operation verdict with evidence and semantic boundaries."""
+
+    operation: ExpertOperation
+    label: str
+    status: OperationCapabilityStatus
+    reason: str
+    evidence: tuple[str, ...]
+    changes_routing: bool
+    skips_compute: bool | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "operation": self.operation.value,
+            "label": self.label,
+            "status": self.status.value,
+            "reason": self.reason,
+            "evidence": list(self.evidence),
+            "changes_routing": self.changes_routing,
+            "skips_compute": self.skips_compute,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +167,7 @@ class InterventionCapabilityReport:
     fused_backend: bool | None = None
     execution_backends: tuple[ExpertBackendEvidence, ...] = ()
     backend_discovery: ExpertBackendDiscovery | None = None
+    operation_capabilities: tuple[OperationCapability, ...] = ()
 
     @property
     def live_supported(self) -> bool:
@@ -139,6 +188,9 @@ class InterventionCapabilityReport:
             "backend_discovery": (
                 self.backend_discovery.to_dict() if self.backend_discovery is not None else None
             ),
+            "operation_capabilities": [
+                operation.to_dict() for operation in self.operation_capabilities
+            ],
         }
 
 
@@ -207,7 +259,7 @@ def classify_intervention_capability(report: DiscoveryReport) -> InterventionCap
     except TransformersInterventionError:
         targets = ()
     if targets:
-        return InterventionCapabilityReport(
+        capability = InterventionCapabilityReport(
             tier=InterventionSupportTier.EXPOSED_EXPERTS,
             operations=(InterventionOperation.ABLATE, InterventionOperation.SCALE),
             target_count=len(targets),
@@ -215,48 +267,190 @@ def classify_intervention_capability(report: DiscoveryReport) -> InterventionCap
             reason="routed experts are independently exposed as hookable modules",
             weight_layout=ExpertWeightLayout.INDEXED_MODULES,
         )
-    has_moe = report.facts.expert_count is not None or any(
-        component.kind in {ComponentKind.MOE_LAYER, ComponentKind.EXPERT_CONTAINER}
-        for component in report.components
+    else:
+        has_moe = report.facts.expert_count is not None or any(
+            component.kind in {ComponentKind.MOE_LAYER, ComponentKind.EXPERT_CONTAINER}
+            for component in report.components
+        )
+        containers = tuple(
+            component
+            for component in report.components
+            if component.kind is ComponentKind.EXPERT_CONTAINER
+        )
+        expert_count = report.facts.expert_count
+        has_packed_weights = type(expert_count) is int and any(
+            any(
+                len(shape) >= 3 and expert_count in shape
+                for shape in component.tensor_shapes.values()
+            )
+            for component in containers
+        )
+        if has_moe and has_packed_weights:
+            capability = InterventionCapabilityReport(
+                tier=InterventionSupportTier.PACKED_EXPERTS,
+                operations=(),
+                target_count=0,
+                target_format=None,
+                reason=(
+                    "routed expert weights are packed tensors; the active execution backend "
+                    "has not been inspected"
+                ),
+                weight_layout=ExpertWeightLayout.PACKED_TENSORS,
+            )
+        elif has_moe and containers:
+            capability = InterventionCapabilityReport(
+                tier=InterventionSupportTier.OPAQUE_EXPERTS,
+                operations=(),
+                target_count=0,
+                target_format=None,
+                reason="routed expert storage is opaque to static discovery",
+                weight_layout=ExpertWeightLayout.OPAQUE,
+            )
+        else:
+            capability = InterventionCapabilityReport(
+                tier=InterventionSupportTier.UNAVAILABLE,
+                operations=(),
+                target_count=0,
+                target_format=None,
+                reason="no routed expert intervention targets were discovered",
+                weight_layout=ExpertWeightLayout.UNAVAILABLE,
+            )
+    return replace(
+        capability,
+        operation_capabilities=_operation_capabilities(capability, report),
     )
-    containers = tuple(
-        component
-        for component in report.components
-        if component.kind is ComponentKind.EXPERT_CONTAINER
+
+
+def _router_target_count(report: DiscoveryReport) -> int:
+    try:
+        return len(structured_router_targets(report))
+    except StructuredCaptureError:
+        return 0
+
+
+def _operation_capabilities(
+    capability: InterventionCapabilityReport,
+    report: DiscoveryReport,
+) -> tuple[OperationCapability, ...]:
+    router_count = _router_target_count(report)
+    has_backend = (
+        capability.backend_discovery is not None
+        and capability.backend_discovery.status is ExpertBackendDiscoveryStatus.OBSERVED
     )
-    expert_count = report.facts.expert_count
-    has_packed_weights = type(expert_count) is int and any(
-        any(len(shape) >= 3 and expert_count in shape for shape in component.tensor_shapes.values())
-        for component in containers
+    can_zero = InterventionOperation.ABLATE in capability.operations
+    can_scale = InterventionOperation.SCALE in capability.operations
+    has_moe_structure = capability.weight_layout is not ExpertWeightLayout.UNAVAILABLE
+    expert_evidence = (
+        (f"structure.exposed_experts={capability.target_count}",)
+        if capability.target_count
+        else (f"structure.weight_layout={capability.weight_layout.value}",)
     )
-    if has_moe and has_packed_weights:
-        return InterventionCapabilityReport(
-            tier=InterventionSupportTier.PACKED_EXPERTS,
-            operations=(),
-            target_count=0,
-            target_format=None,
+    backend_evidence = (
+        (f"runtime.expert_backend={capability.execution_backend or 'mixed'}",)
+        if has_backend
+        else ()
+    )
+
+    def contribution(
+        operation: ExpertOperation,
+        label: str,
+        available: bool,
+    ) -> OperationCapability:
+        if available:
+            status = OperationCapabilityStatus.AVAILABLE
+            reason = "independent expert modules support temporary output hooks"
+        elif has_backend or capability.weight_layout is ExpertWeightLayout.PACKED_TENSORS:
+            status = OperationCapabilityStatus.NOT_IMPLEMENTED
+            reason = (
+                "an expert backend seam was detected, but packed contribution control "
+                "is not implemented"
+            )
+        else:
+            status = OperationCapabilityStatus.UNAVAILABLE
+            reason = "no independently controllable expert contribution seam was proven"
+        return OperationCapability(
+            operation=operation,
+            label=label,
+            status=status,
+            reason=reason,
+            evidence=(*expert_evidence, *backend_evidence),
+            changes_routing=False,
+            skips_compute=False,
+        )
+
+    routing_status = (
+        OperationCapabilityStatus.RUN_VALIDATION_REQUIRED
+        if router_count
+        else OperationCapabilityStatus.UNAVAILABLE
+    )
+    routing_reason = (
+        "static router targets exist; a real forward must validate their payload"
+        if router_count
+        else "no structurally addressable router target was discovered"
+    )
+    writable_status = (
+        OperationCapabilityStatus.NOT_IMPLEMENTED
+        if router_count
+        else OperationCapabilityStatus.UNAVAILABLE
+    )
+    return (
+        OperationCapability(
+            operation=ExpertOperation.CAPTURE_ROUTING,
+            label="Capture routing",
+            status=routing_status,
+            reason=routing_reason,
+            evidence=(f"structure.router_targets={router_count}",),
+            changes_routing=False,
+            skips_compute=False,
+        ),
+        contribution(ExpertOperation.ZERO_CONTRIBUTION, "Zero contribution", can_zero),
+        contribution(ExpertOperation.SCALE_CONTRIBUTION, "Scale contribution", can_scale),
+        OperationCapability(
+            operation=ExpertOperation.EXCLUDE_AND_RENORMALIZE,
+            label="Exclude and renormalize",
+            status=writable_status,
             reason=(
-                "routed expert weights are packed tensors; the active execution backend "
-                "has not been inspected"
+                "router capture exists, but writable top-k exclusion and weight "
+                "renormalization are not implemented"
+                if router_count
+                else "no writable router seam was proven"
             ),
-            weight_layout=ExpertWeightLayout.PACKED_TENSORS,
-        )
-    if has_moe and containers:
-        return InterventionCapabilityReport(
-            tier=InterventionSupportTier.OPAQUE_EXPERTS,
-            operations=(),
-            target_count=0,
-            target_format=None,
-            reason="routed expert storage is opaque to static discovery",
-            weight_layout=ExpertWeightLayout.OPAQUE,
-        )
-    return InterventionCapabilityReport(
-        tier=InterventionSupportTier.UNAVAILABLE,
-        operations=(),
-        target_count=0,
-        target_format=None,
-        reason="no routed expert intervention targets were discovered",
-        weight_layout=ExpertWeightLayout.UNAVAILABLE,
+            evidence=(f"structure.router_targets={router_count}",),
+            changes_routing=True,
+            skips_compute=None,
+        ),
+        OperationCapability(
+            operation=ExpertOperation.REROUTE_NEXT_BEST,
+            label="Reroute to next best",
+            status=writable_status,
+            reason=(
+                "router capture exists, but next-best logits and writable dispatch are "
+                "not implemented"
+                if router_count
+                else "next-best router logits are unavailable"
+            ),
+            evidence=(f"structure.router_targets={router_count}",),
+            changes_routing=True,
+            skips_compute=None,
+        ),
+        OperationCapability(
+            operation=ExpertOperation.SKIP_COMPUTE,
+            label="Skip expert compute",
+            status=(
+                OperationCapabilityStatus.NOT_IMPLEMENTED
+                if has_moe_structure
+                else OperationCapabilityStatus.UNAVAILABLE
+            ),
+            reason=(
+                "expert structure exists, but no pre-dispatch compute-skipping adapter is "
+                "implemented"
+                if has_moe_structure
+                else "no expert dispatch seam was discovered"
+            ),
+            evidence=(*expert_evidence, *backend_evidence),
+            changes_routing=False,
+            skips_compute=True,
+        ),
     )
 
 
@@ -419,12 +613,17 @@ def inspect_intervention_capability(
         execution_backend = "mixed"
     fused_values = {item.fused for item in backends if item.fused is not None}
     fused_backend = next(iter(fused_values)) if len(fused_values) == 1 else None
-    return replace(
+    enriched = replace(
         capability,
         execution_backend=execution_backend,
         fused_backend=fused_backend,
         execution_backends=backends,
         backend_discovery=backend_discovery,
+        operation_capabilities=(),
+    )
+    return replace(
+        enriched,
+        operation_capabilities=_operation_capabilities(enriched, report),
     )
 
 
@@ -558,9 +757,12 @@ __all__ = [
     "ExpertBackendEvidence",
     "ExpertExecutionMode",
     "ExpertInterventionTarget",
+    "ExpertOperation",
     "ExpertWeightLayout",
     "InterventionCapabilityReport",
     "InterventionSupportTier",
+    "OperationCapability",
+    "OperationCapabilityStatus",
     "TransformersExpertInterventionCapability",
     "TransformersInterventionError",
     "intervention_targets",
