@@ -20,6 +20,11 @@ from moeatlas.interventions.evidence import (
     publish_intervention_evidence,
     read_intervention_evidence,
 )
+from moeatlas.interventions.handshake import (
+    ExpertBackendHandshakeReport,
+    ExpertBackendHandshakeStatus,
+    run_huggingface_expert_handshake,
+)
 from moeatlas.interventions.recipes import (
     INTERVENTION_SCHEMA_VERSION,
     InterventionBudget,
@@ -72,6 +77,8 @@ __all__ = [
     "InterventionRecipe",
     "InterventionStudyError",
     "InterventionSupportTier",
+    "ExpertBackendHandshakeReport",
+    "ExpertBackendHandshakeStatus",
     "ExpertBackendDiscovery",
     "ExpertBackendDiscoveryStatus",
     "ExpertBackendEvidence",
@@ -93,4 +100,5 @@ __all__ = [
     "parse_intervention_target",
     "recipe_budget_from_json",
     "run_intervention",
+    "run_huggingface_expert_handshake",
 ]

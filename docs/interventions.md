@@ -71,6 +71,15 @@ top-level or nested-model scope is retained separately. Built-in `eager`,
 unless their semantics are known. The package uses duck typing and does not
 import Transformers during ordinary model-free use.
 
+On the first real run forward, a compatible Hugging Face backend receives a
+temporary per-registry pass-through implementation. The delegate calls the
+original backend without modifying arguments or its return value, records the
+number of invocations, and restores the model's exact backend snapshot plus
+every temporary registry entry before returning. The run records `verified`,
+`not_exercised`, or `unavailable`; a restoration failure stops execution rather
+than allowing later rows to use a dirty model. This handshake adds no separate
+baseline or overhead-measurement run.
+
 ## Honest scope
 
 Local tests prove the mechanics without a model stack. Real checkpoint

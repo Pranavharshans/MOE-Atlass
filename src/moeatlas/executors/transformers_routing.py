@@ -283,6 +283,7 @@ class TransformersRoutingExecutor:
         self._outputs: list[object] = []
         self._forward_timings_ms: list[float] = []
         self._generation_timings_ms: list[float] = []
+        self._backend_handshake: dict[str, Any] | None = None
         self._run_key: str | None = None
         self._published = False
 
@@ -450,6 +451,22 @@ class TransformersRoutingExecutor:
             self._synchronize_cuda(model)
             if succeeded:
                 self._forward_timings_ms.append((time.perf_counter() - started) * 1000.0)
+
+    def _run_with_backend_handshake(
+        self,
+        model: object,
+        execute: Callable[[], Any],
+    ) -> Any:
+        """Exercise one identity delegate on the first successful run forward."""
+
+        if self._backend_handshake is not None:
+            return execute()
+        from ..interventions import run_huggingface_expert_handshake
+
+        result, report = run_huggingface_expert_handshake(model, execute)
+        self._backend_handshake = report.to_dict()
+        self._notes.add(f"expert_backend_handshake:{report.status.value}")
+        return result
 
     @staticmethod
     def _native_forward(model: object, encoding: Mapping[str, object]) -> object:
@@ -777,9 +794,7 @@ class TransformersRoutingExecutor:
             raise StructuredCaptureError(
                 "generation", "generation routing exceeded its event budget"
             )
-        generated_ids = _materialize_ids(
-            getattr(generated, "sequences", generated)
-        )
+        generated_ids = _materialize_ids(getattr(generated, "sequences", generated))
         continuation = generated_ids[len(prompt_ids) :]
         decode = getattr(tokenizer, "decode", None)
         text = (
@@ -886,9 +901,12 @@ class TransformersRoutingExecutor:
             raise RowFailure("execution", "model input placement failed") from None
         try:
             if not self._capture_routing:
-                self._timed_forward(
+                self._run_with_backend_handshake(
                     loaded.model,
-                    lambda: self._native_forward(loaded.model, encoding),
+                    lambda: self._timed_forward(
+                        loaded.model,
+                        lambda: self._native_forward(loaded.model, encoding),
+                    ),
                 )
                 return {
                     "schema_version": EXECUTOR_RESULT_SCHEMA_VERSION,
@@ -896,6 +914,7 @@ class TransformersRoutingExecutor:
                     "prompt": prompt,
                     "sequence_id": sequence_id,
                     "token_count": len(token_events),
+                    "expert_backend_handshake": self._backend_handshake,
                 }
 
             targets = structured_router_targets(self._report)
@@ -904,14 +923,17 @@ class TransformersRoutingExecutor:
             captured_generation: tuple[list[int], str | None] | None = None
 
             if self._mode == "generation" and callable(getattr(loaded.model, "generate", None)):
-                result, generated_ids, generated_text = self._generate_with_routing_capture(
+                result, generated_ids, generated_text = self._run_with_backend_handshake(
                     loaded.model,
-                    tokenizer,
-                    encoding,
-                    token_events,
-                    targets,
-                    sequence_id=sequence_id,
-                    config=config,
+                    lambda: self._generate_with_routing_capture(
+                        loaded.model,
+                        tokenizer,
+                        encoding,
+                        token_events,
+                        targets,
+                        sequence_id=sequence_id,
+                        config=config,
+                    ),
                 )
                 captured_generation = (generated_ids, generated_text)
                 if self._capture_expert_activity:
@@ -973,7 +995,10 @@ class TransformersRoutingExecutor:
                         config=config,
                     )
 
-                result = self._timed_forward(loaded.model, captured_forward)
+                result = self._run_with_backend_handshake(
+                    loaded.model,
+                    lambda: self._timed_forward(loaded.model, captured_forward),
+                )
         except StructuredCaptureError as exc:
             # StructuredCaptureError messages are deliberately bounded and
             # stage-labelled. Preserve that safe diagnostic as row evidence
@@ -1029,6 +1054,7 @@ class TransformersRoutingExecutor:
             "routing_event_count": len(result.routing_events),
             "capability_notes": sorted(result.capability_notes),
             "forward_ms": self._forward_timings_ms[-1],
+            "expert_backend_handshake": self._backend_handshake,
             **output_evidence,
         }
 

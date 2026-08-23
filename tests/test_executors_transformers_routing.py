@@ -250,10 +250,7 @@ def test_unsupported_source_plan_is_a_dependency_failure(fake_loader) -> None:
     with pytest.raises(RowFailure) as excinfo:
         executor(row_index=0, batch_index=0, values={"prompt": "hi"})
     assert excinfo.value.kind == "dependency"
-    assert (
-        excinfo.value.message
-        == "loading plan source type is not supported by this executor"
-    )
+    assert excinfo.value.message == "loading plan source type is not supported by this executor"
 
 
 def test_missing_tokenizer_is_a_dependency_failure(fake_loader) -> None:
@@ -275,6 +272,8 @@ def test_native_forward_mode_skips_capture_and_reports_timing(fake_loader) -> No
     result = executor(row_index=0, batch_index=0, values={"prompt": "hi"})
 
     assert result["capture_routing"] is False
+    assert result["expert_backend_handshake"]["status"] == "unavailable"
+    assert result["expert_backend_handshake"]["restored"] is True
     assert executor._token_events == []
     timing = executor.timing_summary()
     assert timing["capture_routing"] is False
@@ -331,9 +330,7 @@ def test_generation_output_and_routing_come_from_the_same_model_calls(fake_loade
     assert "generation_expert_activity_unavailable" in result["capability_notes"]
     assert model.pre_callbacks == []
     assert all(
-        node.callbacks == []
-        for _path, node in model.named_modules()
-        if hasattr(node, "callbacks")
+        node.callbacks == [] for _path, node in model.named_modules() if hasattr(node, "callbacks")
     )
 
 
@@ -381,9 +378,7 @@ def _workspace_with_rows(tmp_path: Path) -> tuple[Path, Path]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     initialize_workspace(workspace)
-    (workspace / "rows.jsonl").write_text(
-        '{"prompt": "ab"}\n{"prompt": "cd"}\n', encoding="utf-8"
-    )
+    (workspace / "rows.jsonl").write_text('{"prompt": "ab"}\n{"prompt": "cd"}\n', encoding="utf-8")
     descriptor = tmp_path / "dataset.json"
     descriptor.write_text(
         '{"format": "jsonl", "location": "rows.jsonl", "batch_size": 1}',
@@ -504,6 +499,4 @@ def test_no_model_runtime_imported_by_executors_package() -> None:
     import moeatlas.executors.transformers_routing as module
 
     assert module.__name__ == "moeatlas.executors.transformers_routing"
-    assert not any(
-        name in sys.modules for name in ("torch", "transformers", "safetensors")
-    )
+    assert not any(name in sys.modules for name in ("torch", "transformers", "safetensors"))
