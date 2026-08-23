@@ -192,6 +192,9 @@ def test_compact_renderer_contains_complete_adaptive_matrix_without_scroll() -> 
     assert "table-layout: fixed" in rendered
     assert "overflow: hidden" in rendered
     assert 'tabindex="0"' in rendered
+    assert 'data-target="layer:0/expert:0"' in rendered
+    assert 'role="checkbox" aria-checked="false"' in rendered
+    assert "td.is-selected" in rendered
     assert "Exact values and component identities are available on cell focus or hover." in rendered
     assert "overflow-x: auto" not in rendered
     assert '<main class="readable">' in rendered

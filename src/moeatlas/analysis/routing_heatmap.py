@@ -308,6 +308,7 @@ def render_compact_routing_load_heatmap(
         "    tbody th { background: #171c1e; color: #7e8a90; font-size: clamp(0.38rem, 0.58vw, 0.6rem); font-weight: 500; }",  # noqa: E501
         "    td { position: relative; color: #0c1518; font-size: clamp(0.34rem, 0.62vw, 0.62rem); line-height: 1; outline: none; }",  # noqa: E501
         "    td:hover, td:focus-visible { z-index: 2; outline: 2px solid #f0d495; outline-offset: -1px; filter: brightness(1.18); }",  # noqa: E501
+        "    td.is-selected { z-index: 1; outline: 2px solid #f0d495; outline-offset: -2px; box-shadow: inset 0 0 0 2px #0d1011; }",  # noqa: E501
         "    .dense .cell-value, .ultra .cell-value { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }",  # noqa: E501
         "    .ultra thead th span, .ultra tbody th span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }",  # noqa: E501
         "    .heat-0 { background: #171c20; } .heat-1 { background: #1b3039; } .heat-2 { background: #205060; } .heat-3 { background: #237184; } .heat-4 { background: #2b91a0; } .heat-5 { background: #56a99f; } .heat-6 { background: #8ab589; } .heat-7 { background: #c2bb68; } .heat-8 { background: #e2ad55; }",  # noqa: E501
@@ -355,6 +356,8 @@ def render_compact_routing_load_heatmap(
             )
             lines.append(
                 f'            <td class="heat-{heat}" data-heat="{heat}" tabindex="0" '
+                f'data-target="layer:{layer_index}/expert:{expert_position}" '
+                f'role="checkbox" aria-checked="false" '
                 f'aria-label="{accessible}" title="{accessible}"><span class="cell-value">'
                 f"{_escape(visible)}</span></td>"
             )

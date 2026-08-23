@@ -63,6 +63,8 @@ def test_root_serves_react_bundle(client) -> None:
     assert script.status_code == 200
     assert "javascript" in script.headers["content-type"]
     assert "createRoot" in script.text
+    assert "Click cells to prepare an exact intervention target" in script.text
+    assert "Build replicated study" in script.text
     assert stylesheet.status_code == 200
     assert stylesheet.headers["content-type"].startswith("text/css")
     assert "app-shell" in stylesheet.text

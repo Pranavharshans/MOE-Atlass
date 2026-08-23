@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Check,
@@ -812,6 +812,7 @@ type InterventionTargetsResponse = {
 type InterventionEvidence = {
   baseline_run_key: string;
   intervention_run_key: string;
+  recipe_fingerprint: string;
   restoration_status: string;
   all_targets_exercised: boolean;
   row_count: number;
@@ -825,6 +826,20 @@ type InterventionEvidence = {
   intervention_mean_latency_ms?: number | null;
   latency_delta_percent?: number | null;
   target_invocation_counts: Record<string, number>;
+};
+type InterventionStudy = {
+  study_id: string;
+  claim_status: "inconclusive" | "replicated" | "controlled";
+  claim_reason: string;
+  replication_count: number;
+  control_count: number;
+  score_name?: string | null;
+  task_effect: {
+    mean?: number | null;
+    stdev?: number | null;
+    confidence_interval_95?: [number, number] | null;
+    direction_consistency?: number | null;
+  };
 };
 
 function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
@@ -849,6 +864,12 @@ function RunsPage() {
   const [interventionJobId, setInterventionJobId] = useState<string | null>(null);
   const [interventionStatus, setInterventionStatus] = useState<string | null>(null);
   const [interventionEvidence, setInterventionEvidence] = useState<InterventionEvidence | null>(null);
+  const [studyCandidates, setStudyCandidates] = useState<InterventionEvidence[]>([]);
+  const [studyRuns, setStudyRuns] = useState<string[]>([]);
+  const [controlRuns, setControlRuns] = useState<string[]>([]);
+  const [studyStatus, setStudyStatus] = useState<string | null>(null);
+  const [study, setStudy] = useState<InterventionStudy | null>(null);
+  const heatmapFrame = useRef<HTMLIFrameElement | null>(null);
   const interventionJob = useJob(interventionJobId);
 
   useEffect(() => {
@@ -887,6 +908,57 @@ function RunsPage() {
     return () => controller.abort();
   }, [selectedRun]);
 
+  function syncHeatmapSelection(targets: string[] = selectedTargets) {
+    const document = heatmapFrame.current?.contentDocument;
+    if (!document) return;
+    const selected = new Set(targets);
+    document.querySelectorAll<HTMLElement>("[data-target]").forEach((cell) => {
+      const active = selected.has(cell.dataset.target ?? "");
+      cell.classList.toggle("is-selected", active);
+      cell.setAttribute("aria-checked", active ? "true" : "false");
+    });
+  }
+
+  function bindHeatmapTargets() {
+    const document = heatmapFrame.current?.contentDocument;
+    if (!document) return;
+    document.querySelectorAll<HTMLElement>("[data-target]").forEach((cell) => {
+      const toggle = () => {
+        const target = cell.dataset.target;
+        if (!target) return;
+        const supported = interventionTargets?.targets.some((item) => item.label === target);
+        if (!supported) {
+          setInterventionStatus(
+            interventionTargets?.reason ?? "This model does not expose that expert for live intervention.",
+          );
+          return;
+        }
+        setSelectedTargets((current) => (
+          current.includes(target)
+            ? current.filter((item) => item !== target)
+            : [...current, target].sort()
+        ));
+        setInterventionStatus(null);
+      };
+      cell.onclick = toggle;
+      cell.onkeydown = (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggle();
+        }
+      };
+    });
+    syncHeatmapSelection();
+  }
+
+  useEffect(() => {
+    bindHeatmapTargets();
+  }, [interventionTargets, metric, selectedRun]);
+
+  useEffect(() => {
+    syncHeatmapSelection();
+  }, [selectedTargets]);
+
   useEffect(() => {
     if (!selectedRun) {
       setInterventionTargets(null);
@@ -898,9 +970,14 @@ function RunsPage() {
       fetch(`/api/runs/${encodeURIComponent(selectedRun)}/intervention-targets`, { headers: { Accept: "application/json" }, signal: controller.signal }).then((response) => response.json() as Promise<InterventionTargetsResponse>),
       fetch(`/api/runs/${encodeURIComponent(selectedRun)}/intervention`, { headers: { Accept: "application/json" }, signal: controller.signal }).then((response) => response.json() as Promise<{ status: string; evidence?: InterventionEvidence | null }>),
     ]).then(([targets, evidence]) => {
+      const nextEvidence = evidence.status === "available" ? evidence.evidence ?? null : null;
       setInterventionTargets(targets);
       setSelectedTargets([]);
-      setInterventionEvidence(evidence.status === "available" ? evidence.evidence ?? null : null);
+      setInterventionEvidence(nextEvidence);
+      setStudyRuns(nextEvidence ? [selectedRun] : []);
+      setControlRuns([]);
+      setStudy(null);
+      setStudyStatus(null);
     }).catch((cause) => {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
       setInterventionTargets(null);
@@ -927,6 +1004,35 @@ function RunsPage() {
       .catch(() => setInterventionStatus("Intervention completed; refresh to inspect it."));
     return () => controller.abort();
   }, [interventionJob?.state, interventionJob?.result, selectedRun]);
+
+  useEffect(() => {
+    if (!interventionEvidence || !entries.length) {
+      setStudyCandidates([]);
+      return undefined;
+    }
+    const controller = new AbortController();
+    void Promise.all(entries.map(async (entry) => {
+      try {
+        const response = await fetch(
+          `/api/runs/${encodeURIComponent(entry.run_key)}/intervention`,
+          { headers: { Accept: "application/json" }, signal: controller.signal },
+        );
+        if (!response.ok) return null;
+        const document = await response.json() as {
+          status: string;
+          evidence?: InterventionEvidence | null;
+        };
+        return document.status === "available" ? document.evidence ?? null : null;
+      } catch {
+        return null;
+      }
+    })).then((documents) => {
+      if (!controller.signal.aborted) {
+        setStudyCandidates(documents.filter((item): item is InterventionEvidence => item !== null));
+      }
+    });
+    return () => controller.abort();
+  }, [entries, interventionEvidence]);
 
   useEffect(() => {
     if (!selectedRun) {
@@ -965,7 +1071,32 @@ function RunsPage() {
     }
   }
 
+  async function createStudy() {
+    if (studyRuns.length < 2) {
+      setStudyStatus("Select at least two repeated intervention runs.");
+      return;
+    }
+    try {
+      setStudyStatus("Checking repeated runs and negative controls…");
+      const response = await postJson<{ study_id: string; study: InterventionStudy }>(
+        "/api/intervention-studies",
+        {
+          intervention_run_keys: [...studyRuns].sort(),
+          control_run_keys: [...controlRuns].sort(),
+        },
+      );
+      setStudy(response.study);
+      setStudyStatus("Study published with immutable run evidence.");
+    } catch {
+      setStudy(null);
+      setStudyStatus("These runs do not share one recipe and evaluator, or evidence is incomplete.");
+    }
+  }
+
   const selectedEntry = entries.find((entry) => entry.run_key === selectedRun);
+  const selectedControlRecipe = studyCandidates.find((candidate) => (
+    controlRuns.includes(candidate.intervention_run_key)
+  ))?.recipe_fingerprint;
   return (
     <div className="space-y-6">
       <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Runs / Inspect</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white">Trace inventory.</h1><p className="mt-3 max-w-[58ch] text-sm leading-6 text-muted">Routing heatmaps, validation status, and activation artifacts belong to a completed run. The UI never fills missing evidence with a visual guess.</p></div><div className="research-header-meta"><StatusDot tone={state === "unavailable" ? "warn" : "good"} /><span>{state === "loading" ? "Reading workspace…" : state === "unavailable" ? "Workspace offline" : `${entries.length} registered`}</span></div></header>
@@ -978,13 +1109,23 @@ function RunsPage() {
             <div className="metric-grid mt-5"><MetricCard label="Outputs changed" value={interventionEvidence.changed_output_fraction == null ? "—" : `${(interventionEvidence.changed_output_fraction * 100).toFixed(1)}%`} detail={`${interventionEvidence.changed_output_rows}/${interventionEvidence.row_count} paired rows`} /><MetricCard label="Task score delta" value={interventionEvidence.task_score_delta == null ? "unavailable" : interventionEvidence.task_score_delta.toFixed(4)} detail={interventionEvidence.score_name ?? "add a reference column for scoring"} /><MetricCard label="Latency delta" value={interventionEvidence.latency_delta_percent == null ? "—" : `${interventionEvidence.latency_delta_percent.toFixed(1)}%`} detail="same run settings" /><MetricCard label="Restoration" value={interventionEvidence.restoration_status} detail="temporary hooks removed" /></div>
             {!interventionEvidence.all_targets_exercised ? <p className="mt-4 rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal">At least one selected expert was never called by these rows. This run does not establish a causal effect for that target.</p> : null}
             <div className="mt-4 flex flex-wrap gap-2"><a className="button-secondary" target="_blank" rel="noreferrer" href={`/api/compare/heatmap?baseline_run_key=${encodeURIComponent(interventionEvidence.baseline_run_key)}&comparison_run_key=${encodeURIComponent(interventionEvidence.intervention_run_key)}&metric=count_deltas`}>Open routing delta</a></div>
+            <div className="mt-5 border-t border-line pt-5">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="label-caps text-[0.57rem] text-muted">Replication study</p><p className="mt-2 max-w-[62ch] text-xs leading-5 text-muted">Select repeated runs of the same intervention. Add runs against unrelated experts as negative controls.</p></div>{study ? <span className="source-card-type">{study.claim_status}</span> : null}</div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <label className="field-label" htmlFor="study-runs">Repeated intervention runs<select id="study-runs" className="input-control mt-2 min-h-32" multiple value={studyRuns} onChange={(event) => setStudyRuns(Array.from(event.target.selectedOptions, (option) => option.value))}>{studyCandidates.filter((candidate) => candidate.recipe_fingerprint === interventionEvidence.recipe_fingerprint).map((candidate) => <option key={candidate.intervention_run_key} value={candidate.intervention_run_key}>{candidate.intervention_run_key}</option>)}</select></label>
+                <label className="field-label" htmlFor="control-runs">Negative-control runs<select id="control-runs" className="input-control mt-2 min-h-32" multiple value={controlRuns} onChange={(event) => setControlRuns(Array.from(event.target.selectedOptions, (option) => option.value))}>{studyCandidates.filter((candidate) => candidate.recipe_fingerprint !== interventionEvidence.recipe_fingerprint && (!selectedControlRecipe || candidate.recipe_fingerprint === selectedControlRecipe) && !studyRuns.includes(candidate.intervention_run_key)).map((candidate) => <option key={candidate.intervention_run_key} value={candidate.intervention_run_key}>{candidate.intervention_run_key}</option>)}</select></label>
+              </div>
+              <button type="button" className="button-secondary mt-4" onClick={() => void createStudy()}>Build replicated study</button>
+              {studyStatus ? <p className="mt-3 text-xs leading-5 text-muted" role="status">{studyStatus}</p> : null}
+              {study ? <div className="metric-grid mt-4"><MetricCard label="Mean task effect" value={study.task_effect.mean == null ? "—" : study.task_effect.mean.toFixed(4)} detail={study.score_name ?? "task evaluator"} /><MetricCard label="95% interval" value={study.task_effect.confidence_interval_95 ? `${study.task_effect.confidence_interval_95[0].toFixed(3)} to ${study.task_effect.confidence_interval_95[1].toFixed(3)}` : "—"} detail="replication uncertainty" /><MetricCard label="Consistency" value={study.task_effect.direction_consistency == null ? "—" : `${(study.task_effect.direction_consistency * 100).toFixed(0)}%`} detail={`${study.replication_count} repeated runs`} /><MetricCard label="Controls" value={String(study.control_count)} detail={study.claim_reason} /></div> : null}
+            </div>
           </section> : null}
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
-            <section className="research-card"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Routing load</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Layer × expert heatmap</h2></div><div className="flex items-center gap-2"><label className="sr-only" htmlFor="heatmap-metric">Heatmap metric</label><select id="heatmap-metric" className="input-control input-control-compact" value={metric} onChange={(event) => setMetric(event.target.value as typeof metric)}><option value="assignment_counts">Counts</option><option value="assignment_shares">Shares</option><option value="load_ratios">Load ratios</option></select><span className="source-card-type">{summaryState === "loading" ? "loading" : summary?.status ?? "unavailable"}</span></div></div>{summary?.status === "available" && selectedRun ? <iframe className="heatmap-frame-react mt-5" title={`Routing heatmap for ${selectedRun}`} src={`/api/runs/${encodeURIComponent(selectedRun)}/heatmap?metric=${metric}&view=compact`} /> : <div className="empty-heatmap mt-5"><GitBranch size={20} className="text-muted" /><p className="mt-3 text-sm text-white">No published matrix.</p><p className="mt-1 max-w-[32ch] text-center text-xs leading-5 text-muted">{summary?.reason ?? "A validated routing inspection is required before rendering heat."}</p></div>}
+            <section className="research-card"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Routing load</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Layer × expert heatmap</h2><p className="mt-2 text-xs text-muted">Click cells to prepare an exact intervention target. The entire matrix remains in view.</p></div><div className="flex items-center gap-2"><label className="sr-only" htmlFor="heatmap-metric">Heatmap metric</label><select id="heatmap-metric" className="input-control input-control-compact" value={metric} onChange={(event) => setMetric(event.target.value as typeof metric)}><option value="assignment_counts">Counts</option><option value="assignment_shares">Shares</option><option value="load_ratios">Load ratios</option></select><span className="source-card-type">{summaryState === "loading" ? "loading" : summary?.status ?? "unavailable"}</span></div></div>{summary?.status === "available" && selectedRun ? <iframe ref={heatmapFrame} onLoad={bindHeatmapTargets} className="heatmap-frame-react mt-5" title={`Routing heatmap for ${selectedRun}`} src={`/api/runs/${encodeURIComponent(selectedRun)}/heatmap?metric=${metric}&view=compact`} /> : <div className="empty-heatmap mt-5"><GitBranch size={20} className="text-muted" /><p className="mt-3 text-sm text-white">No published matrix.</p><p className="mt-1 max-w-[32ch] text-center text-xs leading-5 text-muted">{summary?.reason ?? "A validated routing inspection is required before rendering heat."}</p></div>}
               {entries.length > 1 ? <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-line pt-4"><label className="field-label min-w-[15rem]" htmlFor="comparison-run">Compare against<select id="comparison-run" className="input-control mt-2" value={comparisonRun} onChange={(event) => setComparisonRun(event.target.value)}><option value="">Select baseline</option>{entries.filter((entry) => entry.run_key !== selectedRun).map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key}</option>)}</select></label><label className="field-label" htmlFor="comparison-metric">Delta<select id="comparison-metric" className="input-control mt-2" value={comparisonMetric} onChange={(event) => setComparisonMetric(event.target.value as typeof comparisonMetric)}><option value="count_deltas">Counts</option><option value="share_deltas">Shares</option><option value="ratio_deltas">Ratios</option></select></label>{comparisonRun ? <a className="button-secondary" target="_blank" rel="noreferrer" href={`/api/compare/heatmap?baseline_run_key=${encodeURIComponent(comparisonRun)}&comparison_run_key=${encodeURIComponent(selectedRun)}&metric=${comparisonMetric}`}>Open comparison</a> : null}</div> : null}
             </section>
             <aside className="space-y-5">
-              <section className="research-card research-card-dark"><div className="flex items-center gap-2"><ShieldCheck size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Validation</p></div><dl className="contract-list mt-5"><div><dt>Status</dt><dd>{summary?.status ?? "pending"}</dd></div><div><dt>Adapter</dt><dd>{summary?.adapter_name ?? "—"}</dd></div><div><dt>Top-k</dt><dd>{summary?.routed_top_k == null ? "—" : summary.routed_top_k}</dd></div><div><dt>Digest</dt><dd>{summary?.inspection_digest ? summary.inspection_digest.slice(0, 18) + "…" : "—"}</dd></div></dl></section>
+              <section className="research-card research-card-dark"><div className="flex items-center gap-2"><ShieldCheck size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Evidence boundary</p></div><dl className="contract-list mt-5"><div><dt>Routing</dt><dd>{summary?.status === "available" ? "validated" : "unavailable"}</dd></div><div><dt>Causal</dt><dd>{study?.claim_status ?? (interventionEvidence ? "paired once" : "not tested")}</dd></div><div><dt>Adapter</dt><dd>{summary?.adapter_name ?? "—"}</dd></div><div><dt>Top-k</dt><dd>{summary?.routed_top_k == null ? "—" : summary.routed_top_k}</dd></div><div><dt>Digest</dt><dd>{summary?.inspection_digest ? summary.inspection_digest.slice(0, 18) + "…" : "—"}</dd></div></dl><p className="mt-3 text-[0.65rem] leading-5 text-muted">Evidence applies only to this pinned model revision, dataset revision, and run settings. It is not universal model certification.</p></section>
               <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Expert activity</p></div>{activity?.status === "available" && activity.summary ? <><div className="mt-4 grid grid-cols-2 gap-3"><MetricCard label="Active cells" value={String(activity.summary.active_expert_cells ?? "—")} detail="experts with events"/><MetricCard label="Events" value={String(activity.summary.total_event_count ?? "—")} detail="validated expert events"/></div><p className="mt-4 text-xs leading-5 text-muted">Norm summaries are available from persisted expert-event evidence. Empty cells remain explicit zeros.</p></> : <p className="mt-4 text-xs leading-5 text-muted">{activity?.reason ?? "Loading activation evidence…"}</p>}</section>
               <section className="research-card research-card-dark"><div className="flex items-center gap-2"><GitBranch size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Architecture</p></div>{architecture?.status === "available" && architecture.report ? <><dl className="contract-list mt-4"><div><dt>Families</dt><dd>{Array.isArray(architecture.report.architecture_families) ? architecture.report.architecture_families.join(", ") : "generic"}</dd></div><div><dt>Components</dt><dd>{Array.isArray(architecture.report.components) ? architecture.report.components.length : "—"}</dd></div><div><dt>Warnings</dt><dd>{Array.isArray(architecture.report.warnings) ? architecture.report.warnings.length : "0"}</dd></div></dl><p className="mt-3 text-xs leading-5 text-muted">{architecture.report.model_key ? `Manifest ${String(architecture.report.model_key)}` : "Persisted discovery report"}</p></> : <p className="mt-4 text-xs leading-5 text-muted">{architecture?.reason ?? "Architecture evidence is not published for this run yet."}</p>}</section>
               <section className="research-card research-card-dark">
