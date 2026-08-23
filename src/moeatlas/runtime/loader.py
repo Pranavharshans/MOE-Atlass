@@ -35,15 +35,20 @@ from .contracts import (
     _attach_pending_cleanup,
 )
 
+_NONFINITE_FLOAT_TYPE = "__moeatlas_non_finite_float__"
+
 
 def _normalize_json(value: Any, *, path: str = "config") -> Any:
-    """Defensively copy finite JSON data with deterministic object ordering.
+    """Defensively copy JSON data with deterministic, typed normalization.
 
     Transformers config objects may expose JSON-object keys as integers after
     ``PretrainedConfig.to_dict()`` (for example ``id2label``).  JSON itself
     represents those keys as strings, so canonical observation converts exact
     integer keys to their JSON spelling while rejecting unsupported key types
-    and collisions instead of silently dropping data.
+    and collisions instead of silently dropping data.  Transformers configs
+    also use IEEE non-finite sentinels for legitimate architectural limits.
+    Encode those floats explicitly so manifests remain strict JSON without
+    rejecting an otherwise loadable model or confusing a sentinel with text.
     """
 
     if isinstance(value, Mapping):
@@ -72,7 +77,14 @@ def _normalize_json(value: Any, *, path: str = "config") -> Any:
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise RuntimeValidationError(f"{path} values must be finite")
+            label = (
+                "nan"
+                if math.isnan(value)
+                else "positive_infinity"
+                if value > 0
+                else "negative_infinity"
+            )
+            return {_NONFINITE_FLOAT_TYPE: label}
         return value
     raise RuntimeValidationError(f"{path} contains unsupported value type {type(value).__name__}")
 

@@ -368,19 +368,30 @@ def test_runtime_observation_preflight_does_not_iterate_or_forward() -> None:
 
 
 def test_runtime_observation_and_config_validation_is_strict() -> None:
-    with pytest.raises(RuntimeValidationError, match="config"):
-        model = SyntheticMoE()
-        tokenizer = TokenizerStub()
-        load_instance(
-            _plan(),
-            model,
-            tokenizer,
-            observation=_artifacts(
-                model=model,
-                tokenizer=tokenizer,
-                config={"bad": float("nan")},
-            ),
-        )
+    model = SyntheticMoE()
+    tokenizer = TokenizerStub()
+    nonfinite = load_instance(
+        _plan(),
+        model,
+        tokenizer,
+        observation=_artifacts(
+            model=model,
+            tokenizer=tokenizer,
+            config={
+                "limits": [float("inf"), float("-inf"), float("nan")],
+            },
+        ),
+    )
+    assert nonfinite.manifest.config_hash == make_config_hash(
+        {
+            "limits": [
+                {"__moeatlas_non_finite_float__": "positive_infinity"},
+                {"__moeatlas_non_finite_float__": "negative_infinity"},
+                {"__moeatlas_non_finite_float__": "nan"},
+            ]
+        }
+    )
+    nonfinite.close()
     model = SyntheticMoE()
     tokenizer = TokenizerStub()
     result = load_instance(
