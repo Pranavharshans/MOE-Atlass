@@ -8,7 +8,7 @@ the server layer owns no orchestration of its own.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -121,16 +121,112 @@ class HubSearchResponse(_WireModel):
     entries: tuple[HubSearchEntryResponse, ...] = Field(default_factory=tuple)
 
 
+class DiscoveryRequest(_WireModel):
+    """User intent for one live model discovery job."""
+
+    model_id: str = Field(min_length=3, max_length=500)
+    model_revision: str = Field(default="main", min_length=1, max_length=200)
+    device: str = Field(default="auto", min_length=1, max_length=32)
+    dtype: Literal["preserve", "float32", "float16", "bfloat16"] = "preserve"
+    trust_remote_code: bool = False
+    allow_downloads: bool = True
+
+
+class RunStartRequest(_WireModel):
+    """Bounded live run intent accepted by the local control plane."""
+
+    model_id: str = Field(min_length=3, max_length=500)
+    model_revision: str = Field(default="main", min_length=1, max_length=200)
+    dataset_id: str = Field(min_length=3, max_length=500)
+    dataset_revision: str = Field(default="main", min_length=1, max_length=200)
+    dataset_config: str | None = Field(default=None, max_length=200)
+    dataset_split: str = Field(default="train", min_length=1, max_length=200)
+    prompt_column: str = Field(default="prompt", min_length=1, max_length=200)
+    sample_cap: int = Field(default=32, ge=1, le=10_000)
+    batch_size: int = Field(default=1, ge=1, le=256)
+    max_new_tokens: int = Field(default=128, ge=1, le=1_000_000)
+    token_text_policy: Literal["redacted", "stored"] = "redacted"
+    allow_export: bool = True
+    retain_raw_payloads: bool = False
+    mode: Literal["generation", "teacher_forced"] = "generation"
+    device: str = Field(default="auto", min_length=1, max_length=32)
+    dtype: Literal["preserve", "float32", "float16", "bfloat16"] = "preserve"
+    trust_remote_code: bool = False
+    allow_downloads: bool = True
+    capture_expert_activity: bool = True
+    resume_job_id: str | None = Field(default=None, max_length=100)
+
+
+class JobProgressResponse(_WireModel):
+    stage: str
+    completed: int = 0
+    total: int | None = None
+    message: str = ""
+
+
+class JobResponse(_WireModel):
+    job_id: str
+    kind: str
+    state: Literal["queued", "running", "completed", "cancelled", "failed"]
+    progress: JobProgressResponse
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class JobCreatedResponse(_WireModel):
+    job_id: str
+    kind: str
+    state: Literal["queued", "running", "completed", "cancelled", "failed"]
+
+
+class ArchitectureResponse(_WireModel):
+    run_key: str
+    status: Literal["available", "unavailable"]
+    reason: str | None = None
+    report: dict[str, Any] | None = None
+
+
+class ActivityResponse(_WireModel):
+    run_key: str
+    status: Literal["available", "unavailable"]
+    reason: str | None = None
+    summary: dict[str, Any] | None = None
+
+
+class InterventionRecipeRequest(_WireModel):
+    operation: Literal["ablate", "scale", "reroute", "alter_router"]
+    targets: tuple[str, ...] = Field(min_length=1, max_length=1024)
+    factor: float | None = None
+    bias: float | None = None
+    alternates: tuple[tuple[str, str], ...] = ()
+
+
+class InterventionRecipeResponse(_WireModel):
+    status: Literal["prepared", "unsupported"]
+    recipe: dict[str, Any]
+    fingerprint: str
+    reason: str | None = None
+
+
 __all__ = [
     "AdapterEntryResponse",
     "AdaptersResponse",
+    "ActivityResponse",
+    "ArchitectureResponse",
+    "DiscoveryRequest",
     "HealthResponse",
     "HubSearchEntryResponse",
     "HubSearchResponse",
+    "InterventionRecipeRequest",
+    "InterventionRecipeResponse",
+    "JobCreatedResponse",
+    "JobProgressResponse",
+    "JobResponse",
     "RoutingShardEntryResponse",
     "RunDetailResponse",
     "RunEntryResponse",
     "RunSummaryResponse",
+    "RunStartRequest",
     "RunsResponse",
     "WorkspaceResponse",
 ]

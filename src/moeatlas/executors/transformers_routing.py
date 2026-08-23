@@ -5,15 +5,18 @@ drives planned prompt rows through the real model that plan resolves. It adds
 no loading logic of its own: models arrive through the existing
 ``moeatlas.runtime`` seams (:func:`~moeatlas.runtime.load_huggingface`,
 :func:`~moeatlas.runtime.load_local`), structure evidence arrives through the
-existing static scanner, and routing capture composes through the generic
-structure-driven seam (:func:`~moeatlas.runtime.run_structured_routing_forward`).
+existing static scanner, and routing/expert capture composes through the
+generic structure-driven seams
+(:func:`~moeatlas.runtime.run_structured_routing_forward` and
+:func:`~moeatlas.runtime.run_structured_expert_forward`).
 
 Every optional dependency stays lazy: importing this module never imports
 ``torch`` or ``transformers``; they enter only inside the runtime loaders once
 a row actually executes. Row failures are evidence, not run deaths — declared
 with :class:`~moeatlas.services.run_engine.RowFailure`. Publication appends
-one immutable routing shard through the existing store boundary and reconciles
-the workspace catalog so ``/api/runs`` sees the run without manual steps.
+one immutable structured shard through the existing store boundary and
+reconciles the workspace catalog so ``/api/runs`` sees the run without manual
+steps.
 """
 
 from __future__ import annotations
@@ -26,12 +29,15 @@ from typing import Any
 
 from ..core import validate_stable_identifier
 from ..discovery import DiscoveryReport, scan
-from ..events import EVENT_SCHEMA_VERSION, RoutingEvent, TokenEvent, TokenPhase
+from ..events import EVENT_SCHEMA_VERSION, ExpertEvent, RoutingEvent, TokenEvent, TokenPhase
 from ..loading import HuggingFaceSource, LoadingPlan, LocalSource
+from ..probe import ProbeResolutionError
 from ..runtime.contracts import LoadedModel
 from ..runtime.generic_capture import (
     StructuredCaptureError,
     StructuredRouterTarget,
+    StructuredRoutingForwardResult,
+    run_structured_expert_forward,
     run_structured_routing_forward,
     structured_router_targets,
 )
@@ -131,21 +137,58 @@ def _publish_universal_inspection(workspace: object, run_key: str, report: objec
         raise
 
 
+def _publish_discovery_report(workspace: object, run_key: str, report: DiscoveryReport) -> None:
+    """Persist the exact static report used to derive the routing universe."""
+
+    root = Path(workspace)
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError("workspace must be an existing non-symlink directory")
+    directory = root / "discoveries"
+    if directory.exists() and directory.is_symlink():
+        raise RuntimeError("discovery directory must not be a symlink")
+    directory.mkdir(exist_ok=True)
+    target = directory / f"{run_key}.json"
+    payload = report.to_json().encode("utf-8")
+    if target.exists():
+        if target.is_symlink() or not target.is_file() or target.read_bytes() != payload:
+            raise RuntimeError("published discovery report conflicts with the run")
+        return
+    fd, staged_name = tempfile.mkstemp(dir=str(directory), prefix=f".{run_key}.", suffix=".staging")
+    staged = Path(staged_name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+        os.replace(staged, target)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+
+
 class TransformersRoutingExecutor:
     """One plan-bound, single-run real-model routing executor."""
 
-    def __init__(self, plan: LoadingPlan, *, store_token_text: bool = False) -> None:
+    def __init__(
+        self,
+        plan: LoadingPlan,
+        *,
+        store_token_text: bool = False,
+        capture_expert_activity: bool = False,
+    ) -> None:
         if not isinstance(plan, LoadingPlan):
             raise TypeError("plan must be a validated LoadingPlan")
         if type(store_token_text) is not bool:
             raise TypeError("store_token_text must be an exact bool")
+        if type(capture_expert_activity) is not bool:
+            raise TypeError("capture_expert_activity must be an exact bool")
         self._plan = plan
         self._store_token_text = store_token_text
+        self._capture_expert_activity = capture_expert_activity
         self._loaded: LoadedModel | None = None
         self._report: DiscoveryReport | None = None
         self._targets: tuple[StructuredRouterTarget, ...] = ()
         self._token_events: list[TokenEvent] = []
         self._routing_events: list[RoutingEvent] = []
+        self._expert_events: list[ExpertEvent] = []
         self._notes: set[str] = set()
         self._outputs: list[object] = []
         self._run_key: str | None = None
@@ -221,14 +264,45 @@ class TransformersRoutingExecutor:
         max_events = len(token_events) * len(targets) * targets[0].routed_top_k
         config = getattr(loaded.model, "config", None)
         try:
-            result = run_structured_routing_forward(
-                loaded.model,
-                self._report,
-                token_events,
-                dict(encoding),
-                max_events=max_events,
-                config=config,
-            )
+            if self._capture_expert_activity:
+                try:
+                    result = run_structured_expert_forward(
+                        loaded.model,
+                        self._report,
+                        token_events,
+                        dict(encoding),
+                        max_events=max_events,
+                        max_expert_events=max_events,
+                        config=config,
+                    )
+                except (ProbeResolutionError, StructuredCaptureError):
+                    # Routing remains valid evidence when a family dispatches
+                    # experts through an opaque fused kernel.  Retry the
+                    # routing-only capture and carry the limitation as a
+                    # capability note rather than claiming activations.
+                    result = run_structured_routing_forward(
+                        loaded.model,
+                        self._report,
+                        token_events,
+                        dict(encoding),
+                        max_events=max_events,
+                        config=config,
+                    )
+                    result = StructuredRoutingForwardResult(
+                        output=result.output,
+                        token_events=result.token_events,
+                        routing_events=result.routing_events,
+                        capability_notes=(*result.capability_notes, "expert_activity_unavailable"),
+                    )
+            else:
+                result = run_structured_routing_forward(
+                    loaded.model,
+                    self._report,
+                    token_events,
+                    dict(encoding),
+                    max_events=max_events,
+                    config=config,
+                )
         except StructuredCaptureError:
             raise
         except (KeyboardInterrupt, SystemExit):
@@ -239,6 +313,7 @@ class TransformersRoutingExecutor:
         self._targets = targets
         self._token_events.extend(result.token_events)
         self._routing_events.extend(result.routing_events)
+        self._expert_events.extend(result.expert_events)
         self._notes.update(result.capability_notes)
         self._outputs.append(result.output)
         return {
@@ -318,28 +393,31 @@ class TransformersRoutingExecutor:
         if self._published:
             raise RuntimeError("executor artifacts were already published")
         if not self._token_events:
+            self._release()
             return None
         if self._run_key is None:
             raise RuntimeError(_RUN_KEY_FAILURE)
         self._published = True
 
         ordered_events = self._ordered_storage_events()
-        from ..runtime.routing_forward import RoutingForwardResult
+        from ..runtime.generic_capture import StructuredRoutingForwardResult
 
-        result = RoutingForwardResult(
+        result = StructuredRoutingForwardResult(
             output=self._outputs[-1] if self._outputs else object(),
             token_events=tuple(self._token_events),
             routing_events=ordered_events,
+            expert_events=tuple(self._expert_events),
         )
-        from ..store import append_routing_shard, rebuild_catalog
+        from ..store import append_structured_shard, rebuild_catalog
 
-        receipt = append_routing_shard(
+        receipt = append_structured_shard(
             workspace,
             result,
             store_token_text=self._store_token_text,
         )
         if self._report is None:
             raise RuntimeError("routing discovery report was not retained for publication")
+        _publish_discovery_report(workspace, self._run_key, self._report)
         _publish_universal_inspection(workspace, self._run_key, self._report)
         rebuild_catalog(workspace, at=None)
         self._release()
@@ -371,6 +449,11 @@ class TransformersRoutingExecutor:
             loaded.close()
         except Exception:
             pass  # publication succeeded; cleanup problems never replace it
+
+    def close(self) -> None:
+        """Release a loaded model when execution ends before publication."""
+
+        self._release()
 
 
 __all__ = ["EXECUTOR_RESULT_SCHEMA_VERSION", "TransformersRoutingExecutor"]

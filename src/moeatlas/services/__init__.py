@@ -19,6 +19,14 @@ from .hub import (
     HubSearchError,
     search_hub,
 )
+from .model_resolution import (
+    HUB_RESOLUTION_SCHEMA_VERSION,
+    HUGGINGFACE_API_ORIGIN,
+    ModelResolutionError,
+    resolve_huggingface_dataset_revision,
+    resolve_huggingface_plan,
+    resolve_huggingface_revision,
+)
 from .retention import (
     RETENTION_SCHEMA_VERSION,
     RetentionError,
@@ -73,6 +81,8 @@ __all__ = [
     "DATASET_COLUMN_ROLES",
     "DATASET_READER_SCHEMA_VERSION",
     "HUB_SEARCH_SCHEMA_VERSION",
+    "HUB_RESOLUTION_SCHEMA_VERSION",
+    "HUGGINGFACE_API_ORIGIN",
     "EXECUTION_PROGRESS_STAGE",
     "ROW_FAILURE_KINDS",
     "RUN_ENGINE_SCHEMA_VERSION",
@@ -87,6 +97,7 @@ __all__ = [
     "DatasetRow",
     "HubSearchEntry",
     "HubSearchError",
+    "ModelResolutionError",
     "ExecutionOutcome",
     "RowFailure",
     "RowRecord",
@@ -116,6 +127,9 @@ __all__ = [
     "register_run",
     "resolve_dataset_location",
     "search_hub",
+    "resolve_huggingface_dataset_revision",
+    "resolve_huggingface_plan",
+    "resolve_huggingface_revision",
     "sync_runs_from_shards",
     "validate_column_mapping",
 ]

@@ -222,11 +222,13 @@ unsupported plan sources, and load failures are declared dependency/validation
 execution failures without partial publication.
 
 Publication is automatic. After the run service publishes the terminal
-lifecycle record, the executor appends its accumulated events as one immutable
-routing shard through `append_routing_shard` (unchanged) and reconciles the
-workspace catalog via `rebuild_catalog`, so `/api/runs` sees the completed run
-with shard counts without any manual step. Token text stays redacted unless
-the caller opts in.
+lifecycle record, the executor appends its accumulated routing and optional
+expert-activity events as one immutable structured shard through
+`append_structured_shard`, persists the exact discovery report and universal
+inspection used for decoding, and reconciles the workspace catalog via
+`rebuild_catalog`. `/api/runs` therefore sees the completed run with shard
+counts and the UI can distinguish routing evidence from activation evidence.
+Token text stays redacted unless the caller opts in.
 
 ## Boundaries and deferred evidence
 

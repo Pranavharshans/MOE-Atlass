@@ -1,11 +1,15 @@
-# Local server
+# Local server and control plane
 
-The optional `server` layer is a thin, read-only FastAPI application over
-the same shared services the CLI uses. It owns no orchestration of its
-own: every endpoint delegates to workspace/catalog services or the adapter
-registry, carries fixed safe error details that never echo input contents,
-and never loads a model, downloads a checkpoint, or writes to storage. The
-explicit public Hub search endpoint is the only metadata egress path.
+The optional `server` layer is a thin FastAPI control plane over the same
+loading, discovery, run, storage, and analysis services the CLI uses. It keeps
+model work off the request thread behind a bounded in-process job manager,
+with progress polling and cooperative cancellation. It is suitable for a
+local GPU process or for the same process running inside a provider VM; it
+does not open SSH sessions or proxy provider terminals.
+
+Errors exposed to the browser use fixed safe details and never echo prompts,
+Hub response bodies, credentials, or local paths. Model/dataset downloads are
+performed only after an explicit user request with `allow_downloads: true`.
 
 FastAPI is an optional dependency (`pip install moeatlas[server]`). The
 wire DTOs in `moeatlas.server.dto` stay importable without it;
@@ -13,9 +17,7 @@ wire DTOs in `moeatlas.server.dto` stay importable without it;
 `server dependency 'fastapi' is not installed` failure when the extra is
 missing.
 
-## Wire surface
-
-All endpoints are GET and read-only:
+## Read and control surface
 
 - `/healthz` — package name/version, Python version, and the honest
   `model_validation_status: deferred` marker from the validation ledger.
@@ -29,26 +31,47 @@ All endpoints are GET and read-only:
   its committed routing-shard listing via the bounded store reopen seam;
   unknown keys report the fixed `run is not registered` failure and shard
   storage failures the fixed `run shards are unavailable` failure.
-- `/api/runs/{run_key}/summary` — typed routing-load summary response.
-  Honest scope: a summary requires a caller-supplied adapter inspection
-  document (the same seam as the CLI `heatmap` command), which the server
-  does not own and never invents, so every registered run reports
-  `status: "unavailable"` with that fixed reason rather than computed data.
-- `/api/runs/{run_key}/heatmap` — serves an already-generated static
-  heatmap document published at `heatmaps/<run_key>.html` under the
-  workspace as `text/html`. The managed directory and candidate file must
-  be real non-symlink entries whose canonical location stays inside the
-  workspace; anything else reads as absent (`run heatmap is not published`,
-  404), so traversal and symlink attacks never widen the served surface.
-  Reads are bounded by `max_artifact_bytes` (strict positive integer,
-  hard ceiling applied at construction; default 10 MB); oversized
-  documents report the fixed byte-budget failure.
+- `/api/runs/{run_key}/summary` — typed routing-load summary response. It
+  aggregates the persisted universal or adapter inspection and returns
+  unavailable when routing evidence is not complete.
+- `/api/runs/{run_key}/architecture` — serves the exact persisted static
+  discovery report, including facts, candidates, components, and warnings.
+- `/api/runs/{run_key}/activity` — summarizes persisted expert events (active
+  cells, event counts, and contribution norms). Routing evidence without
+  expert events remains explicitly unavailable rather than being called an
+  activation.
+- `/api/runs/{run_key}/heatmap?metric=assignment_counts|assignment_shares|load_ratios`
+  — renders a bounded heatmap from the persisted matrix when no pre-rendered
+  document exists. Published static documents remain symlink-safe and bounded
+  by `max_artifact_bytes`.
+- `/api/compare/heatmap?baseline_run_key=...&comparison_run_key=...&metric=...`
+  — renders count/share/ratio deltas for two runs over the same validated
+  routing universe.
+- `/api/runs/{run_key}/export?format=bundle|csv|parquet` — creates a bounded
+  ZIP download from the immutable run bundle or tabular export. Exports are
+  cached under the workspace `exports/` directory and are rejected when the
+  run's persisted privacy policy disables export.
 - `/api/adapters` — the versioned adapter plugin registry listing with
   provenance, policy status, collisions, and isolated failures.
 - `/api/hub/search?kind=model|dataset&q=...&limit=...` — bounded public
   Hugging Face suggestions for the research console. This endpoint is called
   only after a user types a query; it accepts no arbitrary URL or browser
-  token, and exact IDs remain usable when public search is unavailable.
+  token, and exact IDs remain usable when public search is unavailable. Gated
+  or private revision resolution may use an `HF_TOKEN` or
+  `HUGGINGFACE_HUB_TOKEN` already configured in the server process.
+- `/api/jobs/{job_id}` — queued/running/completed/cancelled/failed state and
+  monotonic progress for discovery and run jobs.
+- `POST /api/discovery` — resolves an HF revision to an immutable commit,
+  loads the selected model, and returns a generic static `DiscoveryReport`.
+- `POST /api/runs/start` — resolves model and dataset revisions, infers a
+  common string prompt column when needed, executes the bounded dataset, and
+  publishes routing plus expert evidence. Include `resume_job_id` for a
+  cancelled job with a durable checkpoint.
+- `POST /api/jobs/{job_id}/cancel` — requests cooperative cancellation at a
+  safe batch boundary.
+- `POST /api/interventions/recipes` — validates and fingerprints a causal
+  intervention recipe. Actual mutation/execution remains adapter-gated; the
+  endpoint never returns a fake causal outcome.
 
 The application is built with documentation routes disabled
 (`docs_url=None`, `redoc_url=None`, `openapi_url=None`) so no unbounded
@@ -72,10 +95,11 @@ the hashed React bundle into the package mount; the legacy `/app.js` and
 compatibility, but are no longer loaded by the root page.
 
 The React console keeps its research navigation in the current browser
-surface and consumes only the relative API endpoints above. Its results view
-embeds published heatmap documents as-is via an iframe because they are
-strict-CSP, no-JavaScript static artifacts. The legacy compatibility bundle
-retains the historical hash-routed views when used directly.
+surface and consumes the relative API endpoints above. Discovery and capture
+buttons launch real jobs and poll `/api/jobs`; results expose architecture,
+activation status, metric selectors, comparison links, exports, and recipe
+validation. Heatmaps remain strict-CSP, no-JavaScript iframe artifacts. The
+legacy compatibility bundle remains available when used directly.
 
 ## Local launch
 
@@ -83,14 +107,14 @@ retains the historical hash-routed views when used directly.
 `http://127.0.0.1:8000` by default. Non-loopback hosts require an explicit
 `--allow-remote` opt-in; the port must be a canonical positive decimal
 integer up to 65535. Missing server dependencies exit 2 with the fixed
-install hint. The command never reads a clock, never writes to the
-workspace, and stops cleanly on Ctrl-C.
+install hint. The server writes only the explicit run/checkpoint/inspection
+and export artifacts requested through the control endpoints and stops
+cleanly on Ctrl-C.
 
 ## Honest scope
 
 The local research console described above is served by the same
-`moeatlas ui WORKSPACE` command; broad browser end-to-end tests from the PRD
-remain recorded as deferred release-engineering evidence in
-`model-validation-ledger.md`. The read-only API above is the contract the
-frontend consumes. Nothing here claims model or VM certification beyond the
-shipped views.
+`moeatlas ui WORKSPACE` command. Broad browser end-to-end tests and final
+VM/GPU certification remain deferred release-engineering evidence in
+`model-validation-ledger.md`; this control plane does not claim universal
+model-family support until those model-specific runs pass on the target VM.

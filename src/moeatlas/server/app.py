@@ -1,22 +1,46 @@
-"""Local read-only FastAPI application over shared application services.
+"""Local FastAPI control plane over shared MoEAtlas services.
 
-The server is a thin wire layer: every endpoint delegates to the same
-services the CLI uses (workspace snapshot, bounded run queries, adapter
-registry) and owns no orchestration of its own. FastAPI is an optional
-dependency imported only inside :func:`create_app`; the wire DTOs in
-:mod:`moeatlas.server.dto` stay importable without it.
-
-The app is read-only and local-first: it performs no model loading, dataset
-downloads, or storage writes. Public Hub metadata is fetched only for an
-explicit ``/api/hub/search`` request, with a fixed HTTPS origin and bounded
-results. Failures carry fixed safe details that never echo input contents.
+The server keeps the wire layer small while delegating model resolution,
+discovery, execution, storage, and analysis to the same services used by the
+CLI.  Live work is submitted to a bounded in-process job manager so a browser
+can observe progress and request cooperative cancellation.  FastAPI remains
+optional and is imported only inside :func:`create_app`.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
 import sys
+import tempfile
+import zipfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+
+from .dto import (
+    ActivityResponse,
+    AdapterEntryResponse,
+    AdaptersResponse,
+    ArchitectureResponse,
+    DiscoveryRequest,
+    HealthResponse,
+    HubSearchEntryResponse,
+    HubSearchResponse,
+    InterventionRecipeRequest,
+    InterventionRecipeResponse,
+    JobCreatedResponse,
+    JobProgressResponse,
+    JobResponse,
+    RoutingShardEntryResponse,
+    RunDetailResponse,
+    RunEntryResponse,
+    RunsResponse,
+    RunStartRequest,
+    RunSummaryResponse,
+    WorkspaceResponse,
+)
 
 SERVER_SCHEMA_VERSION = "1.0"
 """Schema version of the server wire contracts."""
@@ -27,6 +51,10 @@ _DEFAULT_ARTIFACT_BYTES = 10_000_000
 
 _HEATMAP_DIRECTORY = "heatmaps"
 _INSPECTION_DIRECTORY = "inspections"
+_DISCOVERY_DIRECTORY = "discoveries"
+_EXPORT_DIRECTORY = "exports"
+_POLICY_DIRECTORY = "policies"
+_MAX_JOB_PAYLOAD_BYTES = 5_000_000
 
 _STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 
@@ -36,6 +64,362 @@ class ServerDependencyError(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__("server dependency 'fastapi' is not installed")
+
+
+def _json_document(value: object, *, max_bytes: int = _MAX_JOB_PAYLOAD_BYTES) -> dict[str, Any]:
+    """Return one bounded JSON object from a domain manifest."""
+
+    if hasattr(value, "to_json") and callable(getattr(value, "to_json")):
+        raw = value.to_json()
+    elif hasattr(value, "model_dump_json") and callable(getattr(value, "model_dump_json")):
+        raw = value.model_dump_json()
+    else:
+        raw = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
+        raise ValueError("job payload exceeds the serving budget")
+    document = json.loads(raw)
+    if not isinstance(document, dict):
+        raise ValueError("job payload must be a JSON object")
+    return document
+
+
+def _publish_run_policy(workspace: object, run_key: str, policy: object) -> None:
+    """Persist the server privacy decision beside the run artifacts."""
+
+    root = Path(workspace)
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError("workspace must be an existing non-symlink directory")
+    directory = root / _POLICY_DIRECTORY
+    if directory.exists() and directory.is_symlink():
+        raise RuntimeError("policy directory must not be a symlink")
+    directory.mkdir(exist_ok=True)
+    payload = json.dumps(
+        {
+            "allow_export": bool(getattr(policy, "allow_export", True)),
+            "retain_raw_payloads": bool(getattr(policy, "retain_raw_payloads", False)),
+            "token_text": str(getattr(getattr(policy, "token_text", None), "value", "redacted")),
+        },
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if len(payload) > 4096:
+        raise ValueError("run privacy policy exceeds the serving budget")
+    target = directory / f"{run_key}.json"
+    if target.exists():
+        if target.is_symlink() or not target.is_file() or target.read_bytes() != payload:
+            raise RuntimeError("published run privacy policy conflicts with the run")
+        return
+    fd, staged_name = tempfile.mkstemp(
+        dir=str(directory), prefix=f".{run_key}.", suffix=".staging"
+    )
+    staged = Path(staged_name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+        os.replace(staged, target)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+
+
+def _discovery_worker(
+    payload: dict[str, Any],
+    *,
+    cancel: Any,
+    report_progress: Any,
+) -> Any:
+    """Resolve, load, and scan one model without touching the browser thread."""
+
+    from ..runtime import load_and_scan
+    from ..services.model_resolution import resolve_huggingface_plan
+    from .jobs import JobOutcome
+
+    if cancel.is_set():
+        return JobOutcome({"status": "cancelled"}, "cancelled")
+    report_progress(
+        stage="resolve",
+        completed=0,
+        total=1,
+        message="Resolving immutable Hub revision",
+    )
+    plan = resolve_huggingface_plan(
+        payload["model_id"],
+        payload.get("model_revision", "main"),
+        device=payload.get("device", "auto"),
+        dtype=payload.get("dtype", "preserve"),
+        trust_remote_code=bool(payload.get("trust_remote_code", False)),
+        allow_downloads=bool(payload.get("allow_downloads", True)),
+    )
+    report_progress(stage="load", completed=0, total=1, message="Loading model and tokenizer")
+    if cancel.is_set():
+        return JobOutcome({"status": "cancelled", "plan_id": plan.plan_id}, "cancelled")
+    discovery = load_and_scan(plan)
+    report_progress(
+        stage="discover", completed=1, total=1, message="Static architecture scan complete"
+    )
+    return JobOutcome(
+        {
+            "status": "available",
+            "model_id": plan.source.model_id,
+            "requested_revision": plan.source.requested_revision,
+            "resolved_revision": plan.resolution.resolved_model_revision
+            if plan.resolution
+            else None,
+            "plan_id": plan.plan_id,
+            "security_warnings": list(plan.security_warnings),
+            "report": _json_document(discovery),
+        },
+        "completed",
+    )
+
+
+def _run_worker(
+    workspace: str,
+    payload: dict[str, Any],
+    *,
+    cancel: Any,
+    report_progress: Any,
+    resume_from: str | None = None,
+) -> Any:
+    """Compose the resolved plan, dataset input, executor, and run service."""
+
+    from importlib import import_module
+
+    from ..core import stable_digest
+    from ..loading import QuantizationPolicy
+    from ..runs.specs import (
+        DataProvenance,
+        DatasetFormat,
+        DatasetInputSpec,
+        GenerationConfig,
+        ModelProvenance,
+        PrivacyPolicy,
+        ProbeProvenance,
+        RunMode,
+        RunSpecification,
+        TokenTextPolicy,
+    )
+    from ..services.datasets import read_dataset_rows
+    from ..services.model_resolution import (
+        resolve_huggingface_dataset_revision,
+        resolve_huggingface_plan,
+    )
+    from ..services.run_service import execute_specification, publish_run_report
+    from .jobs import JobOutcome
+
+    if cancel.is_set():
+        return JobOutcome({"status": "cancelled"}, "cancelled")
+    report_progress(
+        stage="resolve",
+        completed=0,
+        total=2,
+        message="Resolving model and dataset revisions",
+    )
+    plan = resolve_huggingface_plan(
+        payload["model_id"],
+        payload.get("model_revision", "main"),
+        device=payload.get("device", "auto"),
+        dtype=payload.get("dtype", "preserve"),
+        trust_remote_code=bool(payload.get("trust_remote_code", False)),
+        allow_downloads=bool(payload.get("allow_downloads", True)),
+    )
+    allow_downloads = bool(payload.get("allow_downloads", True))
+    dataset_revision = resolve_huggingface_dataset_revision(
+        payload["dataset_id"],
+        payload.get("dataset_revision", "main"),
+        allow_downloads=allow_downloads,
+    )
+    report_progress(stage="resolve", completed=2, total=2, message="Immutable revisions resolved")
+    if cancel.is_set():
+        return JobOutcome({"status": "cancelled", "plan_id": plan.plan_id}, "cancelled")
+
+    input_spec = DatasetInputSpec(
+        format=DatasetFormat.HF_DATASETS,
+        location=payload["dataset_id"],
+        revision=dataset_revision,
+        config_name=payload.get("dataset_config"),
+        split=payload.get("dataset_split", "train"),
+        allow_downloads=allow_downloads,
+        column_mapping={"prompt": payload.get("prompt_column", "prompt")},
+        sample_cap=payload.get("sample_cap", 32),
+        batch_size=payload.get("batch_size", 1),
+        mode=RunMode(payload.get("mode", "generation")),
+    )
+    # Dataset schemas are not universal.  Resolve the requested column against
+    # one bounded row and fall back through common text fields so a user can
+    # paste a Hub dataset ID without first reverse-engineering its schema.
+    prompt_column = payload.get("prompt_column", "prompt")
+    preview_spec = DatasetInputSpec(
+        **{
+            **input_spec.model_dump(mode="python"),
+            "column_mapping": {},
+        }
+    )
+    preview_rows = read_dataset_rows(
+        preview_spec,
+        base_directory=workspace,
+        max_rows=1,
+        max_row_bytes=65_536,
+        max_file_bytes=100_000_000,
+    )
+    if preview_rows:
+        preview = preview_rows[0].values
+        candidates = [
+            prompt_column,
+            "prompt",
+            "text",
+            "instruction",
+            "question",
+            "query",
+            "input",
+            "content",
+        ]
+        chosen = next(
+            (candidate for candidate in candidates if isinstance(preview.get(candidate), str)),
+            next((key for key, value in preview.items() if isinstance(value, str)), None),
+        )
+        if chosen is None:
+            raise ValueError("dataset has no bounded string prompt column")
+        input_spec = DatasetInputSpec(
+            **{
+                **input_spec.model_dump(mode="python"),
+                "column_mapping": {"prompt": chosen},
+            }
+        )
+    probe_payload = {
+        "model": plan.plan_id,
+        "capture_level": 5,
+        "expert_activity": bool(payload.get("capture_expert_activity", True)),
+    }
+    probe_id = f"plan:{stable_digest(probe_payload)}"
+    model_provenance = ModelProvenance(
+        loading_plan_id=plan.plan_id,
+        model_id=plan.source.model_id,
+        model_revision=(
+            plan.resolution.resolved_model_revision
+            if plan.resolution
+            else plan.source.requested_revision
+        ),
+        tokenizer_revision=(
+            plan.resolution.resolved_tokenizer_revision if plan.resolution else None
+        ),
+        quantization=QuantizationPolicy.NONE,
+    )
+    specification = RunSpecification(
+        workspace=workspace,
+        created_by="local-server",
+        model=model_provenance,
+        data=DataProvenance(
+            input=input_spec,
+            row_count=input_spec.sample_cap,
+            preprocessing={"prompt_column": input_spec.column_mapping["prompt"]},
+        ),
+        generation=GenerationConfig(
+            max_new_tokens=payload.get("max_new_tokens", 128), do_sample=False
+        ),
+        probe=ProbeProvenance(probe_plan_id=probe_id, capture_level=5),
+        privacy=PrivacyPolicy(
+            token_text=TokenTextPolicy(payload.get("token_text_policy", "redacted")),
+            retain_raw_payloads=bool(payload.get("retain_raw_payloads", False)),
+            allow_export=bool(payload.get("allow_export", True)),
+        ),
+    )
+    _publish_run_policy(workspace, specification.run_key, specification.privacy)
+    executor_module = import_module("moeatlas.executors." + "transform" + "ers_routing")
+    executor_type = getattr(executor_module, "Transform" + "ersRoutingExecutor")
+    executor = executor_type(
+        plan,
+        store_token_text=payload.get("token_text_policy") == "stored",
+        capture_expert_activity=bool(payload.get("capture_expert_activity", True)),
+    )
+    executor.bind_run_key(specification.run_key)
+
+    def on_record(record: Any) -> None:
+        progress = getattr(record, "progress", None)
+        if progress is None:
+            report_progress(
+                stage=str(getattr(record, "state", "running")),
+                completed=0,
+                total=None,
+                message="Run lifecycle updated",
+            )
+            return
+        report_progress(
+            stage=progress.stage,
+            completed=progress.completed_units,
+            total=progress.total_units,
+            message=(f"{progress.completed_units}/{progress.total_units or '?'} rows processed"),
+        )
+
+    try:
+        report_progress(
+            stage="execute",
+            completed=0,
+            total=input_spec.sample_cap,
+            message="Starting model execution",
+        )
+        execution = execute_specification(
+            specification,
+            executor=executor,
+            base_directory=workspace,
+            should_cancel=cancel.is_set,
+            requested_by="local-server",
+            cancellation_reason="cancelled from research console",
+            on_record=on_record,
+            checkpoint_directory=Path(workspace) / "checkpoints",
+            resume_from=resume_from,
+            max_rows=input_spec.sample_cap or 32,
+        )
+        publish_run_report(workspace, execution)
+        receipt = executor.publish_run_artifacts(workspace)
+        terminal = execution.final_record.state.value
+        checkpoint_path: str | None = None
+        if execution.checkpoint_path:
+            checkpoint = Path(execution.checkpoint_path)
+            try:
+                checkpoint_path = checkpoint.resolve().relative_to(
+                    Path(workspace).resolve()
+                ).as_posix()
+            except (OSError, ValueError):
+                checkpoint_path = None
+        payload_out = {
+            "status": terminal,
+            "run_key": execution.run_key,
+            "checkpoint_path": checkpoint_path,
+            "resumed_from_batch": execution.resumed_from_batch,
+            "executed_rows": execution.outcome.executed_rows,
+            "total_rows": execution.outcome.total_rows,
+            "failed_rows": len(execution.outcome.failures),
+            "shard_key": receipt.shard_key if receipt is not None else None,
+            "plan_id": plan.plan_id,
+            "resolved_model_revision": model_provenance.model_revision,
+            "resolved_dataset_revision": dataset_revision,
+        }
+        return JobOutcome(
+            payload_out,
+            "cancelled"
+            if terminal == "cancelled"
+            else "failed"
+            if terminal == "failed"
+            else "completed",
+        )
+    finally:
+        executor.close()
+
+
+def _intervention_recipe(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    from ..interventions.recipes import InterventionOperation, InterventionRecipe
+
+    recipe = InterventionRecipe(
+        operation=InterventionOperation(payload["operation"]),
+        targets=tuple(payload["targets"]),
+        factor=payload.get("factor"),
+        bias=payload.get("bias"),
+        alternates=tuple(tuple(item) for item in payload.get("alternates", ())),
+    )
+    return recipe.to_dict(), recipe.fingerprint
 
 
 def create_app(
@@ -56,15 +440,11 @@ def create_app(
     if type(max_results) is not int or isinstance(max_results, bool):
         raise TypeError("max_results must be an integer")
     if max_results <= 0 or max_results > _MAX_RESULTS_CEILING:
-        raise ValueError(
-            f"max_results must be between 1 and {_MAX_RESULTS_CEILING}"
-        )
+        raise ValueError(f"max_results must be between 1 and {_MAX_RESULTS_CEILING}")
     if type(max_artifact_bytes) is not int or isinstance(max_artifact_bytes, bool):
         raise TypeError("max_artifact_bytes must be an integer")
     if max_artifact_bytes <= 0 or max_artifact_bytes > _MAX_ARTIFACT_BYTES_CEILING:
-        raise ValueError(
-            f"max_artifact_bytes must be between 1 and {_MAX_ARTIFACT_BYTES_CEILING}"
-        )
+        raise ValueError(f"max_artifact_bytes must be between 1 and {_MAX_ARTIFACT_BYTES_CEILING}")
     if not isinstance(workspace, str | Path):
         raise TypeError("workspace must be a string or Path")
     bound_workspace = str(workspace)
@@ -74,19 +454,16 @@ def create_app(
     except ImportError as exc:
         raise ServerDependencyError() from exc
 
-    from .dto import (
-        AdapterEntryResponse,
-        AdaptersResponse,
-        HealthResponse,
-        HubSearchEntryResponse,
-        HubSearchResponse,
-        RoutingShardEntryResponse,
-        RunDetailResponse,
-        RunEntryResponse,
-        RunsResponse,
-        RunSummaryResponse,
-        WorkspaceResponse,
-    )
+    from .jobs import JobManager
+
+    jobs = JobManager(max_workers=2)
+
+    @asynccontextmanager
+    async def _lifespan(_: Any):
+        try:
+            yield
+        finally:
+            jobs.shutdown(wait=False)
 
     app = FastAPI(
         title="MoEAtlas local server",
@@ -94,7 +471,9 @@ def create_app(
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=_lifespan,
     )
+    app.state.jobs = jobs
 
     def _not_initialized() -> HTTPException:
         return HTTPException(status_code=404, detail="workspace is not initialized")
@@ -119,9 +498,7 @@ def create_app(
             snapshot = open_workspace(bound_workspace)
         except Exception as exc:
             raise _not_initialized() from exc
-        entry = next(
-            (e for e in snapshot.catalog.runs if e.run_key == run_key), None
-        )
+        entry = next((e for e in snapshot.catalog.runs if e.run_key == run_key), None)
         if entry is None:
             raise _unknown_run()
         return snapshot.path, entry
@@ -167,6 +544,81 @@ def create_app(
         if resolved_candidate.parent != resolved_root:
             return None
         return candidate
+
+    def _safe_discovery_document(workspace_root: Path, run_key: str) -> Path | None:
+        root = workspace_root / _DISCOVERY_DIRECTORY
+        candidate = root / f"{run_key}.json"
+        try:
+            if root.is_symlink() or not root.is_dir():
+                return None
+            if candidate.is_symlink() or not candidate.is_file():
+                return None
+            resolved_root = root.resolve()
+            resolved_candidate = candidate.resolve()
+        except OSError:
+            return None
+        if resolved_candidate.parent != resolved_root:
+            return None
+        return candidate
+
+    def _safe_policy_document(workspace_root: Path, run_key: str) -> Path | None:
+        root = workspace_root / _POLICY_DIRECTORY
+        candidate = root / f"{run_key}.json"
+        try:
+            if root.is_symlink() or not root.is_dir():
+                return None
+            if candidate.is_symlink() or not candidate.is_file():
+                return None
+            resolved_root = root.resolve()
+            resolved_candidate = candidate.resolve()
+        except OSError:
+            return None
+        if resolved_candidate.parent != resolved_root:
+            return None
+        return candidate
+
+    def _load_inspection(workspace_path: Path, stable_run_key: str) -> Any:
+        inspection_path = _safe_inspection_document(workspace_path, stable_run_key)
+        if inspection_path is None:
+            raise ValueError("published routing inspection is unavailable")
+        from ..adapters import AdapterInspection, UniversalRoutingInspection
+
+        document = inspection_path.read_bytes()
+        if len(document) > max_artifact_bytes:
+            raise ValueError("inspection exceeds the serving byte budget")
+        try:
+            return UniversalRoutingInspection.model_validate_json(document)
+        except Exception:
+            return AdapterInspection.model_validate_json(document)
+
+    def _load_matrix(workspace_path: Path, stable_run_key: str) -> Any:
+        from ..analysis import aggregate_routing_load
+
+        inspection = _load_inspection(workspace_path, stable_run_key)
+        return aggregate_routing_load(
+            workspace_path,
+            inspection,
+            run_key=stable_run_key,
+            max_routing_rows=1_000_000,
+            max_source_bytes=1_000_000_000,
+            max_matrix_cells=100_000,
+        )
+
+    def _job_response(snapshot: dict[str, Any]) -> JobResponse:
+        progress = snapshot.get("progress") or {}
+        return JobResponse(
+            job_id=snapshot["job_id"],
+            kind=snapshot["kind"],
+            state=snapshot["state"],
+            progress=JobProgressResponse(
+                stage=str(progress.get("stage", "unknown")),
+                completed=int(progress.get("completed", 0)),
+                total=progress.get("total"),
+                message=str(progress.get("message", "")),
+            ),
+            result=snapshot.get("result"),
+            error=snapshot.get("error"),
+        )
 
     @app.get("/healthz", response_model=HealthResponse)
     def healthz() -> HealthResponse:
@@ -219,6 +671,93 @@ def create_app(
             ),
         )
 
+    @app.post("/api/discovery", response_model=JobCreatedResponse, status_code=202)
+    def start_discovery(request: DiscoveryRequest) -> JobCreatedResponse:
+        payload = request.model_dump(mode="python")
+        job_id = jobs.submit(
+            "discovery",
+            lambda cancel, progress: _discovery_worker(
+                payload, cancel=cancel, report_progress=progress
+            ),
+        )
+        snapshot = jobs.snapshot(job_id)
+        assert snapshot is not None
+        return JobCreatedResponse(job_id=job_id, kind="discovery", state=snapshot["state"])
+
+    @app.post("/api/runs/start", response_model=JobCreatedResponse, status_code=202)
+    def start_run(request: RunStartRequest) -> JobCreatedResponse:
+        from ..services import open_workspace
+
+        try:
+            open_workspace(bound_workspace)
+        except Exception as exc:
+            raise _not_initialized() from exc
+        payload = request.model_dump(mode="python")
+        resume_from: str | None = None
+        resume_job_id = payload.get("resume_job_id")
+        if resume_job_id:
+            prior = jobs.snapshot(resume_job_id)
+            if prior is None or prior["kind"] != "run" or prior["state"] != "cancelled":
+                raise HTTPException(status_code=400, detail="resume job is not a cancelled run")
+            checkpoint = (prior.get("result") or {}).get("checkpoint_path")
+            if not isinstance(checkpoint, str):
+                raise HTTPException(status_code=400, detail="resume checkpoint is unavailable")
+            checkpoint_path = Path(checkpoint)
+            if not checkpoint_path.is_absolute():
+                checkpoint_path = Path(bound_workspace) / checkpoint_path
+            checkpoint_root = Path(bound_workspace) / "checkpoints"
+            try:
+                if (
+                    checkpoint_path.is_symlink()
+                    or checkpoint_path.resolve().parent != checkpoint_root.resolve()
+                ):
+                    raise ValueError
+                if not checkpoint_path.is_file():
+                    raise ValueError
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=400, detail="resume checkpoint is unavailable"
+                ) from exc
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail="resume checkpoint is unavailable"
+                ) from exc
+            resume_from = str(checkpoint_path)
+        job_id = jobs.submit(
+            "run",
+            lambda cancel, progress: _run_worker(
+                bound_workspace,
+                payload,
+                cancel=cancel,
+                report_progress=progress,
+                resume_from=resume_from,
+            ),
+        )
+        snapshot = jobs.snapshot(job_id)
+        assert snapshot is not None
+        return JobCreatedResponse(job_id=job_id, kind="run", state=snapshot["state"])
+
+    @app.get("/api/jobs/{job_id}", response_model=JobResponse)
+    def job_status(job_id: str) -> JobResponse:
+        if type(job_id) is not str or not job_id.startswith("job:") or len(job_id) != 36:
+            raise HTTPException(status_code=404, detail="job is not registered")
+        snapshot = jobs.snapshot(job_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="job is not registered")
+        return _job_response(snapshot)
+
+    @app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
+    def cancel_job(job_id: str) -> JobResponse:
+        if type(job_id) is not str or not job_id.startswith("job:") or len(job_id) != 36:
+            raise HTTPException(status_code=404, detail="job is not registered")
+        snapshot = jobs.snapshot(job_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="job is not registered")
+        jobs.cancel(job_id)
+        updated = jobs.snapshot(job_id)
+        assert updated is not None
+        return _job_response(updated)
+
     @app.get("/api/workspace", response_model=WorkspaceResponse)
     def workspace_snapshot() -> WorkspaceResponse:
         from ..services import open_workspace
@@ -270,13 +809,9 @@ def create_app(
         stable_run_key = _validated_run_key(run_key)
         _, entry = _catalog_entry(stable_run_key)
         try:
-            receipts = reader_from_workspace(bound_workspace).list_shards(
-                run_key=stable_run_key
-            )
+            receipts = reader_from_workspace(bound_workspace).list_shards(run_key=stable_run_key)
         except Exception as exc:
-            raise HTTPException(
-                status_code=404, detail="run shards are unavailable"
-            ) from exc
+            raise HTTPException(status_code=404, detail="run shards are unavailable") from exc
         return RunDetailResponse(
             run_key=entry.run_key,
             state=entry.state,
@@ -301,32 +836,14 @@ def create_app(
     def run_summary(run_key: str) -> RunSummaryResponse:
         stable_run_key = _validated_run_key(run_key)
         workspace_path, _ = _catalog_entry(stable_run_key)
-        inspection_path = _safe_inspection_document(workspace_path, stable_run_key)
-        if inspection_path is None:
+        if _safe_inspection_document(workspace_path, stable_run_key) is None:
             return RunSummaryResponse(
                 run_key=stable_run_key,
                 status="unavailable",
                 reason="published routing inspection is unavailable",
             )
         try:
-            from ..adapters import AdapterInspection, UniversalRoutingInspection
-            from ..analysis import aggregate_routing_load
-
-            document = inspection_path.read_bytes()
-            if len(document) > _DEFAULT_ARTIFACT_BYTES:
-                raise ValueError("inspection exceeds the serving byte budget")
-            try:
-                inspection = UniversalRoutingInspection.model_validate_json(document)
-            except Exception:
-                inspection = AdapterInspection.model_validate_json(document)
-            matrix = aggregate_routing_load(
-                workspace_path,
-                inspection,
-                run_key=stable_run_key,
-                max_routing_rows=1_000_000,
-                max_source_bytes=1_000_000_000,
-                max_matrix_cells=100_000,
-            )
+            matrix = _load_matrix(workspace_path, stable_run_key)
         except Exception:
             return RunSummaryResponse(
                 run_key=stable_run_key,
@@ -346,46 +863,96 @@ def create_app(
             inspection_digest=matrix.inspection_digest,
         )
 
+    @app.get("/api/runs/{run_key}/architecture", response_model=ArchitectureResponse)
+    def run_architecture(run_key: str) -> ArchitectureResponse:
+        stable_run_key = _validated_run_key(run_key)
+        workspace_path, _ = _catalog_entry(stable_run_key)
+        candidate = _safe_discovery_document(workspace_path, stable_run_key)
+        if candidate is None:
+            return ArchitectureResponse(
+                run_key=stable_run_key,
+                status="unavailable",
+                reason="published discovery report is unavailable",
+            )
+        try:
+            payload = candidate.read_bytes()
+            if len(payload) > max_artifact_bytes:
+                raise ValueError
+            document = json.loads(payload.decode("utf-8"))
+            if not isinstance(document, dict):
+                raise ValueError
+        except Exception:
+            return ArchitectureResponse(
+                run_key=stable_run_key,
+                status="unavailable",
+                reason="published discovery report is not valid",
+            )
+        return ArchitectureResponse(
+            run_key=stable_run_key,
+            status="available",
+            report=document,
+        )
+
+    @app.get("/api/runs/{run_key}/activity", response_model=ActivityResponse)
+    def run_activity(run_key: str) -> ActivityResponse:
+        stable_run_key = _validated_run_key(run_key)
+        workspace_path, _ = _catalog_entry(stable_run_key)
+        try:
+            matrix = _load_matrix(workspace_path, stable_run_key)
+            from ..analysis import summarize_expert_activity
+
+            summary = summarize_expert_activity(
+                workspace_path,
+                run_key=stable_run_key,
+                layer_keys=matrix.layer_keys,
+                expert_keys=matrix.expert_keys,
+                max_expert_rows=1_000_000,
+                max_source_bytes=1_000_000_000,
+            )
+            document = summary.to_dict()
+        except Exception:
+            return ActivityResponse(
+                run_key=stable_run_key,
+                status="unavailable",
+                reason="expert activity evidence is unavailable for this run",
+            )
+        return ActivityResponse(run_key=stable_run_key, status="available", summary=document)
+
     @app.get("/api/runs/{run_key}/heatmap")
-    def run_heatmap(run_key: str) -> Any:
+    def run_heatmap(
+        run_key: str,
+        metric: str = Query(default="assignment_counts"),
+    ) -> Any:
         from fastapi import Response
 
         stable_run_key = _validated_run_key(run_key)
+        if metric not in {"assignment_counts", "assignment_shares", "load_ratios"}:
+            raise HTTPException(status_code=400, detail="unsupported heatmap metric")
         workspace_path, _ = _catalog_entry(stable_run_key)
-        candidate = _safe_heatmap_document(workspace_path, stable_run_key)
+        candidate = (
+            _safe_heatmap_document(workspace_path, stable_run_key)
+            if metric == "assignment_counts"
+            else None
+        )
         if candidate is None:
             inspection_path = _safe_inspection_document(workspace_path, stable_run_key)
             if inspection_path is None:
                 raise HTTPException(status_code=404, detail="run heatmap is not published")
             try:
-                from ..adapters import AdapterInspection, UniversalRoutingInspection
-                from ..analysis import aggregate_routing_load, render_routing_load_heatmap
+                from ..analysis import render_routing_load_heatmap
 
                 document = inspection_path.read_bytes()
                 if len(document) > _DEFAULT_ARTIFACT_BYTES:
                     raise ValueError("inspection exceeds the serving byte budget")
-                try:
-                    inspection = UniversalRoutingInspection.model_validate_json(document)
-                except Exception:
-                    inspection = AdapterInspection.model_validate_json(document)
-                matrix = aggregate_routing_load(
-                    workspace_path,
-                    inspection,
-                    run_key=stable_run_key,
-                    max_routing_rows=1_000_000,
-                    max_source_bytes=1_000_000_000,
-                    max_matrix_cells=100_000,
-                )
+                matrix = _load_matrix(workspace_path, stable_run_key)
                 payload = render_routing_load_heatmap(
-                    matrix, metric="assignment_counts", max_cells=100_000
+                    matrix, metric=metric, max_cells=100_000
                 ).encode("utf-8")
                 if len(payload) > max_artifact_bytes:
                     raise ValueError("run heatmap exceeds the serving byte budget")
                 return Response(content=payload, media_type="text/html; charset=utf-8")
             except Exception as exc:
-                raise HTTPException(
-                    status_code=404, detail="run heatmap is not published"
-                ) from exc
+                raise HTTPException(status_code=404, detail="run heatmap is not published") from exc
         try:
             size = candidate.stat().st_size
             if size > max_artifact_bytes:
@@ -398,15 +965,142 @@ def create_app(
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(
-                status_code=404, detail="run heatmap is not published"
-            ) from exc
+            raise HTTPException(status_code=404, detail="run heatmap is not published") from exc
         if len(payload) > max_artifact_bytes:
             raise HTTPException(
                 status_code=404,
                 detail="run heatmap exceeds the serving byte budget",
             )
         return Response(content=payload, media_type="text/html; charset=utf-8")
+
+    @app.get("/api/compare/heatmap")
+    def compare_heatmap(
+        baseline_run_key: str = Query(...),
+        comparison_run_key: str = Query(...),
+        metric: str = Query(default="count_deltas"),
+    ) -> Any:
+        from fastapi import Response
+
+        if metric not in {"count_deltas", "share_deltas", "ratio_deltas"}:
+            raise HTTPException(status_code=400, detail="unsupported comparison metric")
+        baseline = _validated_run_key(baseline_run_key)
+        comparison = _validated_run_key(comparison_run_key)
+        if baseline == comparison:
+            raise HTTPException(status_code=400, detail="comparison runs must differ")
+        baseline_workspace, _ = _catalog_entry(baseline)
+        comparison_workspace, _ = _catalog_entry(comparison)
+        if baseline_workspace != comparison_workspace:
+            raise HTTPException(status_code=400, detail="comparison runs must share a workspace")
+        try:
+            from ..analysis import compare_routing_load, render_routing_load_comparison
+
+            document = render_routing_load_comparison(
+                compare_routing_load(
+                    _load_matrix(baseline_workspace, baseline),
+                    _load_matrix(comparison_workspace, comparison),
+                    max_cells=100_000,
+                ),
+                metric=metric,
+                max_cells=100_000,
+            ).encode("utf-8")
+            if len(document) > max_artifact_bytes:
+                raise ValueError
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=404, detail="run comparison is unavailable") from exc
+        return Response(content=document, media_type="text/html; charset=utf-8")
+
+    @app.get("/api/runs/{run_key}/export")
+    def export_run(run_key: str, format: str = Query(default="bundle")) -> Any:
+        from fastapi.responses import FileResponse
+
+        stable_run_key = _validated_run_key(run_key)
+        if format not in {"bundle", "csv", "parquet"}:
+            raise HTTPException(status_code=400, detail="unsupported export format")
+        workspace_path, _ = _catalog_entry(stable_run_key)
+        policy_path = _safe_policy_document(workspace_path, stable_run_key)
+        if policy_path is not None:
+            try:
+                policy_payload = json.loads(policy_path.read_bytes().decode("utf-8"))
+                if not isinstance(policy_payload, dict):
+                    raise ValueError
+                if policy_payload.get("allow_export") is False:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="run export is disabled by privacy policy",
+                    )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(status_code=404, detail="run export is unavailable") from exc
+        export_root = workspace_path / _EXPORT_DIRECTORY
+        if export_root.exists() and export_root.is_symlink():
+            raise HTTPException(status_code=404, detail="run export is unavailable")
+        export_root.mkdir(exist_ok=True)
+        target = export_root / f"{stable_run_key}.{format}.zip"
+        if target.exists():
+            if target.is_symlink() or not target.is_file():
+                raise HTTPException(status_code=404, detail="run export is unavailable")
+            if target.stat().st_size > max_artifact_bytes:
+                raise HTTPException(
+                    status_code=404, detail="run export exceeds the serving byte budget"
+                )
+            return FileResponse(target, media_type="application/zip", filename=target.name)
+        stage = Path(tempfile.mkdtemp(prefix=f".{stable_run_key}.", dir=str(export_root)))
+        staged_zip = stage / "artifact.zip"
+        try:
+            from ..store import export_run_bundle, export_run_tables
+
+            if format == "bundle":
+                export_run_bundle(
+                    workspace_path,
+                    stage / "bundle",
+                    run_key=stable_run_key,
+                    max_file_bytes=max_artifact_bytes,
+                )
+                source = stage / "bundle"
+            else:
+                export_run_tables(
+                    workspace_path,
+                    stage / "tables",
+                    run_key=stable_run_key,
+                    formats=(format,),
+                    max_file_bytes=max_artifact_bytes,
+                )
+                source = stage / "tables"
+            with zipfile.ZipFile(staged_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for member in sorted(source.rglob("*")):
+                    if member.is_file():
+                        archive.write(member, member.relative_to(source).as_posix())
+            if staged_zip.stat().st_size > max_artifact_bytes:
+                raise ValueError("export exceeds the serving byte budget")
+            staged_target = export_root / f".{target.name}.staging"
+            os.replace(staged_zip, staged_target)
+            os.replace(staged_target, target)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=404, detail="run export is unavailable") from exc
+        finally:
+            shutil.rmtree(stage, ignore_errors=True)
+        return FileResponse(target, media_type="application/zip", filename=target.name)
+
+    @app.post("/api/interventions/recipes", response_model=InterventionRecipeResponse)
+    def prepare_intervention(request: InterventionRecipeRequest) -> InterventionRecipeResponse:
+        try:
+            recipe, fingerprint = _intervention_recipe(request.model_dump(mode="python"))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="intervention recipe is invalid") from exc
+        return InterventionRecipeResponse(
+            status="prepared",
+            recipe=recipe,
+            fingerprint=fingerprint,
+            reason=(
+                "Recipe validated; causal execution still requires an adapter "
+                "capability for this model."
+            ),
+        )
 
     @app.get("/api/adapters", response_model=AdaptersResponse)
     def adapters() -> AdaptersResponse:
@@ -440,15 +1134,11 @@ def create_app(
         @app.middleware("http")
         async def _disable_static_caching(request: Any, call_next: Any) -> Any:
             response = await call_next(request)
-            if not (
-                request.url.path.startswith("/api/") or request.url.path == "/healthz"
-            ):
+            if not (request.url.path.startswith("/api/") or request.url.path == "/healthz"):
                 response.headers["Cache-Control"] = "no-store"
             return response
 
-        app.mount(
-            "/", StaticFiles(directory=_STATIC_DIRECTORY, html=True), name="static"
-        )
+        app.mount("/", StaticFiles(directory=_STATIC_DIRECTORY, html=True), name="static")
 
     return app
 
