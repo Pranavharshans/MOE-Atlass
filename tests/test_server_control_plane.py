@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -15,6 +16,16 @@ from moeatlas.services.model_resolution import (
     resolve_huggingface_plan,
     resolve_huggingface_revision,
 )
+
+
+def isolated_process_crash(_payload, report):
+    report(stage="load", completed=0, total=1, message="loading synthetic model")
+    os._exit(44)
+
+
+def isolated_process_success(payload, report):
+    report(stage="execute", completed=1, total=1, message="synthetic capture")
+    return {"state": "completed", "payload": {"status": "completed", **payload}}
 
 
 def test_immutable_hub_revision_builds_a_loader_ready_plan() -> None:
@@ -53,7 +64,7 @@ def test_hub_branch_resolution_uses_bounded_fixed_metadata_request(monkeypatch) 
 
         def read(self, limit: int) -> bytes:
             assert limit > 40
-            return ("{\"sha\":\"" + "b" * 40 + "\"}").encode()
+            return ('{"sha":"' + "b" * 40 + '"}').encode()
 
     seen: dict[str, object] = {}
 
@@ -84,7 +95,7 @@ def test_json_job_routes_and_intervention_recipe_are_live(tmp_path: Path, monkey
         )
 
     monkeypatch.setattr(app_module, "_discovery_worker", fake_discovery)
-    client = TestClient(create_app(workspace))
+    client = TestClient(create_app(workspace, isolate_model_workers=False))
     created = client.post("/api/discovery", json={"model_id": "org/model"})
     assert created.status_code == 202
     job_id = created.json()["job_id"]
@@ -138,7 +149,7 @@ def test_optional_overhead_can_be_skipped_without_cancelling_capture(
         )
 
     monkeypatch.setattr(app_module, "_run_worker", fake_run)
-    client = TestClient(create_app(workspace))
+    client = TestClient(create_app(workspace, isolate_model_workers=False))
     created = client.post(
         "/api/runs/start",
         json={
@@ -165,6 +176,50 @@ def test_optional_overhead_can_be_skipped_without_cancelling_capture(
     assert status.json()["result"]["capture_overhead"]["status"] == "skipped"
 
 
+def test_isolated_model_crash_fails_one_job_and_next_job_still_runs(tmp_path: Path) -> None:
+    from moeatlas.server.app import _isolated_job_worker
+    from moeatlas.server.jobs import JobManager
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manager = JobManager(max_workers=1, workspace=workspace)
+
+    def submit(entry, payload):
+        return manager.submit(
+            "discovery",
+            lambda cancel, progress: _isolated_job_worker(
+                entry,
+                payload,
+                cancel=cancel,
+                report_progress=progress,
+            ),
+        )
+
+    def terminal(job_id: str) -> dict[str, object]:
+        for _ in range(300):
+            snapshot = manager.snapshot(job_id)
+            assert snapshot is not None
+            if snapshot["state"] not in {"queued", "running"}:
+                return snapshot
+            time.sleep(0.01)
+        raise AssertionError("isolated job did not finish")
+
+    try:
+        crashed = terminal(submit(isolated_process_crash, {}))
+        assert crashed["state"] == "failed"
+        assert crashed["error"] == "job failed (ChildProcessExit)"
+        diagnostics = manager.diagnostics(str(crashed["job_id"]))
+        assert diagnostics is not None
+        assert diagnostics["entries"][-1]["stage"] == "load"
+        assert diagnostics["entries"][-1]["exception_type"] == "ChildProcessExit"
+
+        completed = terminal(submit(isolated_process_success, {"next": True}))
+        assert completed["state"] == "completed"
+        assert completed["result"] == {"status": "completed", "next": True}
+    finally:
+        manager.shutdown(wait=True)
+
+
 def test_export_honors_persisted_privacy_policy(tmp_path: Path) -> None:
     from moeatlas.runs.specs import PrivacyPolicy, RunSpecification
     from moeatlas.server.app import _publish_run_policy
@@ -182,8 +237,6 @@ def test_export_honors_persisted_privacy_policy(tmp_path: Path) -> None:
     )
     register_run(workspace, specification)
     _publish_run_policy(workspace, specification.run_key, specification.privacy)
-    response = TestClient(create_app(workspace)).get(
-        f"/api/runs/{specification.run_key}/export"
-    )
+    response = TestClient(create_app(workspace)).get(f"/api/runs/{specification.run_key}/export")
     assert response.status_code == 403
     assert response.json()["detail"] == "run export is disabled by privacy policy"

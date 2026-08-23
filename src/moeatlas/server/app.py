@@ -116,9 +116,7 @@ def _publish_run_policy(workspace: object, run_key: str, policy: object) -> None
         if target.is_symlink() or not target.is_file() or target.read_bytes() != payload:
             raise RuntimeError("published run privacy policy conflicts with the run")
         return
-    fd, staged_name = tempfile.mkstemp(
-        dir=str(directory), prefix=f".{run_key}.", suffix=".staging"
-    )
+    fd, staged_name = tempfile.mkstemp(dir=str(directory), prefix=f".{run_key}.", suffix=".staging")
     staged = Path(staged_name)
     try:
         with os.fdopen(fd, "wb") as stream:
@@ -156,9 +154,7 @@ def _publish_capture_overhead(workspace: object, run_key: str, document: dict[st
         if target.is_symlink() or not target.is_file() or target.read_bytes() != payload:
             raise RuntimeError("capture-overhead report conflicts with the run")
         return target.relative_to(root).as_posix()
-    fd, staged_name = tempfile.mkstemp(
-        dir=str(directory), prefix=f".{run_key}.", suffix=".staging"
-    )
+    fd, staged_name = tempfile.mkstemp(dir=str(directory), prefix=f".{run_key}.", suffix=".staging")
     staged = Path(staged_name)
     try:
         with os.fdopen(fd, "wb") as stream:
@@ -410,22 +406,19 @@ def _run_worker(
     def timing_delta(native: dict[str, Any], captured: dict[str, Any]) -> dict[str, float | None]:
         native_total = native.get("total_ms")
         captured_total = captured.get("total_ms")
-        if not isinstance(native_total, int | float) or not isinstance(
-            captured_total, int | float
-        ):
+        if not isinstance(native_total, int | float) or not isinstance(captured_total, int | float):
             return {"delta_ms": None, "delta_percent": None}
         delta = float(captured_total) - float(native_total)
         return {
             "delta_ms": delta,
-            "delta_percent": (delta / float(native_total)) * 100.0
-            if native_total > 0
-            else None,
+            "delta_percent": (delta / float(native_total)) * 100.0 if native_total > 0 else None,
         }
 
     measure_overhead = bool(payload.get("measure_capture_overhead", False)) and resume_from is None
     overhead_report: dict[str, Any] | None = None
     if measure_overhead:
         if skip_overhead is None:
+
             def skip_overhead() -> bool:
                 return False
 
@@ -541,9 +534,9 @@ def _run_worker(
         if execution.checkpoint_path:
             checkpoint = Path(execution.checkpoint_path)
             try:
-                checkpoint_path = checkpoint.resolve().relative_to(
-                    Path(workspace).resolve()
-                ).as_posix()
+                checkpoint_path = (
+                    checkpoint.resolve().relative_to(Path(workspace).resolve()).as_posix()
+                )
             except (OSError, ValueError):
                 checkpoint_path = None
         payload_out = {
@@ -595,6 +588,118 @@ def _run_worker(
         executor.close()
 
 
+class _ChildCancellation:
+    """Cancellation view exposed inside an isolated model process."""
+
+    def __init__(self, report_progress: Any) -> None:
+        self._report_progress = report_progress
+
+    def is_set(self) -> bool:
+        control = getattr(self._report_progress, "is_set", None)
+        return bool(callable(control) and control("cancel"))
+
+
+def _child_progress(report_progress: Any, **fields: Any) -> None:
+    """Translate the server worker callback onto the JSON process channel."""
+
+    report_progress(fields)
+
+
+def _discovery_process_entry(payload: Any, report_progress: Any) -> dict[str, Any]:
+    """Importable child entry for one isolated discovery job."""
+
+    if not isinstance(payload, dict):
+        raise TypeError("discovery process payload must be an object")
+    outcome = _discovery_worker(
+        payload,
+        cancel=_ChildCancellation(report_progress),
+        report_progress=lambda **fields: _child_progress(report_progress, **fields),
+    )
+    return {"state": outcome.state, "payload": dict(outcome.payload)}
+
+
+def _run_process_entry(payload: Any, report_progress: Any) -> dict[str, Any]:
+    """Importable child entry for one isolated capture job."""
+
+    if not isinstance(payload, dict):
+        raise TypeError("run process payload must be an object")
+    workspace = payload.get("workspace")
+    request = payload.get("request")
+    resume_from = payload.get("resume_from")
+    if not isinstance(workspace, str) or not isinstance(request, dict):
+        raise TypeError("run process payload is incomplete")
+    if resume_from is not None and not isinstance(resume_from, str):
+        raise TypeError("resume_from must be a string or null")
+    control = getattr(report_progress, "is_set", None)
+    outcome = _run_worker(
+        workspace,
+        request,
+        cancel=_ChildCancellation(report_progress),
+        report_progress=lambda **fields: _child_progress(report_progress, **fields),
+        resume_from=resume_from,
+        skip_overhead=((lambda: bool(control("skip_overhead"))) if callable(control) else None),
+    )
+    return {"state": outcome.state, "payload": dict(outcome.payload)}
+
+
+def _isolated_job_worker(
+    process_entry: Any,
+    payload: dict[str, Any],
+    *,
+    cancel: Any,
+    report_progress: Any,
+    control_events: dict[str, Any] | None = None,
+) -> Any:
+    """Run one model operation outside the HTTP process and project its result."""
+
+    from .jobs import JobOutcome
+    from .process_worker import ProcessWorkerFailure, run_process_worker
+
+    def relay(progress: Any) -> None:
+        if not isinstance(progress, dict):
+            return
+        stage = progress.get("stage")
+        completed = progress.get("completed")
+        total = progress.get("total")
+        message = progress.get("message")
+        report_progress(
+            stage=stage if isinstance(stage, str) and stage else "working",
+            completed=(
+                completed
+                if type(completed) is int and not isinstance(completed, bool) and completed >= 0
+                else 0
+            ),
+            total=(
+                total if type(total) is int and not isinstance(total, bool) and total >= 0 else None
+            ),
+            message=message if isinstance(message, str) else "Model worker updated",
+        )
+
+    events = dict(control_events or {})
+    events["cancel"] = cancel
+    result = run_process_worker(
+        process_entry,
+        payload,
+        cancel_event=cancel,
+        control_events=events,
+        on_progress=relay,
+        max_payload_bytes=_MAX_JOB_PAYLOAD_BYTES,
+        max_message_bytes=_MAX_JOB_PAYLOAD_BYTES,
+    )
+    if result.state == "cancelled":
+        return JobOutcome({"status": "cancelled"}, "cancelled")
+    if result.state != "completed":
+        raise ProcessWorkerFailure(result)
+    document = result.payload
+    if not isinstance(document, dict):
+        raise ValueError("model worker returned a non-object result")
+    state = document.get("state")
+    output = document.get("payload")
+    if state not in {"completed", "cancelled", "failed"} or not isinstance(output, dict):
+        raise ValueError("model worker returned an invalid job outcome")
+    return JobOutcome(output, state)
+
+
 def _intervention_recipe(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     from ..interventions.recipes import InterventionOperation, InterventionRecipe
 
@@ -613,6 +718,7 @@ def create_app(
     *,
     max_results: int = 100,
     max_artifact_bytes: int = _DEFAULT_ARTIFACT_BYTES,
+    isolate_model_workers: bool = True,
 ) -> Any:
     """Build the local FastAPI application bound to one workspace.
 
@@ -631,6 +737,8 @@ def create_app(
         raise TypeError("max_artifact_bytes must be an integer")
     if max_artifact_bytes <= 0 or max_artifact_bytes > _MAX_ARTIFACT_BYTES_CEILING:
         raise ValueError(f"max_artifact_bytes must be between 1 and {_MAX_ARTIFACT_BYTES_CEILING}")
+    if type(isolate_model_workers) is not bool:
+        raise TypeError("isolate_model_workers must be a boolean")
     if not isinstance(workspace, str | Path):
         raise TypeError("workspace must be a string or Path")
     bound_workspace = str(workspace)
@@ -864,12 +972,21 @@ def create_app(
     @app.post("/api/discovery", response_model=JobCreatedResponse, status_code=202)
     def start_discovery(request: DiscoveryRequest) -> JobCreatedResponse:
         payload = request.model_dump(mode="python")
-        job_id = jobs.submit(
-            "discovery",
-            lambda cancel, progress: _discovery_worker(
-                payload, cancel=cancel, report_progress=progress
-            ),
-        )
+        if isolate_model_workers:
+
+            def worker(cancel: Any, progress: Any) -> Any:
+                return _isolated_job_worker(
+                    _discovery_process_entry,
+                    payload,
+                    cancel=cancel,
+                    report_progress=progress,
+                )
+        else:
+
+            def worker(cancel: Any, progress: Any) -> Any:
+                return _discovery_worker(payload, cancel=cancel, report_progress=progress)
+
+        job_id = jobs.submit("discovery", worker)
         snapshot = jobs.snapshot(job_id)
         assert snapshot is not None
         return JobCreatedResponse(job_id=job_id, kind="discovery", state=snapshot["state"])
@@ -921,18 +1038,41 @@ def create_app(
             if bool(payload.get("measure_capture_overhead", False)) and resume_from is None
             else None
         )
+        if isolate_model_workers:
+
+            def worker(cancel: Any, progress: Any) -> Any:
+                return _isolated_job_worker(
+                    _run_process_entry,
+                    {
+                        "workspace": bound_workspace,
+                        "request": payload,
+                        "resume_from": resume_from,
+                    },
+                    cancel=cancel,
+                    report_progress=progress,
+                    control_events=(
+                        {"skip_overhead": skip_overhead_event}
+                        if skip_overhead_event is not None
+                        else None
+                    ),
+                )
+        else:
+
+            def worker(cancel: Any, progress: Any) -> Any:
+                return _run_worker(
+                    bound_workspace,
+                    payload,
+                    cancel=cancel,
+                    report_progress=progress,
+                    resume_from=resume_from,
+                    skip_overhead=(
+                        skip_overhead_event.is_set if skip_overhead_event is not None else None
+                    ),
+                )
+
         job_id = jobs.submit(
             "run",
-            lambda cancel, progress: _run_worker(
-                bound_workspace,
-                payload,
-                cancel=cancel,
-                report_progress=progress,
-                resume_from=resume_from,
-                skip_overhead=(
-                    skip_overhead_event.is_set if skip_overhead_event is not None else None
-                ),
-            ),
+            worker,
             optional_skip_event=skip_overhead_event,
         )
         snapshot = jobs.snapshot(job_id)
@@ -1200,9 +1340,7 @@ def create_app(
                     if view == "compact"
                     else render_routing_load_heatmap
                 )
-                payload = renderer(
-                    matrix, metric=metric, max_cells=100_000
-                ).encode("utf-8")
+                payload = renderer(matrix, metric=metric, max_cells=100_000).encode("utf-8")
                 if len(payload) > max_artifact_bytes:
                     raise ValueError("run heatmap exceeds the serving byte budget")
                 return Response(content=payload, media_type="text/html; charset=utf-8")

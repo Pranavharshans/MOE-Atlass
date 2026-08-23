@@ -9,7 +9,11 @@ import time
 
 import pytest
 
-from moeatlas.server.process_worker import ProcessWorkerError, run_process_worker
+from moeatlas.server.process_worker import (
+    ProcessWorkerError,
+    ProcessWorkerFailure,
+    run_process_worker,
+)
 
 
 def worker_echo(payload, report):
@@ -34,6 +38,12 @@ def worker_exit(_payload, _report):
 
 def worker_large(_payload, _report):
     return {"value": "x" * 1000}
+
+
+def worker_wait_for_control(_payload, report):
+    while not report.is_set("skip_overhead"):
+        time.sleep(0.005)
+    return {"skipped": True}
 
 
 def test_worker_returns_json_result_and_progress() -> None:
@@ -105,3 +115,34 @@ def test_payload_and_result_limits_are_enforced() -> None:
 def test_non_json_payload_is_rejected_before_spawn() -> None:
     with pytest.raises(ProcessWorkerError, match="payload must be JSON-safe"):
         run_process_worker(worker_echo, {"value": float("nan")})
+
+
+def test_parent_control_event_reaches_child_without_entering_json_payload() -> None:
+    skip = threading.Event()
+    timer = threading.Timer(0.05, skip.set)
+    timer.start()
+    try:
+        result = run_process_worker(
+            worker_wait_for_control,
+            {},
+            control_events={"skip_overhead": skip},
+            timeout_s=2,
+        )
+    finally:
+        timer.cancel()
+
+    assert result.state == "completed"
+    assert result.payload == {"skipped": True}
+
+
+def test_child_failure_projects_type_and_bounded_details() -> None:
+    result = run_process_worker(worker_failure, {})
+    failure = ProcessWorkerFailure(result)
+
+    assert failure.error_type == "RuntimeError"
+    assert failure.worker_state == "failed"
+    assert failure.exit_code == 0
+    assert len(failure.traceback_text) <= 8192
+
+    with pytest.raises(ValueError, match="completed worker"):
+        ProcessWorkerFailure(run_process_worker(worker_echo, {"value": 1}))

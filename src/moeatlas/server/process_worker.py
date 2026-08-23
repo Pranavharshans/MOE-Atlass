@@ -41,6 +41,30 @@ class ProcessWorkerError(ValueError):
     """Raised when a worker request cannot be encoded or configured."""
 
 
+class ProcessWorkerFailure(RuntimeError):
+    """A child terminal failure projected onto the parent job boundary."""
+
+    def __init__(self, result: ProcessWorkerResult) -> None:
+        if not isinstance(result, ProcessWorkerResult):
+            raise TypeError("result must be a ProcessWorkerResult")
+        if result.state == "completed":
+            raise ValueError("a completed worker is not a failure")
+        error = result.error or {}
+        error_type = error.get("type")
+        message = error.get("message")
+        traceback_text = error.get("traceback")
+        self.error_type = (
+            error_type[:96] if isinstance(error_type, str) and error_type else "WorkerFailure"
+        )
+        self.safe_message = (
+            message[:512] if isinstance(message, str) and message else "model worker failed"
+        )
+        self.traceback_text = traceback_text[-8192:] if isinstance(traceback_text, str) else ""
+        self.worker_state = result.state
+        self.exit_code = result.exit_code
+        super().__init__(self.safe_message)
+
+
 @dataclass(frozen=True, slots=True)
 class ProcessWorkerResult:
     """Terminal, bounded result from :func:`run_process_worker`.
@@ -98,6 +122,7 @@ def run_process_worker(
     payload: Any,
     *,
     cancel_event: Event | None = None,
+    control_events: Mapping[str, Event] | None = None,
     timeout_s: float | None = None,
     on_progress: ProgressCallback | None = None,
     max_payload_bytes: int = 1_048_576,
@@ -117,6 +142,7 @@ def run_process_worker(
 
     _validate_configuration(
         worker=worker,
+        control_events=control_events,
         timeout_s=timeout_s,
         max_payload_bytes=max_payload_bytes,
         max_message_bytes=max_message_bytes,
@@ -129,10 +155,19 @@ def run_process_worker(
         return ProcessWorkerResult(state="cancelled", error=_error("Cancelled", "cancel requested"))
 
     context = multiprocessing.get_context("spawn")
+    parent_controls = dict(control_events or {})
+    child_controls = {name: context.Event() for name in parent_controls}
     parent_connection, child_connection = context.Pipe(duplex=False)
     process = context.Process(
         target=_worker_entry,
-        args=(worker, payload_bytes, child_connection, max_message_bytes, max_progress_events),
+        args=(
+            worker,
+            payload_bytes,
+            child_connection,
+            max_message_bytes,
+            max_progress_events,
+            child_controls,
+        ),
         name="moeatlas-model-worker",
         daemon=True,
     )
@@ -154,6 +189,7 @@ def run_process_worker(
         # is important: otherwise EOF is never observable after child exit.
         child_connection.close()
         while True:
+            _sync_control_events(parent_controls, child_controls)
             _drain_messages(
                 parent_connection,
                 monitor,
@@ -239,25 +275,18 @@ def _worker_entry(
     connection: Any,
     max_message_bytes: int,
     max_progress_events: int,
+    control_events: Mapping[str, Any],
 ) -> None:
     """Spawn target; keep every exception inside the child process."""
 
     try:
         payload = json.loads(payload_bytes.decode("utf-8"))
-        sent_progress = 0
-
-        def report(progress: Mapping[str, Any] | None = None, **fields: Any) -> None:
-            nonlocal sent_progress
-            if sent_progress >= max_progress_events:
-                return
-            record: dict[str, Any] = {}
-            if progress is not None:
-                if not isinstance(progress, Mapping):
-                    raise TypeError("progress must be a mapping")
-                record.update(progress)
-            record.update(fields)
-            _send(connection, {"kind": "progress", "progress": record}, max_message_bytes)
-            sent_progress += 1
+        report = _WorkerReporter(
+            connection=connection,
+            max_message_bytes=max_message_bytes,
+            max_progress_events=max_progress_events,
+            control_events=control_events,
+        )
 
         result = worker(payload, report)
         result_bytes = _encode_json(result, limit=max_message_bytes, label="result")
@@ -287,6 +316,47 @@ def _worker_entry(
             connection.close()
         except Exception:
             pass
+
+
+@dataclass(slots=True)
+class _WorkerReporter:
+    """Callable progress reporter with read-only parent control signals."""
+
+    connection: Any
+    max_message_bytes: int
+    max_progress_events: int
+    control_events: Mapping[str, Any]
+    sent_progress: int = 0
+
+    def __call__(self, progress: Mapping[str, Any] | None = None, **fields: Any) -> None:
+        if self.sent_progress >= self.max_progress_events:
+            return
+        record: dict[str, Any] = {}
+        if progress is not None:
+            if not isinstance(progress, Mapping):
+                raise TypeError("progress must be a mapping")
+            record.update(progress)
+        record.update(fields)
+        _send(
+            self.connection,
+            {"kind": "progress", "progress": record},
+            self.max_message_bytes,
+        )
+        self.sent_progress += 1
+
+    def is_set(self, name: str) -> bool:
+        """Return whether one declared parent control signal is set."""
+
+        event = self.control_events.get(name)
+        return bool(event is not None and event.is_set())
+
+
+def _sync_control_events(
+    parent_events: Mapping[str, Event], child_events: Mapping[str, Any]
+) -> None:
+    for name, parent_event in parent_events.items():
+        if parent_event.is_set():
+            child_events[name].set()
 
 
 def _drain_messages(
@@ -504,6 +574,7 @@ def _child_exit_error(exit_code: int | None) -> dict[str, str]:
 def _validate_configuration(
     *,
     worker: WorkerCallable,
+    control_events: Mapping[str, Event] | None,
     timeout_s: float | None,
     max_payload_bytes: int,
     max_message_bytes: int,
@@ -513,6 +584,19 @@ def _validate_configuration(
 ) -> None:
     if not callable(worker):
         raise ProcessWorkerError("worker must be callable")
+    if control_events is not None:
+        if not isinstance(control_events, Mapping):
+            raise ProcessWorkerError("control_events must be a mapping")
+        for name, event in control_events.items():
+            if (
+                not isinstance(name, str)
+                or not name
+                or len(name) > 64
+                or not name.replace("_", "a").isalnum()
+            ):
+                raise ProcessWorkerError("control event names must be simple identifiers")
+            if not callable(getattr(event, "is_set", None)):
+                raise ProcessWorkerError("control event values must provide is_set()")
     if timeout_s is not None and (type(timeout_s) not in {int, float} or timeout_s <= 0):
         raise ProcessWorkerError("timeout_s must be positive or None")
     for name, value in (
@@ -532,6 +616,7 @@ def _validate_configuration(
 
 __all__ = [
     "ProcessWorkerError",
+    "ProcessWorkerFailure",
     "ProcessWorkerResult",
     "run_process_worker",
 ]

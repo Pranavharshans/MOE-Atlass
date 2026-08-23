@@ -188,6 +188,7 @@ class JobManager:
                 )
         except BaseException as exc:  # workers must never take down the server thread
             with self._lock:
+                failure_stage = job.progress.get("stage") or "failed"
                 job.state = "failed"
                 job.error = self._safe_error(exc)
                 job.progress = {
@@ -195,13 +196,30 @@ class JobManager:
                     "stage": "failed",
                     "message": "Worker failed; inspect the server log for details",
                 }
-            self._diagnostics.record(
-                job.job_id,
-                event="failed",
-                kind=job.kind,
-                stage="failed",
-                exc=exc,
-            )
+            try:
+                from .process_worker import ProcessWorkerFailure
+
+                isolated_failure = exc if isinstance(exc, ProcessWorkerFailure) else None
+            except Exception:
+                isolated_failure = None
+            if isolated_failure is None:
+                self._diagnostics.record(
+                    job.job_id,
+                    event="failed",
+                    kind=job.kind,
+                    stage=failure_stage,
+                    exc=exc,
+                )
+            else:
+                self._diagnostics.record(
+                    job.job_id,
+                    event="failed",
+                    kind=job.kind,
+                    stage=failure_stage,
+                    exception_type=isolated_failure.error_type,
+                    exception_message=isolated_failure.safe_message,
+                    traceback_text=isolated_failure.traceback_text,
+                )
         finally:
             # A failed optional-runtime load can leave reserved CUDA blocks in
             # the long-lived server process even when the worker has returned.
@@ -218,7 +236,8 @@ class JobManager:
         # Known service errors already use fixed messages.  Runtime exception
         # text can contain local paths, prompts, or Hub payloads, so expose only
         # its type and a generic phrase on the wire.
-        name = type(exc).__name__
+        child_type = getattr(exc, "error_type", None)
+        name = child_type if isinstance(child_type, str) and child_type else type(exc).__name__
         return f"job failed ({name})"
 
     @staticmethod
@@ -255,9 +274,7 @@ class JobManager:
             row_index = first.get("row_index")
             batch_index = first.get("batch_index")
             if type(row_index) is int and type(batch_index) is int:
-                safe_message = (
-                    f"row {row_index} (batch {batch_index}): {safe_message}"
-                )
+                safe_message = f"row {row_index} (batch {batch_index}): {safe_message}"
         if type(count) is int and count > 1:
             safe_message = f"{count} row failures; first: {safe_message}"
         return {

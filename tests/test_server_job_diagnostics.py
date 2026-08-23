@@ -113,23 +113,26 @@ def test_job_manager_persists_typed_row_failure_outcome(tmp_path: Path) -> None:
     manager = JobManager(max_workers=1, workspace=workspace)
 
     def worker(_cancel, _report):
-        return JobOutcome({
-            "status": "failed",
-            "failure_summary": {
-                "kind": "execution",
-                "stage": "executing",
-                "count": 2,
-                "message": "prompt='secret' path=/workspace/x",
-            },
-            "failure_evidence": [
-                {
-                    "row_index": 3,
-                    "batch_index": 1,
+        return JobOutcome(
+            {
+                "status": "failed",
+                "failure_summary": {
                     "kind": "execution",
+                    "stage": "executing",
+                    "count": 2,
                     "message": "prompt='secret' path=/workspace/x",
-                }
-            ],
-        }, "failed")
+                },
+                "failure_evidence": [
+                    {
+                        "row_index": 3,
+                        "batch_index": 1,
+                        "kind": "execution",
+                        "message": "prompt='secret' path=/workspace/x",
+                    }
+                ],
+            },
+            "failed",
+        )
 
     job_id = manager.submit("run", worker)
     try:
@@ -168,7 +171,7 @@ def test_diagnostics_endpoint_is_server_scoped_and_typed(
         raise ValueError("prompt='not persisted'")
 
     monkeypatch.setattr(app_module, "_discovery_worker", fake_discovery)
-    client = TestClient(create_app(workspace))
+    client = TestClient(create_app(workspace, isolate_model_workers=False))
     created = client.post("/api/discovery", json={"model_id": "org/model"})
     assert created.status_code == 202
     job_id = created.json()["job_id"]
