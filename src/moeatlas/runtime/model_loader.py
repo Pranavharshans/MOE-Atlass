@@ -47,6 +47,7 @@ from .observation import (
     safe_evidence_source,
     validate_exposed_commits,
 )
+from .remote_code_compat import remote_code_compatibility
 
 
 class _CleanupStack:
@@ -401,25 +402,30 @@ def _load_transformers(
     stack = _CleanupStack()
     submitted = False
     try:
-        loaded_config = _call_stage("config", config_loader, model_target, **common_model)
-        stack.add_object(loaded_config)
-        tokenizer = _call_stage("tokenizer", tokenizer_loader, tokenizer_target, **common_tokenizer)
-        stack.add_object(tokenizer)
-        model_loader = _model_loader(transformers, loaded_config)
-        model = _call_stage(
-            "model",
-            model_loader,
-            model_target,
-            **_model_kwargs(
-                plan,
-                revision=model_revision,
-                local_files_only=local_files_only,
-                trust_remote_code=plan.config.trust_remote_code,
-                config=loaded_config,
-                dtype=dtype,
-                device_map=device_map,
-            ),
-        )
+        with remote_code_compatibility(
+            transformers, enabled=plan.config.trust_remote_code
+        ) as compatibility_bridges:
+            loaded_config = _call_stage("config", config_loader, model_target, **common_model)
+            stack.add_object(loaded_config)
+            tokenizer = _call_stage(
+                "tokenizer", tokenizer_loader, tokenizer_target, **common_tokenizer
+            )
+            stack.add_object(tokenizer)
+            model_loader = _model_loader(transformers, loaded_config)
+            model = _call_stage(
+                "model",
+                model_loader,
+                model_target,
+                **_model_kwargs(
+                    plan,
+                    revision=model_revision,
+                    local_files_only=local_files_only,
+                    trust_remote_code=plan.config.trust_remote_code,
+                    config=loaded_config,
+                    dtype=dtype,
+                    device_map=device_map,
+                ),
+            )
         stack.add_object(model)
         model = _place_model(model, plan, stack)
         model_config_object, config_warnings = model_config(model, loaded_config)
@@ -438,6 +444,7 @@ def _load_transformers(
                         *requested_dtype_warnings(plan, observed_model_dtype),
                         *device_warnings,
                         *requested_device_warnings(plan, observed_map),
+                        *(bridge.warning() for bridge in compatibility_bridges),
                     )
                 )
             )
@@ -448,6 +455,9 @@ def _load_transformers(
             ),
             "tokenizer_revision_evidence_source": safe_evidence_source(
                 resolution.resolved_tokenizer_revision_evidence.evidence_source
+            ),
+            "remote_code_compatibility_bridges": tuple(
+                bridge.name for bridge in compatibility_bridges
             ),
         }
         artifacts = RuntimeArtifacts(
