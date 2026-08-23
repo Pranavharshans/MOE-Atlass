@@ -180,6 +180,20 @@ def test_controlled_row_failure_fails_the_run() -> None:
         RunState.RUNNING,  # per-batch update_progress
         RunState.FAILED,
     ]
+    assert report.failure_summary == {
+        "kind": "validation",
+        "stage": "executing",
+        "count": 1,
+        "message": "bad row",
+    }
+    assert report.failure_evidence == (
+        {
+            "row_index": 0,
+            "batch_index": 0,
+            "kind": "validation",
+            "message": "bad row",
+        },
+    )
 
 
 def test_unexpected_exception_yields_safe_execution_failure() -> None:

@@ -48,6 +48,8 @@ from .run_engine import (
     RowRecord,
     RowResult,
     execute_row_schedule,
+    sanitize_failure_message,
+    serialize_row_failures,
 )
 from .run_inputs import plan_input_batches, prepare_input_rows
 from .workspace import record_run_record
@@ -135,6 +137,32 @@ class RunExecutionReport:
     @property
     def final_record(self) -> RunRecord:
         return self.records[-1]
+
+    @property
+    def failure_evidence(self) -> tuple[dict[str, int | str], ...]:
+        """Return bounded, sanitized row failures for a server/job surface.
+
+        Checkpoints and the in-memory outcome retain their canonical row
+        records.  This separate view is intentionally capped and redacted so
+        callers can expose useful row/batch/kind/message evidence without
+        leaking prompts, credentials, or local paths.
+        """
+
+        return serialize_row_failures(self.outcome.failures)
+
+    @property
+    def failure_summary(self) -> dict[str, int | str] | None:
+        """Return one bounded summary for a failed execution, if any."""
+
+        if not self.outcome.failures:
+            return None
+        first = self.outcome.failures[0]
+        return {
+            "kind": first.kind,
+            "stage": EXECUTION_PROGRESS_STAGE,
+            "count": len(self.outcome.failures),
+            "message": sanitize_failure_message(first.message),
+        }
 
     def __post_init__(self) -> None:
         if not isinstance(self.outcome, ExecutionOutcome):

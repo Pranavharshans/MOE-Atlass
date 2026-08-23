@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from moeatlas.server import create_app
 from moeatlas.server.job_diagnostics import JobDiagnosticStore
-from moeatlas.server.jobs import JobManager
+from moeatlas.server.jobs import JobManager, JobOutcome
 from moeatlas.services import initialize_workspace
 
 
@@ -103,6 +103,52 @@ def test_job_manager_keeps_wire_error_safe_and_persists_diagnostics(tmp_path: Pa
         serialized = str(diagnostics)
         assert "do not expose" not in serialized
         assert "hf_secret_123456789" not in serialized
+    finally:
+        manager.shutdown(wait=True)
+
+
+def test_job_manager_persists_typed_row_failure_outcome(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manager = JobManager(max_workers=1, workspace=workspace)
+
+    def worker(_cancel, _report):
+        return JobOutcome({
+            "status": "failed",
+            "failure_summary": {
+                "kind": "execution",
+                "stage": "executing",
+                "count": 2,
+                "message": "prompt='secret' path=/workspace/x",
+            },
+            "failure_evidence": [
+                {
+                    "row_index": 3,
+                    "batch_index": 1,
+                    "kind": "execution",
+                    "message": "prompt='secret' path=/workspace/x",
+                }
+            ],
+        }, "failed")
+
+    job_id = manager.submit("run", worker)
+    try:
+        for _ in range(100):
+            snapshot = manager.snapshot(job_id)
+            assert snapshot is not None
+            if snapshot["state"] == "failed":
+                break
+            time.sleep(0.005)
+        assert snapshot["state"] == "failed"
+        diagnostics = manager.diagnostics(job_id)
+        assert diagnostics is not None
+        failure = diagnostics["entries"][-1]
+        assert failure["exception_type"] == "RowFailure"
+        assert failure["stage"] == "executing"
+        assert "unknown" not in str(failure)
+        assert failure["exception_message"].count("2 row failures") == 1
+        assert "secret" not in str(failure)
+        assert "/workspace" not in str(failure)
     finally:
         manager.shutdown(wait=True)
 

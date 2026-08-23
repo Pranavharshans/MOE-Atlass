@@ -167,13 +167,25 @@ class JobManager:
                         "stage": "cancelled",
                         "message": "Cancellation was acknowledged",
                     }
-            self._diagnostics.record(
-                job.job_id,
-                event=job.state,
-                kind=job.kind,
-                stage=job.progress.get("stage"),
-                message=job.progress.get("message"),
-            )
+            structured_failure = self._structured_failure(outcome)
+            if structured_failure is None:
+                self._diagnostics.record(
+                    job.job_id,
+                    event=job.state,
+                    kind=job.kind,
+                    stage=job.progress.get("stage"),
+                    message=job.progress.get("message"),
+                )
+            else:
+                self._diagnostics.record(
+                    job.job_id,
+                    event="failed",
+                    kind=structured_failure["kind"],
+                    stage=structured_failure["stage"],
+                    message=structured_failure["message"],
+                    exception_type="RowFailure",
+                    exception_message=structured_failure["message"],
+                )
         except BaseException as exc:  # workers must never take down the server thread
             with self._lock:
                 job.state = "failed"
@@ -208,6 +220,51 @@ class JobManager:
         # its type and a generic phrase on the wire.
         name = type(exc).__name__
         return f"job failed ({name})"
+
+    @staticmethod
+    def _structured_failure(outcome: JobOutcome) -> dict[str, str] | None:
+        """Extract typed row-failure evidence from a returned failed outcome.
+
+        ``execute_specification`` deliberately records row failures as normal
+        evidence and returns a failed report when no row succeeds.  No Python
+        exception reaches this job boundary in that case, so diagnostics must
+        consume the bounded report payload explicitly.
+        """
+
+        if outcome.state != "failed":
+            return None
+        payload = outcome.payload
+        summary = payload.get("failure_summary")
+        evidence = payload.get("failure_evidence")
+        if not isinstance(summary, Mapping):
+            return None
+        kind = summary.get("kind")
+        stage = summary.get("stage")
+        message = summary.get("message")
+        count = summary.get("count")
+        if not all(isinstance(value, str) and value for value in (kind, stage, message)):
+            return None
+        try:
+            from ..services.run_engine import sanitize_failure_message
+
+            safe_message = sanitize_failure_message(message)
+        except Exception:
+            safe_message = "row execution failed"
+        first = evidence[0] if isinstance(evidence, list | tuple) and evidence else None
+        if isinstance(first, Mapping):
+            row_index = first.get("row_index")
+            batch_index = first.get("batch_index")
+            if type(row_index) is int and type(batch_index) is int:
+                safe_message = (
+                    f"row {row_index} (batch {batch_index}): {safe_message}"
+                )
+        if type(count) is int and count > 1:
+            safe_message = f"{count} row failures; first: {safe_message}"
+        return {
+            "kind": kind[:80],
+            "stage": stage[:80],
+            "message": safe_message[:500],
+        }
 
     def snapshot(self, job_id: str) -> dict[str, Any] | None:
         with self._lock:

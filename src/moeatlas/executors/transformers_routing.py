@@ -45,7 +45,7 @@ from ..runtime.generic_capture import (
     structured_router_targets,
 )
 from ..runtime.memory import release_accelerator_memory
-from ..services.run_engine import RowFailure
+from ..services.run_engine import RowFailure, sanitize_failure_message
 
 EXECUTOR_RESULT_SCHEMA_VERSION = "1.0"
 
@@ -55,6 +55,54 @@ _PROMPT_FAILURE = "row values must carry a non-empty string 'prompt'"
 _TOKENIZER_MISSING_FAILURE = "loaded model did not resolve a tokenizer"
 _LOAD_FAILURE = "model loading failed before execution"
 _RUN_KEY_FAILURE = "executor run key was not bound before execution"
+
+
+def _safe_validation_error(exc: Exception) -> str:
+    """Summarize structured validation errors without retaining inputs.
+
+    Pydantic validation entries can contain complete input values.  Read only
+    the location, stable error type, and bounded message, ignoring every input
+    and context field.  Other exception families remain class-name-only.
+    """
+
+    errors = getattr(exc, "errors", None)
+    if type(exc).__name__ != "ValidationError" or not callable(errors):
+        return f"structured forward failed ({type(exc).__name__})"
+    try:
+        try:
+            entries = errors(include_input=False, include_url=False)
+        except TypeError:
+            entries = errors()
+    except Exception:
+        return "structured forward failed (ValidationError)"
+    if not isinstance(entries, list):
+        return "structured forward failed (ValidationError)"
+    summaries: list[str] = []
+    for entry in entries[:4]:
+        if not isinstance(entry, Mapping):
+            continue
+        location = entry.get("loc", ())
+        if isinstance(location, list | tuple):
+            safe_parts = [
+                str(part)[:80]
+                for part in location
+                if type(part) in {str, int}
+            ]
+            location_text = ".".join(safe_parts) or "value"
+        else:
+            location_text = "value"
+        error_type = entry.get("type")
+        stable_type = error_type if isinstance(error_type, str) else "validation"
+        message = entry.get("msg")
+        stable_message = message if isinstance(message, str) else "validation failed"
+        summaries.append(
+            sanitize_failure_message(
+                f"{location_text} [{stable_type[:80]}]: {stable_message[:240]}"
+            )
+        )
+    if not summaries:
+        return "structured forward failed (ValidationError)"
+    return "structured forward validation failed: " + "; ".join(summaries)
 
 
 def _materialize_ids(value: object) -> list[int]:
@@ -435,7 +483,7 @@ class TransformersRoutingExecutor:
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as exc:
-            raise RowFailure("execution", f"structured forward failed ({type(exc).__name__})")
+            raise RowFailure("execution", _safe_validation_error(exc)) from None
 
         self._targets = targets
         self._token_events.extend(result.token_events)

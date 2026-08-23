@@ -554,6 +554,13 @@ def _run_worker(
             "executed_rows": execution.outcome.executed_rows,
             "total_rows": execution.outcome.total_rows,
             "failed_rows": len(execution.outcome.failures),
+            # Keep row-level failure evidence on the job result as well as in
+            # the checkpoint.  The view is bounded and sanitized by the run
+            # service; it is safe for the control-plane response and lets the
+            # diagnostics layer explain a failed run without an outer
+            # exception object.
+            "failure_summary": execution.failure_summary,
+            "failure_evidence": execution.failure_evidence,
             "shard_key": receipt.shard_key if receipt is not None else None,
             "plan_id": plan.plan_id,
             "resolved_model_revision": model_provenance.model_revision,

@@ -264,6 +264,9 @@ class JobDiagnosticStore:
         total: int | None = None,
         message: str | None = None,
         exc: BaseException | None = None,
+        exception_type: str | None = None,
+        exception_message: str | None = None,
+        traceback_text: str | None = None,
     ) -> None:
         try:
             payload: dict[str, Any] = {"event": _redact_text(event)}
@@ -285,6 +288,23 @@ class JobDiagnosticStore:
                         "exception_message": document["message"],
                         "traceback": document["traceback"],
                     }
+                )
+            # A completed worker can return a structured failed outcome rather
+            # than raising an outer exception.  Preserve that typed evidence
+            # in the same diagnostics channel so the UI does not fall back to
+            # ``unknown``.  Values use the same conservative redaction and
+            # bounds as ordinary exception text.
+            if exception_type is not None:
+                payload["exception_type"] = _redact_text(
+                    exception_type, workspace=self._workspace
+                )
+            if exception_message is not None:
+                payload["exception_message"] = _redact_text(
+                    exception_message, workspace=self._workspace
+                )
+            if traceback_text is not None:
+                payload["traceback"] = _redact_text(
+                    traceback_text, workspace=self._workspace
                 )
             self._append(job_id, payload)
         except Exception:

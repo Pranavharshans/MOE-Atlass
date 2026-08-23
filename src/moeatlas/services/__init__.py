@@ -44,6 +44,8 @@ from .run_engine import (
     RowResult,
     RunEngineError,
     execute_row_schedule,
+    sanitize_failure_message,
+    serialize_row_failures,
 )
 from .run_inputs import (
     RUN_INPUTS_SCHEMA_VERSION,
@@ -111,6 +113,8 @@ __all__ = [
     "build_initial_record",
     "derive_run_failure",
     "execute_row_schedule",
+    "sanitize_failure_message",
+    "serialize_row_failures",
     "execute_specification",
     "initialize_workspace",
     "load_checkpoint",

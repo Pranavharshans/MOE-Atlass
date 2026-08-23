@@ -18,6 +18,8 @@ from moeatlas.services import (
     RunEngineError,
     execute_row_schedule,
     plan_dataset_batches,
+    sanitize_failure_message,
+    serialize_row_failures,
 )
 
 
@@ -101,6 +103,31 @@ def test_row_result_and_record_are_strict() -> None:
         RowRecord(row_index=1, batch_index=0, kind="mystery", message="x")
     with pytest.raises(ValueError):
         RowRecord(row_index=1, batch_index=0, kind="execution", message="")
+
+
+def test_row_failure_wire_view_is_bounded_and_redacted() -> None:
+    failure = RowRecord(
+        row_index=7,
+        batch_index=2,
+        kind="execution",
+        message=(
+            "prompt='private prompt' api_key=sk-12345678901234567890 "
+            "path=/workspace/private/checkpoint.json"
+        ),
+    )
+    assert sanitize_failure_message(failure.message) == (
+        "prompt=<redacted> api_key=<redacted> path=<path>"
+    )
+    assert serialize_row_failures((failure,)) == (
+        {
+            "row_index": 7,
+            "batch_index": 2,
+            "kind": "execution",
+            "message": "prompt=<redacted> api_key=<redacted> path=<path>",
+        },
+    )
+    with pytest.raises(ValueError):
+        serialize_row_failures((failure,), max_entries=65)
 
 
 def test_execution_outcome_is_strict() -> None:

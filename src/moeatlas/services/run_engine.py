@@ -21,6 +21,7 @@ executed. No publication happens here — persistence stays a separate slice.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -45,6 +46,25 @@ EXECUTION_PROGRESS_STAGE = "executing"
 """The single engine-defined progress stage used while rows execute."""
 
 _MAX_FAILURE_MESSAGE = 500
+_MAX_FAILURE_EVIDENCE = 64
+
+# Row failures are allowed to carry adapter-provided context, but that context
+# must never turn into an accidental prompt, credential, or host-path export.
+# Keep this deliberately small and key-oriented: the execution core remains
+# model-neutral and does not inspect model-specific exception objects.
+_SECRET_VALUE = re.compile(
+    r"(?is)\b(authorization|bearer|api[_-]?key|access[_-]?token|refresh[_-]?token|"
+    r"hf[_-]?token|password|passwd|secret)\b\s*[:=]\s*(?:bearer\s+)?[^\s,;]+"
+)
+_PROMPT_VALUE = re.compile(
+    r"(?is)\b(prompt|input|query|content|completion|token_text)\b"
+    r"\s*[:=]\s*(\"[^\"]*\"|'[^']*'|[^\n,;}]+)"
+)
+_PATH_VALUE = re.compile(
+    r"(?<![a-z0-9_])(?:/(?:users|home|workspace|private|tmp|var|opt|root|mnt|srv)"
+    r"/[^\s'\"`;,)]*|[a-z]:[\\/][^\s'\"`;,)]*)",
+    re.IGNORECASE,
+)
 
 _STAGES = frozenset({"contract", "executor", "budget"})
 
@@ -79,6 +99,62 @@ class RowFailure(Exception):
         super().__init__(f"row failure [{kind}]: {message}")
         self.kind = kind
         self.message = message
+
+
+def sanitize_failure_message(value: object) -> str:
+    """Return bounded row-failure text safe to expose as run evidence.
+
+    Adapters may provide useful validation context in a ``RowFailure`` message,
+    but row evidence is persisted and returned by the server.  Redact common
+    prompt/credential/path-shaped values while retaining the exception's
+    structural wording.  No traceback or local variables are ever inspected.
+    """
+
+    if isinstance(value, str):
+        text = value
+    else:
+        try:
+            text = str(value)
+        except Exception:
+            text = "<unavailable failure detail>"
+    text = _SECRET_VALUE.sub(lambda match: f"{match.group(1)}=<redacted>", text)
+    text = _PROMPT_VALUE.sub(lambda match: f"{match.group(1)}=<redacted>", text)
+    text = _PATH_VALUE.sub("<path>", text)
+    # Diagnostics are line-oriented; control characters would make the record
+    # ambiguous and can otherwise smuggle text into adjacent fields.
+    text = " ".join(text.split())
+    return text[:_MAX_FAILURE_MESSAGE] or "<empty failure detail>"
+
+
+def serialize_row_failures(
+    failures: tuple[RowRecord, ...], *, max_entries: int = 32
+) -> tuple[dict[str, int | str], ...]:
+    """Serialize bounded per-row failure evidence for a wire/checkpoint view.
+
+    The canonical checkpoint remains lossless for its existing contract.  This
+    view is intentionally capped and sanitized for job responses/diagnostics,
+    so a large dataset or malformed adapter cannot expand the server surface.
+    """
+
+    if type(failures) is not tuple or any(not isinstance(f, RowRecord) for f in failures):
+        raise TypeError("failures must be a tuple of RowRecord values")
+    if (
+        type(max_entries) is not int
+        or isinstance(max_entries, bool)
+        or not 1 <= max_entries <= _MAX_FAILURE_EVIDENCE
+    ):
+        raise ValueError(
+            f"max_entries must be between 1 and {_MAX_FAILURE_EVIDENCE}"
+        )
+    return tuple(
+        {
+            "row_index": failure.row_index,
+            "batch_index": failure.batch_index,
+            "kind": failure.kind,
+            "message": sanitize_failure_message(failure.message),
+        }
+        for failure in failures[:max_entries]
+    )
 
 
 @dataclass(frozen=True, slots=True)

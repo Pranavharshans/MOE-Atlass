@@ -27,6 +27,7 @@ from moeatlas.executors import (
 from moeatlas.executors.transformers_routing import (
     TransformersRoutingExecutor,
     _move_model_inputs,
+    _safe_validation_error,
 )
 from moeatlas.runtime.contracts import LoadedModel
 from moeatlas.services import initialize_workspace, query_runs
@@ -131,6 +132,36 @@ def test_missing_prompt_is_rejected() -> None:
     with pytest.raises(RowFailure) as excinfo:
         executor(row_index=0, batch_index=0, values={"text": "hi"})
     assert excinfo.value.message == "row values must carry a non-empty string 'prompt'"
+
+
+def test_structured_validation_failure_retains_safe_schema_evidence_only() -> None:
+    class ValidationError(Exception):
+        def errors(self, **kwargs: object) -> list[dict[str, object]]:
+            assert kwargs == {"include_input": False, "include_url": False}
+            return [
+                {
+                    "loc": ("router", "top_k"),
+                    "type": "greater_than_equal",
+                    "msg": "Input should be greater than or equal to 1",
+                    "input": "hf_secret_prompt_value",
+                    "ctx": {"private": "do-not-retain"},
+                }
+            ]
+
+    message = _safe_validation_error(ValidationError("unsafe raw exception"))
+
+    assert "router.top_k" in message
+    assert "greater_than_equal" in message
+    assert "greater than or equal to 1" in message
+    assert "hf_secret_prompt_value" not in message
+    assert "do-not-retain" not in message
+    assert "unsafe raw exception" not in message
+
+
+def test_non_validation_structured_failure_retains_class_name_only() -> None:
+    message = _safe_validation_error(RuntimeError("private prompt and model path"))
+
+    assert message == "structured forward failed (RuntimeError)"
 
 
 def test_model_inputs_move_tensor_like_values_to_model_device() -> None:
