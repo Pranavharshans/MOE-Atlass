@@ -65,6 +65,21 @@ type JobSnapshot = {
   progress: JobProgress;
   result?: Record<string, unknown> | null;
   error?: string | null;
+  diagnostics?: {
+    endpoint: string;
+    available: boolean;
+    entry_count: number;
+    truncated: boolean;
+  } | null;
+};
+
+type JobDiagnosticEntry = {
+  sequence: number;
+  event: string;
+  stage?: string | null;
+  exception_type?: string | null;
+  exception_message?: string | null;
+  traceback?: string | null;
 };
 
 const DEFAULT_SOURCES: SourceDraft = {
@@ -174,6 +189,45 @@ function AppMark() {
 
 function StatusDot({ tone = "good" }: { tone?: "good" | "quiet" | "warn" }) {
   return <span className={`status-dot status-dot-${tone}`} aria-hidden="true" />;
+}
+
+function FailureDiagnostics({ job }: { job: JobSnapshot | null }) {
+  const [entry, setEntry] = useState<JobDiagnosticEntry | null>(null);
+  const endpoint = job?.state === "failed" && job.diagnostics?.available
+    ? job.diagnostics.endpoint
+    : null;
+  useEffect(() => {
+    if (!endpoint) {
+      setEntry(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    void fetch(endpoint, { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("diagnostics unavailable");
+        return response.json() as Promise<{ entries?: JobDiagnosticEntry[] }>;
+      })
+      .then((document) => {
+        const failures = (document.entries ?? []).filter((item) => item.event === "failed");
+        setEntry(failures.at(-1) ?? null);
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setEntry(null);
+      });
+    return () => controller.abort();
+  }, [endpoint]);
+  if (job?.state !== "failed") return null;
+  if (!entry) {
+    return <p className="rounded-xl border border-line bg-white/[0.03] p-3 text-xs leading-5 text-muted">No sanitized diagnostic record is available for this job.</p>;
+  }
+  return (
+    <section className="research-card research-card-dark" aria-label="Failure diagnostics">
+      <div className="flex items-center gap-2"><XCircle size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Failure evidence</p></div>
+      <dl className="contract-list mt-4"><div><dt>Type</dt><dd>{entry.exception_type ?? "unknown"}</dd></div><div><dt>Stage</dt><dd>{entry.stage ?? "unknown"}</dd></div></dl>
+      {entry.exception_message ? <p className="mt-3 break-words text-xs leading-5 text-signal">{entry.exception_message}</p> : null}
+      {entry.traceback ? <details className="mt-3"><summary className="cursor-pointer font-mono text-[0.65rem] text-muted">Sanitized traceback</summary><pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-line bg-black/20 p-3 font-mono text-[0.61rem] leading-5 text-muted">{entry.traceback}</pre></details> : null}
+    </section>
+  );
 }
 
 function validateHubId(value: string, label: string): string | null {
@@ -578,6 +632,7 @@ function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
           {available ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("run")}>Configure capture <ArrowRight size={16} /></button> : null}
           {job?.progress.message ? <p className="rounded-xl border border-line bg-white/[0.03] p-3 text-xs leading-5 text-muted" role="status">{job.progress.message}</p> : null}
           {requestError || job?.error ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError ?? job?.error}</p> : null}
+          <FailureDiagnostics job={job} />
         </aside>
       </div>
     </div>
@@ -691,7 +746,7 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
           </section>
           <section className="research-card"><div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Worker boundary</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Execution handoff</h2></div><WifiHigh size={19} className="text-cyan" /></div><div className="mt-5 flex flex-wrap items-center gap-3"><span className="runtime-pill"><StatusDot />Bound server</span><span className="text-xs text-muted">The server resolves its own accelerator and model cache.</span></div><p className="mt-4 text-xs leading-5 text-muted">Use the same UI on a local machine or inside a provider VM. Only the server process needs access to the model and dataset; no SSH or path selector is involved.</p></section>
         </main>
-        <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Run contract</p><GitBranch size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Model</dt><dd>{sources.modelId}</dd></div><div><dt>Dataset</dt><dd>{sources.datasetId}</dd></div><div><dt>Prompt</dt><dd>{sources.promptColumn}</dd></div><div><dt>Rows</dt><dd>{run.sampleCap}</dd></div><div><dt>Batch</dt><dd>{run.batchSize}</dd></div><div><dt>Mode</dt><dd>{run.mode.replace("_", " ")}</dd></div><div><dt>Tokens</dt><dd>{run.tokenTextPolicy}</dd></div><div><dt>Overhead</dt><dd>{run.measureCaptureOverhead ? "optional native pass" : "off"}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Live state</p></div><p className="mt-4 text-xs leading-5 text-muted">{job?.progress.message ?? "The executor will resolve the model, stream bounded dataset rows, and publish immutable evidence."}</p>{job?.progress.total ? <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, (job.progress.completed / job.progress.total) * 100)}%` }} /></div> : null}</section>{overhead ? <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Overhead result</p></div><dl className="contract-list mt-4"><div><dt>Status</dt><dd>{String(overhead.status ?? "unknown")}</dd></div><div><dt>Native forward</dt><dd>{typeof (overhead.native as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.native as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Captured forward</dt><dd>{typeof (overhead.captured as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.captured as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Delta</dt><dd>{typeof overhead.delta_percent === "number" ? `${(overhead.delta_percent as number).toFixed(2)}%` : "—"}</dd></div></dl></section> : null}<button type="button" className="button-primary w-full justify-between" disabled={!ready || starting || running} onClick={() => void startRun()}>{starting ? "Starting capture…" : running ? "Capture running…" : job?.state === "completed" ? "Capture complete" : "Start capture"}<ArrowRight size={16} weight="bold" /></button>{jobId && overheadRunning ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void skipOverhead()}>Skip overhead measurement <XCircle size={16} /></button> : null}{jobId && running ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void postJson(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {})}>{overheadRunning ? "Cancel study" : "Cancel capture"} <XCircle size={16} /></button> : null}{canResume && jobId ? <button type="button" className="button-secondary w-full justify-between" disabled={starting} onClick={() => void startRun(jobId)}>Resume from checkpoint <ArrowRight size={16} /></button> : null}{job?.state === "completed" ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("runs")}>Inspect evidence <ArrowRight size={16} /></button> : null}{requestError || job?.error ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError ?? job?.error}</p> : null}</aside>
+        <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Run contract</p><GitBranch size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Model</dt><dd>{sources.modelId}</dd></div><div><dt>Dataset</dt><dd>{sources.datasetId}</dd></div><div><dt>Prompt</dt><dd>{sources.promptColumn}</dd></div><div><dt>Rows</dt><dd>{run.sampleCap}</dd></div><div><dt>Batch</dt><dd>{run.batchSize}</dd></div><div><dt>Mode</dt><dd>{run.mode.replace("_", " ")}</dd></div><div><dt>Tokens</dt><dd>{run.tokenTextPolicy}</dd></div><div><dt>Overhead</dt><dd>{run.measureCaptureOverhead ? "optional native pass" : "off"}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Live state</p></div><p className="mt-4 text-xs leading-5 text-muted">{job?.progress.message ?? "The executor will resolve the model, stream bounded dataset rows, and publish immutable evidence."}</p>{job?.progress.total ? <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, (job.progress.completed / job.progress.total) * 100)}%` }} /></div> : null}</section>{overhead ? <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Overhead result</p></div><dl className="contract-list mt-4"><div><dt>Status</dt><dd>{String(overhead.status ?? "unknown")}</dd></div><div><dt>Native forward</dt><dd>{typeof (overhead.native as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.native as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Captured forward</dt><dd>{typeof (overhead.captured as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.captured as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Delta</dt><dd>{typeof overhead.delta_percent === "number" ? `${(overhead.delta_percent as number).toFixed(2)}%` : "—"}</dd></div></dl></section> : null}<button type="button" className="button-primary w-full justify-between" disabled={!ready || starting || running} onClick={() => void startRun()}>{starting ? "Starting capture…" : running ? "Capture running…" : job?.state === "completed" ? "Capture complete" : "Start capture"}<ArrowRight size={16} weight="bold" /></button>{jobId && overheadRunning ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void skipOverhead()}>Skip overhead measurement <XCircle size={16} /></button> : null}{jobId && running ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void postJson(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {})}>{overheadRunning ? "Cancel study" : "Cancel capture"} <XCircle size={16} /></button> : null}{canResume && jobId ? <button type="button" className="button-secondary w-full justify-between" disabled={starting} onClick={() => void startRun(jobId)}>Resume from checkpoint <ArrowRight size={16} /></button> : null}{job?.state === "completed" ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("runs")}>Inspect evidence <ArrowRight size={16} /></button> : null}{requestError || job?.error ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError ?? job?.error}</p> : null}<FailureDiagnostics job={job} /></aside>
       </div>
     </div>
   );
