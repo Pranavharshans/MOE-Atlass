@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from ..core import ComponentKind, ComponentManifest, make_component_key
+from ..core import ComponentKind, ComponentManifest, make_component_key, parse_model_key
 
 _EXACT_GATE_LEAF = "gate"
 
@@ -155,8 +155,89 @@ def bind_moe_layer_key(
     )
 
 
+def bind_routed_expert_keys(
+    model_key: str,
+    components: Sequence[ComponentManifest],
+    router: ComponentManifest,
+    expert_count: int,
+) -> tuple[str, ...]:
+    """Bind indexed experts or one proven packed expert axis to stable keys."""
+
+    parse_model_key(model_key)
+    if type(expert_count) is not int or isinstance(expert_count, bool) or expert_count <= 0:
+        raise ValueError("expert_count must be a positive exact integer")
+    if router.layer_index is None:
+        raise ValueError("router layer index is not exact")
+    experts = [
+        component
+        for component in components
+        if component.kind is ComponentKind.EXPERT
+        and component.layer_index == router.layer_index
+    ]
+    if experts:
+        indices = [component.expert_index for component in experts]
+        if len(experts) != expert_count:
+            raise ValueError(
+                f"layer {router.layer_index} publishes {len(experts)} of "
+                f"{expert_count} routed experts"
+            )
+        if any(type(index) is not int or isinstance(index, bool) for index in indices) or sorted(
+            indices  # type: ignore[type-var]
+        ) != list(range(expert_count)):
+            raise ValueError(
+                f"layer {router.layer_index} expert indices must be contiguous and zero-based"
+            )
+        if any(
+            component.routed is not True or component.shared is True
+            for component in experts
+        ):
+            raise ValueError("layer expert universe contains shared or unrouted experts")
+        experts.sort(key=lambda component: component.expert_index)  # type: ignore[arg-type, return-value]
+        return tuple(component.component_key for component in experts)
+
+    block = _parent_path(router.module_path)
+    containers = [
+        component
+        for component in components
+        if component.kind is ComponentKind.EXPERT_CONTAINER
+        and component.layer_index == router.layer_index
+        and (
+            _parent_path(component.module_path) == block
+            or component.module_path.startswith(f"{block}.")
+        )
+    ]
+    packed: list[ComponentManifest] = []
+    for container in containers:
+        metadata = container.provenance.metadata if container.provenance is not None else {}
+        signals = metadata.get("signals") if isinstance(metadata, dict) else None
+        has_shape_evidence = isinstance(signals, list) and "parameter_shape" in signals
+        has_packed_axis = any(
+            len(shape) >= 3 and expert_count in shape
+            for shape in container.tensor_shapes.values()
+        )
+        if has_shape_evidence and has_packed_axis:
+            packed.append(container)
+    if len(packed) != 1:
+        raise ValueError(
+            f"layer {router.layer_index} publishes 0 of {expert_count} routed experts "
+            "and does not bind exactly one proven packed expert container"
+        )
+    container = packed[0]
+    return tuple(
+        make_component_key(
+            model_key,
+            ComponentKind.EXPERT.value,
+            f"{container.module_path}.packed.{index}",
+            layer_index=router.layer_index,
+            expert_index=index,
+        )
+        for index in range(expert_count)
+    )
+
+
 __all__ = [
     "bind_moe_layer_key",
+    "bind_routed_expert_keys",
     "has_whole_word_moe_marker",
     "trusted_routers",
 ]

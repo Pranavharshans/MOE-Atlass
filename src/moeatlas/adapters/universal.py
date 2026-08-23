@@ -20,14 +20,18 @@ from typing import Literal
 from pydantic import Field, StrictInt, StrictStr, field_validator, model_validator
 
 from ..core import (
-    ComponentKind,
     StrictManifestModel,
     VersionedManifest,
     parse_component_key,
     parse_model_key,
     stable_digest,
 )
-from ..discovery import DiscoveryReport, bind_moe_layer_key, trusted_routers
+from ..discovery import (
+    DiscoveryReport,
+    bind_moe_layer_key,
+    bind_routed_expert_keys,
+    trusted_routers,
+)
 
 UNIVERSAL_ROUTING_INSPECTION_SCHEMA_VERSION = "1.0"
 
@@ -231,25 +235,9 @@ def _derive_universal_inspection(
             raise ValueError("router layer indices are not unique")
         seen_layer_indices.add(index)
         layer_key = bind_moe_layer_key(report.model_key, components, router)
-        experts = [
-            component
-            for component in components
-            if component.kind is ComponentKind.EXPERT
-            and component.layer_index == index
-        ]
-        indices = [component.expert_index for component in experts]
-        if any(type(index_) is not int for index_ in indices) or sorted(indices) != list(
-            range(len(experts))
-        ):
-            raise ValueError("layer expert indices are not contiguous")
-        if any(
-            component.routed is not True or component.shared is True for component in experts
-        ):
-            raise ValueError("layer expert universe contains shared or unrouted experts")
-        if len(experts) != fact_expert_count:
-            raise ValueError("layer expert universe does not match discovery facts")
-        experts.sort(key=lambda component: component.expert_index)
-        expert_keys = tuple(component.component_key for component in experts)
+        expert_keys = bind_routed_expert_keys(
+            report.model_key, components, router, fact_expert_count
+        )
         layer_records.append((index, layer_key, expert_keys))
     layer_records.sort(key=lambda record: record[0])
     # Documents number the resolved routing stack ordinally from zero: routed

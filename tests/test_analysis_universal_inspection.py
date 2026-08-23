@@ -313,6 +313,41 @@ def test_universal_document_derives_from_a_foreign_family_report() -> None:
     assert document.scanner_version == report.scanner_version
 
 
+def test_universal_document_accepts_proven_packed_expert_axes() -> None:
+    from .test_runtime_generic_capture import _HookedRouter
+
+    class PackedMoE:
+        pass
+
+    class PackedExperts:
+        pass
+
+    class PackedModel:
+        config = {"num_experts": 4, "num_experts_per_tok": 2}
+
+        def __init__(self) -> None:
+            self.gate = _HookedRouter(
+                parameters={"weight": type("P", (), {"shape": (4, 8)})()}
+            )
+
+        def named_modules(self):
+            yield "", self
+            yield "layers.0.moe", PackedMoE()
+            yield "layers.0.moe.gate", self.gate
+            yield "layers.0.moe.experts", PackedExperts()
+
+        def named_parameters(self):
+            yield "layers.0.moe.gate.weight", type("P", (), {"shape": (4, 8)})()
+            yield "layers.0.moe.experts.w1", type("P", (), {"shape": (4, 16, 8)})()
+
+    report = scan(PackedModel(), _loading_manifest(_loading_plan()))
+    document = build_universal_inspection(report)
+    assert document.layout == "packed"
+    assert document.expert_count == 4
+    assert len(document.layers) == 1
+    assert len(document.layers[0].expert_keys) == 4
+
+
 def test_universal_construction_rejects_wrong_types_and_incomplete_facts() -> None:
     with pytest.raises(TypeError, match="exact DiscoveryReport"):
         build_universal_inspection(object())

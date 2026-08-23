@@ -29,7 +29,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..core import ComponentKind, parse_component_key
-from ..discovery import DiscoveryReport, bind_moe_layer_key, trusted_routers
+from ..discovery import (
+    DiscoveryReport,
+    bind_moe_layer_key,
+    bind_routed_expert_keys,
+    trusted_routers,
+)
 from ..event_validation import (
     fresh_expert_events,
     fresh_routing_events,
@@ -187,31 +192,18 @@ def structured_router_targets(report: DiscoveryReport) -> tuple[StructuredRouter
             layer_key = bind_moe_layer_key(fresh.model_key, components, router)
         except ValueError as exc:
             raise StructuredCaptureError("resolution", str(exc)) from exc
-        experts = [
-            component
-            for component in components
-            if component.kind is ComponentKind.EXPERT and component.layer_index == layer_index
-        ]
-        if len(experts) != expert_count:
-            raise StructuredCaptureError(
-                "resolution",
-                f"layer {layer_index} publishes {len(experts)} of {expert_count} routed experts",
+        try:
+            expert_keys = bind_routed_expert_keys(
+                fresh.model_key, components, router, expert_count
             )
-        indices = [component.expert_index for component in experts]
-        if any(type(index) is not int or isinstance(index, bool) for index in indices) or sorted(
-            indices  # type: ignore[type-var]
-        ) != list(range(expert_count)):
-            raise StructuredCaptureError(
-                "resolution",
-                f"layer {layer_index} expert indices must be contiguous and zero-based",
-            )
-        experts.sort(key=lambda component: component.expert_index)  # type: ignore[arg-type, return-value]
+        except ValueError as exc:
+            raise StructuredCaptureError("resolution", str(exc)) from exc
         targets.append(
             StructuredRouterTarget(
                 module_path=router.module_path,
                 component_key=router.component_key,
                 layer_key=layer_key,
-                expert_keys=tuple(component.component_key for component in experts),
+                expert_keys=expert_keys,
                 routed_top_k=routed_top_k,
                 layer_index=layer_index,
             )

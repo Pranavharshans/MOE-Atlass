@@ -588,6 +588,51 @@ def test_ling_style_capture_decodes_end_to_end_through_the_real_routers() -> Non
         assert modules[path].callbacks == []
 
 
+def test_packed_expert_container_provides_logical_routing_axis() -> None:
+    class PackedMoE:
+        pass
+
+    class PackedExperts:
+        pass
+
+    class PackedModel:
+        config = {"num_experts": 4, "num_experts_per_tok": 2}
+
+        def __init__(self) -> None:
+            self.gate = _HookedRouter(
+                parameters={"weight": type("P", (), {"shape": (4, 8)})()}
+            )
+            self.output = object()
+
+        def named_modules(self):
+            yield "", self
+            yield "layers.0.moe", PackedMoE()
+            yield "layers.0.moe.gate", self.gate
+            yield "layers.0.moe.experts", PackedExperts()
+
+        def named_parameters(self):
+            yield "layers.0.moe.gate.weight", type("P", (), {"shape": (4, 8)})()
+            yield "layers.0.moe.experts.w1", type("P", (), {"shape": (4, 16, 8)})()
+
+        def __call__(self, **kwargs: object) -> object:
+            del kwargs
+            self.gate.fire(_flat_logits(1, 4))
+            return self.output
+
+    model = PackedModel()
+    report = scan(model, _loading_manifest(_loading_plan()))
+    targets = structured_router_targets(report)
+    assert len(targets) == 1
+    assert len(targets[0].expert_keys) == 4
+    assert len(set(targets[0].expert_keys)) == 4
+
+    result = run_structured_routing_forward(
+        model, report, _tokens(1), {"input_ids": [[10]]}, max_events=8
+    )
+    assert result.output is model.output
+    assert len(result.routing_events) == 2
+
+
 class DeepseekV2MoE(_LingHooks):
     pass
 
