@@ -3,12 +3,9 @@ import {
   ArrowRight,
   Check,
   CheckCircle,
-  Cloud,
   Cpu,
   Database,
-  GearSix,
   GitBranch,
-  HardDrives,
   Lightning,
   Plus,
   Pulse,
@@ -18,8 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 
-type NavigationItem = "analysis" | "discovery" | "run" | "runs" | "settings";
-type RunnerMode = "local" | "remote";
+type NavigationItem = "analysis" | "discovery" | "run" | "runs";
 type HubKind = "model" | "dataset";
 type SearchState = "idle" | "loading" | "ready" | "unavailable";
 
@@ -30,11 +26,10 @@ type SourceDraft = {
   datasetRevision: string;
   datasetConfig: string;
   datasetSplit: string;
-};
-
-type RunnerDraft = {
-  mode: RunnerMode;
-  endpoint: string;
+  promptColumn: string;
+  device: string;
+  dtype: "preserve" | "float32" | "float16" | "bfloat16";
+  trustRemoteCode: boolean;
 };
 
 type RunDraft = {
@@ -44,7 +39,6 @@ type RunDraft = {
   maxNewTokens: string;
   tokenTextPolicy: "redacted" | "stored";
   allowExport: boolean;
-  retainRawPayloads: boolean;
 };
 
 type HubSuggestion = {
@@ -56,6 +50,22 @@ type HubSuggestion = {
   library_name?: string | null;
 };
 
+type JobProgress = {
+  stage: string;
+  completed: number;
+  total?: number | null;
+  message: string;
+};
+
+type JobSnapshot = {
+  job_id: string;
+  kind: string;
+  state: "queued" | "running" | "completed" | "cancelled" | "failed";
+  progress: JobProgress;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+};
+
 const DEFAULT_SOURCES: SourceDraft = {
   modelId: "",
   modelRevision: "main",
@@ -63,9 +73,11 @@ const DEFAULT_SOURCES: SourceDraft = {
   datasetRevision: "main",
   datasetConfig: "",
   datasetSplit: "train",
+  promptColumn: "prompt",
+  device: "auto",
+  dtype: "preserve",
+  trustRemoteCode: false,
 };
-
-const DEFAULT_RUNNER: RunnerDraft = { mode: "local", endpoint: "" };
 
 const DEFAULT_RUN: RunDraft = {
   mode: "generation",
@@ -74,7 +86,6 @@ const DEFAULT_RUN: RunDraft = {
   maxNewTokens: "128",
   tokenTextPolicy: "redacted",
   allowExport: true,
-  retainRawPayloads: false,
 };
 
 const NAVIGATION: Array<{ id: NavigationItem; label: string; icon: Icon }> = [
@@ -82,7 +93,6 @@ const NAVIGATION: Array<{ id: NavigationItem; label: string; icon: Icon }> = [
   { id: "discovery", label: "Discover", icon: GitBranch },
   { id: "run", label: "Run", icon: Lightning },
   { id: "runs", label: "Runs", icon: Pulse },
-  { id: "settings", label: "Settings", icon: GearSix },
 ];
 
 function readStored<T>(key: string, fallback: T): T {
@@ -92,6 +102,58 @@ function readStored<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function useJob(jobId: string | null): JobSnapshot | null {
+  const [snapshot, setSnapshot] = useState<JobSnapshot | null>(null);
+  useEffect(() => {
+    if (!jobId) {
+      setSnapshot(null);
+      return undefined;
+    }
+    let active = true;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error("job unavailable");
+        const next = (await response.json()) as JobSnapshot;
+        if (!active) return;
+        setSnapshot(next);
+        if (next.state === "queued" || next.state === "running") {
+          timer = window.setTimeout(poll, 700);
+        }
+      } catch {
+        if (active) {
+          setSnapshot((current) => current ?? {
+            job_id: jobId,
+            kind: "unknown",
+            state: "failed",
+            progress: { stage: "offline", completed: 0, message: "Job status unavailable" },
+            error: "Job status unavailable",
+          });
+        }
+      }
+    };
+    void poll();
+    return () => {
+      active = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [jobId]);
+  return snapshot;
+}
+
+async function postJson<T>(path: string, payload: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error((await response.text()) || "request failed");
+  return (await response.json()) as T;
 }
 
 function AppMark() {
@@ -123,17 +185,6 @@ function validateHubId(value: string, label: string): string | null {
     return "Use the Hugging Face form namespace/repository.";
   }
   return null;
-}
-
-function validateEndpoint(value: string): string | null {
-  if (!value.trim()) return null;
-  try {
-    const url = new URL(value.trim());
-    if (url.protocol !== "http:" && url.protocol !== "https:") return "Use an HTTP or HTTPS endpoint.";
-    return null;
-  } catch {
-    return "Use a complete HTTP or HTTPS endpoint, or leave it blank for an in-VM UI.";
-  }
 }
 
 function formatCount(value: number | null | undefined): string | null {
@@ -269,6 +320,8 @@ function SourceCard({
   onConfigChange,
   split,
   onSplitChange,
+  promptColumn,
+  onPromptColumnChange,
   error,
 }: {
   kind: HubKind;
@@ -280,6 +333,8 @@ function SourceCard({
   onConfigChange?: (value: string) => void;
   split?: string;
   onSplitChange?: (value: string) => void;
+  promptColumn?: string;
+  onPromptColumnChange?: (value: string) => void;
   error: string | null;
 }) {
   const isModel = kind === "model";
@@ -328,66 +383,52 @@ function SourceCard({
             <span className="label-caps text-[0.56rem] text-muted">Read policy</span>
             <span className="mt-2 flex items-center gap-2 text-xs text-muted"><Database size={15} className="text-cyan" />Bounded rows and explicit provenance.</span>
           </div>
+          <label className="field-label" htmlFor="dataset-prompt-column">
+            Prompt column
+            <input id="dataset-prompt-column" className="input-control mt-2" value={promptColumn ?? "prompt"} onChange={(event) => onPromptColumnChange?.(event.target.value)} placeholder="prompt or text" spellCheck={false} />
+          </label>
         </div>
       ) : null}
     </section>
   );
 }
 
-function RunnerBoundary({ value, onChange }: { value: RunnerDraft; onChange: (value: RunnerDraft) => void }) {
-  const endpointError = value.mode === "remote" ? validateEndpoint(value.endpoint) : null;
-  return (
-    <section className="research-card">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="label-caps text-[0.59rem] text-cyan">Execution boundary</p>
-          <h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Where inference runs</h2>
-        </div>
-        <StatusDot tone={value.mode === "remote" && endpointError ? "warn" : "good"} />
-      </div>
-      <div className="mt-5 inline-flex rounded-xl border border-line bg-ink p-1" role="group" aria-label="Execution target">
-        {(["local", "remote"] as RunnerMode[]).map((mode) => (
-          <button key={mode} type="button" className={`runner-tab ${value.mode === mode ? "runner-tab-active" : ""}`} aria-pressed={value.mode === mode} onClick={() => onChange({ ...value, mode })}>
-            {mode === "local" ? <Cpu size={15} /> : <Cloud size={15} />}
-            {mode === "local" ? "This machine" : "Provider VM"}
-          </button>
-        ))}
-      </div>
-      {value.mode === "remote" ? (
-        <div className="mt-4">
-          <label className="field-label" htmlFor="runner-endpoint">Runner endpoint <span className="field-optional">optional in-VM</span>
-            <input id="runner-endpoint" className={`input-control mt-2 ${endpointError ? "input-control-error" : ""}`} value={value.endpoint} onChange={(event) => onChange({ ...value, endpoint: event.target.value })} placeholder="https://provider-port-or-runner" spellCheck={false} />
-          </label>
-          <p className={`mt-2 flex items-start gap-2 text-[0.68rem] leading-5 ${endpointError ? "text-signal" : "text-muted"}`}>
-            {endpointError ? <XCircle size={15} className="mt-0.5 shrink-0" /> : <WifiHigh size={15} className="mt-0.5 shrink-0 text-cyan" />}
-            {endpointError ?? "Use the provider’s port proxy, HTTPS runner, or leave blank when this console runs inside the VM. SSH is not required."}
-          </p>
-        </div>
-      ) : (
-        <p className="mt-4 flex items-start gap-2 text-[0.68rem] leading-5 text-muted"><HardDrives size={15} className="mt-0.5 shrink-0 text-cyan" />No path is needed here. The local runtime resolves its own model cache and accelerator.</p>
-      )}
-    </section>
-  );
-}
-
-function AnalysisPage({ runner, setRunner, onNavigate }: { runner: RunnerDraft; setRunner: (value: RunnerDraft) => void; onNavigate: (item: NavigationItem) => void }) {
+function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => void }) {
   const [sources, setSources] = useState<SourceDraft>(() => readStored("moeatlas-analysis-sources", DEFAULT_SOURCES));
   const [queued, setQueued] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const modelError = useMemo(() => validateHubId(sources.modelId, "Model ID"), [sources.modelId]);
   const datasetError = useMemo(() => validateHubId(sources.datasetId, "Dataset ID"), [sources.datasetId]);
-  const endpointError = runner.mode === "remote" ? validateEndpoint(runner.endpoint) : null;
-  const ready = !modelError && !datasetError && !endpointError;
+  const ready = !modelError && !datasetError;
 
-  function update(field: keyof SourceDraft, value: string) {
-    setSources((current) => ({ ...current, [field]: value }));
+  function update(field: keyof SourceDraft, value: string | boolean) {
+    setSources((current) => ({ ...current, [field]: value } as SourceDraft));
     setQueued(false);
   }
 
-  function queueDiscovery() {
+  async function queueDiscovery() {
     if (!ready) return;
+    setStarting(true);
+    setRequestError(null);
     window.localStorage.setItem("moeatlas-analysis-sources", JSON.stringify(sources));
-    window.localStorage.setItem("moeatlas-runner", JSON.stringify(runner));
-    setQueued(true);
+    try {
+      const created = await postJson<{ job_id: string }>("/api/discovery", {
+        model_id: sources.modelId.trim(),
+        model_revision: sources.modelRevision.trim() || "main",
+        device: sources.device,
+        dtype: sources.dtype,
+        trust_remote_code: sources.trustRemoteCode,
+        allow_downloads: true,
+      });
+      window.localStorage.setItem("moeatlas-discovery-job", created.job_id);
+      setQueued(true);
+      onNavigate("discovery");
+    } catch {
+      setRequestError("The discovery job could not be started. Check that the local server is running.");
+    } finally {
+      setStarting(false);
+    }
   }
 
   return (
@@ -405,9 +446,16 @@ function AnalysisPage({ runner, setRunner, onNavigate }: { runner: RunnerDraft; 
         <main className="space-y-5">
           <div className="grid gap-5 lg:grid-cols-2">
             <SourceCard kind="model" value={sources.modelId} onChange={(value) => update("modelId", value)} revision={sources.modelRevision} onRevisionChange={(value) => update("modelRevision", value)} error={modelError} />
-            <SourceCard kind="dataset" value={sources.datasetId} onChange={(value) => update("datasetId", value)} revision={sources.datasetRevision} onRevisionChange={(value) => update("datasetRevision", value)} config={sources.datasetConfig} onConfigChange={(value) => update("datasetConfig", value)} split={sources.datasetSplit} onSplitChange={(value) => update("datasetSplit", value)} error={datasetError} />
+            <SourceCard kind="dataset" value={sources.datasetId} onChange={(value) => update("datasetId", value)} revision={sources.datasetRevision} onRevisionChange={(value) => update("datasetRevision", value)} config={sources.datasetConfig} onConfigChange={(value) => update("datasetConfig", value)} split={sources.datasetSplit} onSplitChange={(value) => update("datasetSplit", value)} promptColumn={sources.promptColumn} onPromptColumnChange={(value) => update("promptColumn", value)} error={datasetError} />
           </div>
-          <RunnerBoundary value={runner} onChange={(value) => { setRunner(value); setQueued(false); }} />
+          <section className="research-card">
+            <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Runtime policy</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">How the model is loaded</h2></div><Cpu size={19} className="text-cyan" /></div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              <label className="field-label" htmlFor="runtime-device">Device<select id="runtime-device" className="input-control mt-2" value={sources.device} onChange={(event) => update("device", event.target.value)}><option value="auto">Auto</option><option value="cuda">CUDA</option><option value="cpu">CPU</option><option value="mps">MPS</option></select></label>
+              <label className="field-label" htmlFor="runtime-dtype">Dtype<select id="runtime-dtype" className="input-control mt-2" value={sources.dtype} onChange={(event) => update("dtype", event.target.value as SourceDraft["dtype"])}><option value="preserve">Preserve</option><option value="bfloat16">bfloat16</option><option value="float16">float16</option><option value="float32">float32</option></select></label>
+              <label className="toggle-row self-end"><input className="check-control" type="checkbox" checked={sources.trustRemoteCode} onChange={(event) => update("trustRemoteCode", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Trust remote code</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Required by some custom architectures; opt in deliberately.</span></span></label>
+            </div>
+          </section>
         </main>
 
         <aside className="space-y-5">
@@ -419,7 +467,7 @@ function AnalysisPage({ runner, setRunner, onNavigate }: { runner: RunnerDraft; 
               <div><dt>Dataset</dt><dd>{sources.datasetId.trim() || "—"}</dd></div>
               <div><dt>Data rev.</dt><dd>{sources.datasetRevision.trim() || "main"}</dd></div>
               <div><dt>Split</dt><dd>{sources.datasetSplit.trim() || "train"}</dd></div>
-              <div><dt>Target</dt><dd>{runner.mode === "local" ? "this machine" : runner.endpoint.trim() || "in-VM console"}</dd></div>
+              <div><dt>Execution</dt><dd>bound server</dd></div>
             </dl>
           </section>
           <section className="research-card research-card-dark">
@@ -430,10 +478,11 @@ function AnalysisPage({ runner, setRunner, onNavigate }: { runner: RunnerDraft; 
               <li className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-cyan" />Search is optional; exact IDs never depend on it.</li>
             </ul>
           </section>
-          <button type="button" className="button-primary w-full justify-between" disabled={!ready} onClick={queueDiscovery}>
-            {queued ? "Discovery contract saved" : "Queue discovery"}<ArrowRight size={16} weight="bold" />
+          <button type="button" className="button-primary w-full justify-between" disabled={!ready || starting} onClick={() => void queueDiscovery()}>
+            {starting ? "Starting discovery…" : queued ? "Discovery running" : "Start discovery"}<ArrowRight size={16} weight="bold" />
           </button>
-          {queued ? <div className="space-y-2" role="status"><p className="rounded-xl border border-cyan/25 bg-cyan/[0.06] p-3 text-xs leading-5 text-cyan">Sources are saved locally for the next discovery step. No model or dataset has been loaded yet.</p><button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("discovery")}>Open preflight <ArrowRight size={16} /></button></div> : null}
+          {requestError ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError}</p> : null}
+          {queued ? <div className="space-y-2" role="status"><p className="rounded-xl border border-cyan/25 bg-cyan/[0.06] p-3 text-xs leading-5 text-cyan">A real discovery job is running on the bound server. Open the evidence surface for progress.</p><button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("discovery")}>Open discovery <ArrowRight size={16} /></button></div> : null}
         </aside>
       </div>
     </div>
@@ -451,8 +500,13 @@ function GateRow({ label, detail, tone = "quiet" }: { label: string; detail: str
 
 function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => void }) {
   const [sources] = useState<SourceDraft>(() => readStored("moeatlas-analysis-sources", DEFAULT_SOURCES));
-  const [runner] = useState<RunnerDraft>(() => readStored("moeatlas-runner", DEFAULT_RUNNER));
-  const [staged, setStaged] = useState(() => window.localStorage.getItem("moeatlas-preflight-staged") === "true");
+  const [jobId, setJobId] = useState<string | null>(() => readStored<string | null>("moeatlas-discovery-job", null));
+  const [starting, setStarting] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const job = useJob(jobId);
+  const result = (job?.result ?? {}) as Record<string, unknown>;
+  const report = (result.report ?? null) as Record<string, unknown> | null;
+  const facts = (report?.facts ?? {}) as Record<string, unknown>;
   const hasContract = !validateHubId(sources.modelId, "Model ID") && !validateHubId(sources.datasetId, "Dataset ID");
 
   if (!hasContract) {
@@ -461,16 +515,36 @@ function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
     );
   }
 
-  function stagePreflight() {
-    window.localStorage.setItem("moeatlas-preflight-staged", "true");
-    setStaged(true);
+  async function startDiscovery() {
+    if (!hasContract || starting) return;
+    setStarting(true);
+    setRequestError(null);
+    try {
+      const created = await postJson<{ job_id: string }>("/api/discovery", {
+        model_id: sources.modelId.trim(),
+        model_revision: sources.modelRevision.trim() || "main",
+        device: sources.device,
+        dtype: sources.dtype,
+        trust_remote_code: sources.trustRemoteCode,
+        allow_downloads: true,
+      });
+      window.localStorage.setItem("moeatlas-discovery-job", created.job_id);
+      setJobId(created.job_id);
+    } catch {
+      setRequestError("Discovery could not start. Make sure the server is running in this runtime.");
+    } finally {
+      setStarting(false);
+    }
   }
+
+  const running = job?.state === "queued" || job?.state === "running";
+  const available = job?.state === "completed" && result.status === "available";
 
   return (
     <div className="space-y-6">
       <header className="research-header">
-        <div><p className="label-caps text-[0.61rem] text-signal">Discovery / Preflight</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Read the runtime before the run.</h1><p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">This envelope shows what will be inspected and what still requires the selected GPU runner. A staged contract is not model evidence.</p></div>
-        <div className="research-header-meta"><StatusDot tone={staged ? "good" : "quiet"} /><span>{staged ? "Preflight staged" : "Runtime inspection pending"}</span></div>
+        <div><p className="label-caps text-[0.61rem] text-signal">Discovery / Preflight</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Read the runtime before the run.</h1><p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">This envelope shows what the bound server inspected. A staged contract is not model evidence.</p></div>
+        <div className="research-header-meta"><StatusDot tone={available ? "good" : job?.state === "failed" ? "warn" : "quiet"} /><span>{available ? "Architecture discovered" : running ? `${job?.progress.stage ?? "running"} · ${job?.progress.completed ?? 0}/${job?.progress.total ?? "?"}` : job?.state === "failed" ? "Discovery failed" : "Ready to inspect"}</span></div>
       </header>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <main className="space-y-5">
@@ -483,20 +557,24 @@ function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
               <div><dt>Dataset revision</dt><dd>{sources.datasetRevision?.trim() || "main"}</dd></div>
               <div><dt>Dataset config</dt><dd>{sources.datasetConfig.trim() || "default"}</dd></div>
               <div><dt>Dataset split</dt><dd>{sources.datasetSplit.trim() || "train"}</dd></div>
-              <div><dt>Execution target</dt><dd>{runner.mode === "local" ? "this machine" : runner.endpoint.trim() || "in-VM console"}</dd></div>
+              <div><dt>Prompt column</dt><dd>{sources.promptColumn}</dd></div>
+              <div><dt>Execution</dt><dd>bound server</dd></div>
             </dl>
           </section>
           <section className="research-card">
-            <div className="flex items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Inspection gates</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">What the runner must prove</h2></div><GitBranch size={19} className="text-cyan" /></div>
-            <div className="mt-5 divide-y divide-line"><GateRow label="Model configuration" detail="runtime read" /><GateRow label="MoE topology" detail="STRUCTURE pending" /><GateRow label="Router payload shape" detail="DECODE pending" /><GateRow label="Dataset schema" detail="READ pending" /><GateRow label="Immutable revision evidence" detail="RESOLVE pending" /></div>
+            <div className="flex items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Inspection gates</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">What the server must prove</h2></div><GitBranch size={19} className="text-cyan" /></div>
+            <div className="mt-5 divide-y divide-line"><GateRow label="Model configuration" detail={available ? "READY" : running ? "RUNNING" : "PENDING"} tone={available ? "good" : running ? "quiet" : "quiet"} /><GateRow label="MoE topology" detail={available ? `${facts.expert_count ?? "?"} experts · ${facts.routed_top_k ?? "?"}-way` : running ? "SCANNING" : "PENDING"} tone={available ? "good" : "quiet"} /><GateRow label="Router payload shape" detail={available ? "generic structure" : "DEFERRED TO RUN"} tone={available ? "good" : "quiet"} /><GateRow label="Dataset schema" detail="validated at run" /><GateRow label="Immutable revision evidence" detail={typeof result.resolved_revision === "string" ? result.resolved_revision.slice(0, 12) + "…" : "PENDING"} tone={typeof result.resolved_revision === "string" ? "good" : "quiet"} /></div>
           </section>
+          {available ? <section className="research-card"><div className="flex items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Discovered architecture</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Evidence, not a family allowlist.</h2></div><ShieldCheck size={19} className="text-cyan" /></div><div className="mt-5 grid gap-3 sm:grid-cols-3"><MetricCard label="Experts" value={String(facts.expert_count ?? "—")} detail={String(facts.expert_count_source ?? "scanner")}/><MetricCard label="Top-k" value={String(facts.routed_top_k ?? "—")} detail={String(facts.routed_top_k_source ?? "scanner")}/><MetricCard label="Candidates" value={Array.isArray(report?.candidates) ? String(report?.candidates.length) : "—"} detail="explainable structural candidates"/></div><p className="mt-4 text-xs leading-5 text-muted">The scan identifies router and expert components generically. It does not claim routing or activations until the run publishes validated events.</p></section> : null}
         </main>
         <aside className="space-y-5">
-          <section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Resource envelope</p><Database size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Weights</dt><dd>not measured</dd></div><div><dt>Accelerator</dt><dd>{runner.mode === "local" ? "local probe" : "provider probe"}</dd></div><div><dt>Rows</dt><dd>bounded later</dd></div><div><dt>Capture</dt><dd>off</dd></div></dl></section>
+          <section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Resource envelope</p><Database size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Weights</dt><dd>not measured</dd></div><div><dt>Accelerator</dt><dd>server runtime</dd></div><div><dt>Rows</dt><dd>bounded later</dd></div><div><dt>Capture</dt><dd>off</dd></div></dl></section>
           <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Evidence rule</p></div><p className="mt-4 text-xs leading-5 text-muted">Discovery can report topology and router seams. It must not label routing as captured until a real forward produces validated events.</p></section>
-          <button type="button" className="button-primary w-full justify-between" onClick={stagePreflight}>{staged ? "Preflight staged" : "Stage runtime preflight"}<ArrowRight size={16} weight="bold" /></button>
-          {staged ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("run")}>Configure run <ArrowRight size={16} /></button> : null}
-          {staged ? <p className="rounded-xl border border-cyan/25 bg-cyan/[0.06] p-3 text-xs leading-5 text-cyan" role="status">Intent is saved locally. No model, dataset, or GPU process was started by this browser action.</p> : null}
+          <button type="button" className="button-primary w-full justify-between" disabled={running || starting} onClick={() => void startDiscovery()}>{starting ? "Starting…" : running ? "Discovery running…" : available ? "Re-run discovery" : "Run live discovery"}<ArrowRight size={16} weight="bold" /></button>
+          {jobId && running ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void postJson(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {})}>Cancel job <XCircle size={16} /></button> : null}
+          {available ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("run")}>Configure capture <ArrowRight size={16} /></button> : null}
+          {job?.progress.message ? <p className="rounded-xl border border-line bg-white/[0.03] p-3 text-xs leading-5 text-muted" role="status">{job.progress.message}</p> : null}
+          {requestError || job?.error ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError ?? job?.error}</p> : null}
         </aside>
       </div>
     </div>
@@ -509,10 +587,13 @@ function validatePositiveSetting(value: string, label: string, maximum: number):
   return null;
 }
 
-function RunConfigPage({ runner, onNavigate }: { runner: RunnerDraft; onNavigate: (item: NavigationItem) => void }) {
+function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => void }) {
   const [sources] = useState<SourceDraft>(() => ({ ...DEFAULT_SOURCES, ...readStored<Partial<SourceDraft>>("moeatlas-analysis-sources", {}) }));
   const [run, setRun] = useState<RunDraft>(() => ({ ...DEFAULT_RUN, ...readStored<Partial<RunDraft>>("moeatlas-run", {}) }));
-  const [staged, setStaged] = useState(() => window.localStorage.getItem("moeatlas-run-staged") === "true");
+  const [jobId, setJobId] = useState<string | null>(() => readStored<string | null>("moeatlas-run-job", null));
+  const [starting, setStarting] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const job = useJob(jobId);
   const modelError = validateHubId(sources.modelId, "Model ID");
   const datasetError = validateHubId(sources.datasetId, "Dataset ID");
   const sampleError = validatePositiveSetting(run.sampleCap, "Sample cap", 1_000_000);
@@ -522,16 +603,46 @@ function RunConfigPage({ runner, onNavigate }: { runner: RunnerDraft; onNavigate
 
   function update(field: keyof RunDraft, value: string | boolean) {
     setRun((current) => ({ ...current, [field]: value } as RunDraft));
-    setStaged(false);
   }
 
-  function stageRun() {
-    if (!ready) return;
+  async function startRun(resumeJobId: string | null = null) {
+    if (!ready || starting) return;
+    setStarting(true);
+    setRequestError(null);
     window.localStorage.setItem("moeatlas-run", JSON.stringify(run));
-    window.localStorage.setItem("moeatlas-runner", JSON.stringify(runner));
-    window.localStorage.setItem("moeatlas-run-staged", "true");
-    setStaged(true);
+    try {
+      const created = await postJson<{ job_id: string }>("/api/runs/start", {
+        model_id: sources.modelId.trim(),
+        model_revision: sources.modelRevision.trim() || "main",
+        dataset_id: sources.datasetId.trim(),
+        dataset_revision: sources.datasetRevision.trim() || "main",
+        dataset_config: sources.datasetConfig.trim() || null,
+        dataset_split: sources.datasetSplit.trim() || "train",
+        prompt_column: sources.promptColumn.trim() || "prompt",
+        sample_cap: Number(run.sampleCap),
+        batch_size: Number(run.batchSize),
+        max_new_tokens: Number(run.maxNewTokens),
+        token_text_policy: run.tokenTextPolicy,
+        allow_export: run.allowExport,
+        mode: run.mode,
+        device: sources.device,
+        dtype: sources.dtype,
+        trust_remote_code: sources.trustRemoteCode,
+        allow_downloads: true,
+        capture_expert_activity: true,
+        resume_job_id: resumeJobId,
+      });
+      window.localStorage.setItem("moeatlas-run-job", created.job_id);
+      setJobId(created.job_id);
+    } catch {
+      setRequestError("The capture job could not be started. Check the server and dataset prompt column.");
+    } finally {
+      setStarting(false);
+    }
   }
+
+  const running = job?.state === "queued" || job?.state === "running";
+  const canResume = job?.state === "cancelled" && typeof job.result?.checkpoint_path === "string";
 
   if (modelError || datasetError) {
     return (
@@ -541,7 +652,7 @@ function RunConfigPage({ runner, onNavigate }: { runner: RunnerDraft; onNavigate
 
   return (
     <div className="space-y-6">
-      <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Run / Configure</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Set the capture budget.</h1><p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">Keep sampling, row limits, and privacy choices explicit. Staging this contract does not start the model or open a remote connection.</p></div><div className="research-header-meta"><StatusDot tone={ready ? "good" : "warn"} /><span>{staged ? "Run staged" : ready ? "Ready to stage" : "Invalid budget"}</span></div></header>
+      <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Run / Capture</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Set the capture budget.</h1><p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">This starts a real server-side model run over the selected dataset. Progress, checkpoints, routing, and activation evidence remain tied to the resulting run key.</p></div><div className="research-header-meta"><StatusDot tone={job?.state === "failed" ? "warn" : ready ? "good" : "quiet"} /><span>{job?.state === "running" ? `${job.progress.stage} · ${job.progress.completed}/${job.progress.total ?? "?"}` : job?.state === "completed" ? "Capture complete" : job?.state === "cancelled" ? "Capture cancelled" : ready ? "Ready to run" : "Invalid budget"}</span></div></header>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <main className="space-y-5">
           <section className="research-card">
@@ -557,11 +668,11 @@ function RunConfigPage({ runner, onNavigate }: { runner: RunnerDraft; onNavigate
           <section className="research-card">
             <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Evidence and privacy</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">What may be retained</h2></div><ShieldCheck size={19} className="text-cyan" /></div>
             <div className="mt-6"><span className="field-label">Token text</span><div className="mt-2 inline-flex rounded-xl border border-line bg-ink p-1" role="group" aria-label="Token text policy"><button type="button" className={`runner-tab ${run.tokenTextPolicy === "redacted" ? "runner-tab-active" : ""}`} aria-pressed={run.tokenTextPolicy === "redacted"} onClick={() => update("tokenTextPolicy", "redacted")}>Redacted (default)</button><button type="button" className={`runner-tab ${run.tokenTextPolicy === "stored" ? "runner-tab-active" : ""}`} aria-pressed={run.tokenTextPolicy === "stored"} onClick={() => update("tokenTextPolicy", "stored")}>Store token text</button></div></div>
-            <div className="mt-5 space-y-2"><label className="toggle-row"><input className="check-control" type="checkbox" checked={run.allowExport} onChange={(event) => update("allowExport", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Allow artifact export</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Keep export available for validated run artifacts.</span></span></label><label className="toggle-row"><input className="check-control" type="checkbox" checked={run.retainRawPayloads} onChange={(event) => update("retainRawPayloads", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Retain raw router payloads</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Opt in only when payload inspection is necessary.</span></span></label></div>
+            <div className="mt-5"><label className="toggle-row"><input className="check-control" type="checkbox" checked={run.allowExport} onChange={(event) => update("allowExport", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Allow artifact export</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Persist this decision with the run; disabled exports cannot be re-enabled from the UI.</span></span></label></div>
           </section>
-          <section className="research-card"><div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Worker boundary</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Execution handoff</h2></div><WifiHigh size={19} className="text-cyan" /></div><div className="mt-5 flex flex-wrap items-center gap-3"><span className="runtime-pill"><StatusDot />{runner.mode === "local" ? "This machine" : "Provider VM"}</span>{runner.mode === "remote" ? <span className="font-mono text-[0.65rem] text-muted">{runner.endpoint.trim() || "in-VM console"}</span> : <span className="text-xs text-muted">Local accelerator is resolved by the runtime.</span>}</div><p className="mt-4 text-xs leading-5 text-muted">Remote execution uses the provider’s exposed HTTP path or an in-VM console. There is no browser-side SSH feature.</p></section>
+          <section className="research-card"><div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Worker boundary</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Execution handoff</h2></div><WifiHigh size={19} className="text-cyan" /></div><div className="mt-5 flex flex-wrap items-center gap-3"><span className="runtime-pill"><StatusDot />Bound server</span><span className="text-xs text-muted">The server resolves its own accelerator and model cache.</span></div><p className="mt-4 text-xs leading-5 text-muted">Use the same UI on a local machine or inside a provider VM. Only the server process needs access to the model and dataset; no SSH or path selector is involved.</p></section>
         </main>
-        <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Run contract</p><GitBranch size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Model</dt><dd>{sources.modelId}</dd></div><div><dt>Dataset</dt><dd>{sources.datasetId}</dd></div><div><dt>Rows</dt><dd>{run.sampleCap}</dd></div><div><dt>Batch</dt><dd>{run.batchSize}</dd></div><div><dt>Mode</dt><dd>{run.mode.replace("_", " ")}</dd></div><div><dt>Tokens</dt><dd>{run.tokenTextPolicy}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">State boundary</p></div><p className="mt-4 text-xs leading-5 text-muted">A staged contract is durable UI intent. Live progress starts only when the executor accepts it and publishes run records.</p></section><button type="button" className="button-primary w-full justify-between" disabled={!ready} onClick={stageRun}>{staged ? "Run contract staged" : "Stage run contract"}<ArrowRight size={16} weight="bold" /></button>{staged ? <p className="rounded-xl border border-cyan/25 bg-cyan/[0.06] p-3 text-xs leading-5 text-cyan" role="status">The configuration is saved locally. No model or dataset has been loaded by this browser action.</p> : null}</aside>
+        <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Run contract</p><GitBranch size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Model</dt><dd>{sources.modelId}</dd></div><div><dt>Dataset</dt><dd>{sources.datasetId}</dd></div><div><dt>Prompt</dt><dd>{sources.promptColumn}</dd></div><div><dt>Rows</dt><dd>{run.sampleCap}</dd></div><div><dt>Batch</dt><dd>{run.batchSize}</dd></div><div><dt>Mode</dt><dd>{run.mode.replace("_", " ")}</dd></div><div><dt>Tokens</dt><dd>{run.tokenTextPolicy}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Live state</p></div><p className="mt-4 text-xs leading-5 text-muted">{job?.progress.message ?? "The executor will resolve the model, stream bounded dataset rows, and publish immutable evidence."}</p>{job?.progress.total ? <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, (job.progress.completed / job.progress.total) * 100)}%` }} /></div> : null}</section><button type="button" className="button-primary w-full justify-between" disabled={!ready || starting || running} onClick={() => void startRun()}>{starting ? "Starting capture…" : running ? "Capture running…" : job?.state === "completed" ? "Capture complete" : "Start capture"}<ArrowRight size={16} weight="bold" /></button>{jobId && running ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void postJson(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {})}>Cancel capture <XCircle size={16} /></button> : null}{canResume && jobId ? <button type="button" className="button-secondary w-full justify-between" disabled={starting} onClick={() => void startRun(jobId)}>Resume from checkpoint <ArrowRight size={16} /></button> : null}{job?.state === "completed" ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("runs")}>Inspect evidence <ArrowRight size={16} /></button> : null}{requestError || job?.error ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError ?? job?.error}</p> : null}</aside>
       </div>
     </div>
   );
@@ -587,6 +698,16 @@ type RunSummary = {
   inspection_digest?: string | null;
 };
 
+type ActivitySummary = {
+  active_expert_cells?: number;
+  inactive_expert_cells?: number;
+  total_event_count?: number;
+  layers?: Array<{ layer_key: string; event_counts: number[] }>;
+};
+
+type ActivityResponse = { status: string; reason?: string | null; summary?: ActivitySummary | null };
+type ArchitectureResponse = { status: string; reason?: string | null; report?: Record<string, unknown> | null };
+
 function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return <div className="metric-card"><p className="label-caps text-[0.56rem] text-muted">{label}</p><p className="mt-3 font-mono text-lg text-white">{value}</p><p className="mt-1 text-[0.65rem] text-muted">{detail}</p></div>;
 }
@@ -597,6 +718,14 @@ function RunsPage() {
   const [selectedRun, setSelectedRun] = useState("");
   const [summary, setSummary] = useState<RunSummary | null>(null);
   const [summaryState, setSummaryState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
+  const [metric, setMetric] = useState<"assignment_counts" | "assignment_shares" | "load_ratios">("assignment_counts");
+  const [activity, setActivity] = useState<ActivityResponse | null>(null);
+  const [architecture, setArchitecture] = useState<ArchitectureResponse | null>(null);
+  const [comparisonRun, setComparisonRun] = useState("");
+  const [comparisonMetric, setComparisonMetric] = useState<"count_deltas" | "share_deltas" | "ratio_deltas">("count_deltas");
+  const [recipeOperation, setRecipeOperation] = useState<"ablate" | "scale" | "reroute" | "alter_router">("ablate");
+  const [recipeTargets, setRecipeTargets] = useState("");
+  const [recipeStatus, setRecipeStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -609,6 +738,7 @@ function RunsPage() {
         const nextEntries = Array.isArray(document.entries) ? document.entries : [];
         setEntries(nextEntries);
         setSelectedRun((current) => current || nextEntries[0]?.run_key || "");
+        setComparisonRun((current) => current || nextEntries[1]?.run_key || "");
         setState("ready");
       })
       .catch((cause) => { if (cause instanceof DOMException && cause.name === "AbortError") return; setState("unavailable"); });
@@ -633,17 +763,47 @@ function RunsPage() {
     return () => controller.abort();
   }, [selectedRun]);
 
+  useEffect(() => {
+    if (!selectedRun) {
+      setActivity(null);
+      setArchitecture(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    Promise.all([
+      fetch(`/api/runs/${encodeURIComponent(selectedRun)}/activity`, { headers: { Accept: "application/json" }, signal: controller.signal }).then((response) => response.json() as Promise<ActivityResponse>),
+      fetch(`/api/runs/${encodeURIComponent(selectedRun)}/architecture`, { headers: { Accept: "application/json" }, signal: controller.signal }).then((response) => response.json() as Promise<ArchitectureResponse>),
+    ]).then(([nextActivity, nextArchitecture]) => { setActivity(nextActivity); setArchitecture(nextArchitecture); }).catch((cause) => { if (cause instanceof DOMException && cause.name === "AbortError") return; setActivity(null); setArchitecture(null); });
+    return () => controller.abort();
+  }, [selectedRun]);
+
+  async function prepareRecipe() {
+    const targets = recipeTargets.split(",").map((item) => item.trim()).filter(Boolean).sort();
+    if (!targets.length) {
+      setRecipeStatus("Enter at least one expert or router target.");
+      return;
+    }
+    try {
+      const response = await postJson<{ fingerprint: string }>("/api/interventions/recipes", { operation: recipeOperation, targets });
+      setRecipeStatus(`Prepared ${response.fingerprint.slice(0, 18)}… · execution requires a model adapter capability.`);
+    } catch {
+      setRecipeStatus("Recipe validation failed; check the target labels and operation parameters.");
+    }
+  }
+
   const selectedEntry = entries.find((entry) => entry.run_key === selectedRun);
   return (
     <div className="space-y-6">
       <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Runs / Inspect</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white">Trace inventory.</h1><p className="mt-3 max-w-[58ch] text-sm leading-6 text-muted">Routing heatmaps, validation status, and activation artifacts belong to a completed run. The UI never fills missing evidence with a visual guess.</p></div><div className="research-header-meta"><StatusDot tone={state === "unavailable" ? "warn" : "good"} /><span>{state === "loading" ? "Reading workspace…" : state === "unavailable" ? "Workspace offline" : `${entries.length} registered`}</span></div></header>
-      {state === "loading" ? <section className="empty-surface"><p className="text-sm text-muted">Reading run catalog…</p></section> : state === "unavailable" ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">Workspace unavailable.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Start the local UI server or connect the provider runner before asking for stored traces.</p></section> : entries.length === 0 ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">No published traces.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Stage a run and let the executor publish its immutable shards. Heatmap cells appear only after routing events are validated.</p></section> : (
+      {state === "loading" ? <section className="empty-surface"><p className="text-sm text-muted">Reading run catalog…</p></section> : state === "unavailable" ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">Workspace unavailable.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Make the MoEAtlas server available before asking for stored traces.</p></section> : entries.length === 0 ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">No published traces.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Stage a run and let the executor publish its immutable shards. Heatmap cells appear only after routing events are validated.</p></section> : (
         <>
-          <div className="run-selector-row"><label className="field-label" htmlFor="run-selector">Run key<select id="run-selector" className="input-control mt-2" value={selectedRun} onChange={(event) => setSelectedRun(event.target.value)}>{entries.map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key} · {entry.state ?? "unknown"}</option>)}</select></label><div className="runtime-pill"><StatusDot tone={selectedEntry?.state === "completed" ? "good" : "warn"} />{selectedEntry?.state ?? "unknown"}</div></div>
+          <div className="run-selector-row"><label className="field-label" htmlFor="run-selector">Run key<select id="run-selector" className="input-control mt-2" value={selectedRun} onChange={(event) => setSelectedRun(event.target.value)}>{entries.map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key} · {entry.state ?? "unknown"}</option>)}</select></label><div className="runtime-pill"><StatusDot tone={selectedEntry?.state === "completed" ? "good" : "warn"} />{selectedEntry?.state ?? "unknown"}</div><div className="ml-auto flex flex-wrap gap-2"><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=bundle`} download>Export bundle</a><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=csv`} download>CSV</a></div></div>
           <div className="metric-grid"><MetricCard label="Tokens" value={summary?.token_count == null ? "—" : String(summary.token_count)} detail="validated token rows" /><MetricCard label="Assignments" value={summary?.assignment_count == null ? "—" : String(summary.assignment_count)} detail="selected expert routes" /><MetricCard label="Layers" value={summary?.layer_count == null ? "—" : String(summary.layer_count)} detail="published routing layers" /><MetricCard label="Experts" value={summary?.expert_count == null ? "—" : String(summary.expert_count)} detail="routed expert universe" /></div>
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
-            <section className="research-card"><div className="flex items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Routing load</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Layer × expert heatmap</h2></div><span className="source-card-type">{summaryState === "loading" ? "loading" : summary?.status ?? "unavailable"}</span></div>{summary?.status === "available" && selectedRun ? <iframe className="heatmap-frame-react mt-5" title={`Routing heatmap for ${selectedRun}`} src={`/api/runs/${encodeURIComponent(selectedRun)}/heatmap`} /> : <div className="empty-heatmap mt-5"><GitBranch size={20} className="text-muted" /><p className="mt-3 text-sm text-white">No published matrix.</p><p className="mt-1 max-w-[32ch] text-center text-xs leading-5 text-muted">{summary?.reason ?? "A validated routing inspection is required before rendering heat."}</p></div>}</section>
-            <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center gap-2"><ShieldCheck size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Validation</p></div><dl className="contract-list mt-5"><div><dt>Status</dt><dd>{summary?.status ?? "pending"}</dd></div><div><dt>Adapter</dt><dd>{summary?.adapter_name ?? "—"}</dd></div><div><dt>Top-k</dt><dd>{summary?.routed_top_k == null ? "—" : summary.routed_top_k}</dd></div><div><dt>Digest</dt><dd>{summary?.inspection_digest ? summary.inspection_digest.slice(0, 18) + "…" : "—"}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Expert activity</p></div><p className="mt-4 text-xs leading-5 text-muted">Activation summaries will appear when the run publishes expert-event evidence. Routing load alone is not an activation claim.</p></section></aside>
+            <section className="research-card"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Routing load</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Layer × expert heatmap</h2></div><div className="flex items-center gap-2"><label className="sr-only" htmlFor="heatmap-metric">Heatmap metric</label><select id="heatmap-metric" className="input-control input-control-compact" value={metric} onChange={(event) => setMetric(event.target.value as typeof metric)}><option value="assignment_counts">Counts</option><option value="assignment_shares">Shares</option><option value="load_ratios">Load ratios</option></select><span className="source-card-type">{summaryState === "loading" ? "loading" : summary?.status ?? "unavailable"}</span></div></div>{summary?.status === "available" && selectedRun ? <iframe className="heatmap-frame-react mt-5" title={`Routing heatmap for ${selectedRun}`} src={`/api/runs/${encodeURIComponent(selectedRun)}/heatmap?metric=${metric}`} /> : <div className="empty-heatmap mt-5"><GitBranch size={20} className="text-muted" /><p className="mt-3 text-sm text-white">No published matrix.</p><p className="mt-1 max-w-[32ch] text-center text-xs leading-5 text-muted">{summary?.reason ?? "A validated routing inspection is required before rendering heat."}</p></div>}
+              {entries.length > 1 ? <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-line pt-4"><label className="field-label min-w-[15rem]" htmlFor="comparison-run">Compare against<select id="comparison-run" className="input-control mt-2" value={comparisonRun} onChange={(event) => setComparisonRun(event.target.value)}><option value="">Select baseline</option>{entries.filter((entry) => entry.run_key !== selectedRun).map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key}</option>)}</select></label><label className="field-label" htmlFor="comparison-metric">Delta<select id="comparison-metric" className="input-control mt-2" value={comparisonMetric} onChange={(event) => setComparisonMetric(event.target.value as typeof comparisonMetric)}><option value="count_deltas">Counts</option><option value="share_deltas">Shares</option><option value="ratio_deltas">Ratios</option></select></label>{comparisonRun ? <a className="button-secondary" target="_blank" rel="noreferrer" href={`/api/compare/heatmap?baseline_run_key=${encodeURIComponent(comparisonRun)}&comparison_run_key=${encodeURIComponent(selectedRun)}&metric=${comparisonMetric}`}>Open comparison</a> : null}</div> : null}
+            </section>
+            <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center gap-2"><ShieldCheck size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Validation</p></div><dl className="contract-list mt-5"><div><dt>Status</dt><dd>{summary?.status ?? "pending"}</dd></div><div><dt>Adapter</dt><dd>{summary?.adapter_name ?? "—"}</dd></div><div><dt>Top-k</dt><dd>{summary?.routed_top_k == null ? "—" : summary.routed_top_k}</dd></div><div><dt>Digest</dt><dd>{summary?.inspection_digest ? summary.inspection_digest.slice(0, 18) + "…" : "—"}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Expert activity</p></div>{activity?.status === "available" && activity.summary ? <><div className="mt-4 grid grid-cols-2 gap-3"><MetricCard label="Active cells" value={String(activity.summary.active_expert_cells ?? "—")} detail="experts with events"/><MetricCard label="Events" value={String(activity.summary.total_event_count ?? "—")} detail="validated expert events"/></div><p className="mt-4 text-xs leading-5 text-muted">Norm summaries are available from persisted expert-event evidence. Empty cells remain explicit zeros.</p></> : <p className="mt-4 text-xs leading-5 text-muted">{activity?.reason ?? "Loading activation evidence…"}</p>}</section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><GitBranch size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Architecture</p></div>{architecture?.status === "available" && architecture.report ? <><dl className="contract-list mt-4"><div><dt>Families</dt><dd>{Array.isArray(architecture.report.architecture_families) ? architecture.report.architecture_families.join(", ") : "generic"}</dd></div><div><dt>Components</dt><dd>{Array.isArray(architecture.report.components) ? architecture.report.components.length : "—"}</dd></div><div><dt>Warnings</dt><dd>{Array.isArray(architecture.report.warnings) ? architecture.report.warnings.length : "0"}</dd></div></dl><p className="mt-3 text-xs leading-5 text-muted">{architecture.report.model_key ? `Manifest ${String(architecture.report.model_key)}` : "Persisted discovery report"}</p></> : <p className="mt-4 text-xs leading-5 text-muted">{architecture?.reason ?? "Architecture evidence is not published for this run yet."}</p>}</section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Intervention recipe</p></div><label className="field-label mt-4" htmlFor="recipe-targets">Targets<input id="recipe-targets" className="input-control mt-2" value={recipeTargets} onChange={(event) => setRecipeTargets(event.target.value)} placeholder="layer:…/expert:…" /></label><label className="field-label mt-3" htmlFor="recipe-operation">Operation<select id="recipe-operation" className="input-control mt-2" value={recipeOperation} onChange={(event) => setRecipeOperation(event.target.value as typeof recipeOperation)}><option value="ablate">Ablate</option><option value="scale">Scale</option><option value="reroute">Reroute</option><option value="alter_router">Alter router</option></select></label><button type="button" className="button-secondary mt-4 w-full justify-between" onClick={() => void prepareRecipe()}>Prepare recipe <ArrowRight size={15}/></button>{recipeStatus ? <p className="mt-3 text-xs leading-5 text-muted" role="status">{recipeStatus}</p> : null}</section></aside>
           </div>
         </>
       )}
@@ -651,19 +811,9 @@ function RunsPage() {
   );
 }
 
-function SettingsPage({ runner, setRunner }: { runner: RunnerDraft; setRunner: (value: RunnerDraft) => void }) {
-  return (
-    <div className="space-y-6">
-      <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Settings</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white">Runtime boundary.</h1><p className="mt-3 max-w-[58ch] text-sm leading-6 text-muted">Connection details belong to the execution boundary, not the analysis identity. Nothing here launches a VM or opens an SSH session.</p></div></header>
-      <div className="max-w-3xl"><RunnerBoundary value={runner} onChange={(value) => { setRunner(value); window.localStorage.setItem("moeatlas-runner", JSON.stringify(value)); }} /></div>
-    </div>
-  );
-}
-
 export function App() {
   const [active, setActive] = useState<NavigationItem>("analysis");
-  const [runner, setRunner] = useState<RunnerDraft>(() => readStored("moeatlas-runner", DEFAULT_RUNNER));
-  const content = active === "analysis" ? <AnalysisPage runner={runner} setRunner={setRunner} onNavigate={setActive} /> : active === "discovery" ? <DiscoveryPage onNavigate={setActive} /> : active === "run" ? <RunConfigPage runner={runner} onNavigate={setActive} /> : active === "runs" ? <RunsPage /> : <SettingsPage runner={runner} setRunner={setRunner} />;
+  const content = active === "analysis" ? <AnalysisPage onNavigate={setActive} /> : active === "discovery" ? <DiscoveryPage onNavigate={setActive} /> : active === "run" ? <RunConfigPage onNavigate={setActive} /> : <RunsPage />;
 
   return (
     <div className="app-shell min-h-screen">
@@ -674,7 +824,7 @@ export function App() {
           <div className="mt-auto flex items-center justify-between px-1 text-[0.68rem] text-muted"><span>MoEAtlas</span><span>v0.1.0</span></div>
         </aside>
         <main className="min-w-0 flex-1 px-4 py-4 sm:px-7 sm:py-6 lg:px-10">
-          <header className="mb-9 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3 lg:hidden"><AppMark /></div><div className="hidden items-center gap-2 text-xs text-muted lg:flex"><span className="text-white">MoEAtlas</span><span className="text-muted/40">/</span><span>{NAVIGATION.find((item) => item.id === active)?.label}</span></div><div className="ml-auto flex items-center gap-3"><div className="runtime-pill"><StatusDot /><span>{runner.mode === "local" ? "Local runtime" : "Provider runtime"}</span></div><span className="hidden font-mono text-[0.62rem] text-muted sm:inline">schema 1.0</span></div></header>
+          <header className="mb-9 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3 lg:hidden"><AppMark /></div><div className="hidden items-center gap-2 text-xs text-muted lg:flex"><span className="text-white">MoEAtlas</span><span className="text-muted/40">/</span><span>{NAVIGATION.find((item) => item.id === active)?.label}</span></div><div className="ml-auto flex items-center gap-3"><div className="runtime-pill"><StatusDot /><span>Bound server</span></div><span className="hidden font-mono text-[0.62rem] text-muted sm:inline">schema 1.0</span></div></header>
           <nav className="mb-7 flex gap-1 overflow-x-auto border-b border-line pb-2 lg:hidden" aria-label="Primary navigation">{NAVIGATION.map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={`mobile-nav-item ${active === item.id ? "mobile-nav-item-active" : ""}`} onClick={() => setActive(item.id)}><Icon size={15} />{item.label}</button>; })}</nav>
           {content}
         </main>

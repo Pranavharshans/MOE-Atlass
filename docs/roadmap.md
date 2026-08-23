@@ -52,6 +52,15 @@ tracks dependency order and exit criteria without redefining those documents.
 | 11 | Privacy, reliability, benchmarks, and release | `model-free complete` | Retention/redaction/plugin trust, CI, clean install, governance, examples, benchmark artifacts, and release docs | PRD §§17–19; clean-install/Docker/screenshots stay deferred release work |
 | 12 | Final VM/GPU certification and PRD audit | `VM/GPU deferred` | MV-01–MV-08 and ST-01–ST-04 have recorded evidence; every v1 acceptance row traces to passing implementation and validation. The model-free audit is complete (see [prd-audit](prd-audit.md)); certification stays blocked on VM access | PRD §20 and validation ledger |
 
+The live control-plane implementation now covers the previously missing local
+server/UI path: HF commit resolution, real discovery and run jobs, progress,
+cooperative cancellation/resume, generic architecture persistence, routing and
+expert-activity summaries, metric-selectable heatmaps, run comparison, bounded
+exports, and intervention-recipe validation. Sequence 9 remains
+`VM/GPU deferred` because browser/VM execution evidence and universal model
+certification still belong in the validation ledger; these endpoints do not
+turn a model-free test into a GPU result.
+
 ## Current slice exit criteria
 
 Sequences 1–3 are `model-free complete`. Sequence 1 delivered the neutral
@@ -266,20 +275,7 @@ storage layer's canonical tamper-evident evidence bundle with fixed safe
 errors. The scan, compare, doctor, and adapters-list commands complete the
 PRD command set over shared services.
 
-Sequence 9 is model-free complete at the packaged/static boundary. The React/TypeScript SPA now ships its lean intake, preflight, run, and evidence-aware results surfaces; broad browser E2E and real execution remain deferred (status `VM/GPU deferred`). Its first landed slice is the local read-only
-server (see [server](server.md)): `create_app()` in
-`moeatlas.server.app` binds one workspace behind strict construction
-budgets and exposes `/healthz`, `/api/workspace`, bounded `/api/runs` with
-a validated state filter, and `/api/adapters` — every endpoint delegating
-to shared services with fixed safe error details. FastAPI is an optional
-extra; the wire DTOs stay importable without it. Its second landed slice
-is the `moeatlas ui WORKSPACE` command: loopback-by-default launch with an
-explicit `--allow-remote` opt-in, canonical port validation, and the fixed
-dependency hint when the server extra is missing. The React/TypeScript
-single-page UI and packaged frontend assets are covered by local static/browser
-smoke evidence; broad synthetic browser E2E remains deferred release-engineering
-evidence recorded in the validation ledger;
-the read-only wire contract above is what they will consume.
+Sequence 9 is model-free complete at the packaged/static boundary. The React/TypeScript SPA now ships its lean intake, preflight, live discovery/run progress, and evidence-aware results surfaces; broad browser E2E and real execution remain deferred (status `VM/GPU deferred`). The server control-plane slice (see [server](server.md)) binds one workspace behind strict construction budgets through `create_app()`, resolves public Hub revisions to immutable commits, launches bounded discovery and run jobs, supports cancellation/resume, and serves architecture, activity, metric heatmaps, comparisons, exports, and intervention-recipe validation. FastAPI remains an optional extra and the wire DTOs stay importable without it. The `moeatlas ui WORKSPACE` command is loopback-by-default with an explicit `--allow-remote` opt-in, canonical port validation, and a fixed dependency hint when the server extra is missing. The packaged React assets and API contracts are covered by local static/browser smoke evidence; broad synthetic browser E2E remains deferred release-engineering evidence recorded in the validation ledger.
 
 Sequence 10 is `model-free complete`: recipes, budgets, the failure-safe
 engine, and paired causal-effect summaries are all constructible and

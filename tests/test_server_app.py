@@ -1,4 +1,4 @@
-"""Contract tests for the local read-only server application."""
+"""Contract tests for the local server control plane."""
 
 from __future__ import annotations
 
