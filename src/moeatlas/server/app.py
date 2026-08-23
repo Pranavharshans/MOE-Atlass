@@ -178,7 +178,7 @@ def _discovery_worker(
 ) -> Any:
     """Resolve, load, and scan one model without touching the browser thread."""
 
-    from ..runtime import load_and_scan
+    from ..runtime import classify_capture_support, load_and_scan
     from ..services.model_resolution import resolve_huggingface_plan
     from .jobs import JobOutcome
 
@@ -202,6 +202,7 @@ def _discovery_worker(
     if cancel.is_set():
         return JobOutcome({"status": "cancelled", "plan_id": plan.plan_id}, "cancelled")
     discovery = load_and_scan(plan)
+    capture_support = classify_capture_support(discovery)
     report_progress(
         stage="discover", completed=1, total=1, message="Static architecture scan complete"
     )
@@ -215,6 +216,7 @@ def _discovery_worker(
             else None,
             "plan_id": plan.plan_id,
             "security_warnings": list(plan.security_warnings),
+            "capture_support": capture_support.to_dict(),
             "report": _json_document(discovery),
         },
         "completed",

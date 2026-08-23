@@ -20,6 +20,11 @@ from .capabilities import (
     validate_decoded_routing,
     validate_observed_routing,
 )
+from .capture_support import (
+    CaptureSupportGrade,
+    CaptureSupportReport,
+    classify_capture_support,
+)
 from .contracts import (
     CleanupCallback,
     CleanupError,
@@ -66,6 +71,8 @@ from .scan import load_and_scan
 __all__ = [
     "CleanupCallback",
     "CleanupError",
+    "CaptureSupportGrade",
+    "CaptureSupportReport",
     "ROUTING_DECODE_CAPABILITY_SCHEMA_VERSION",
     "RouterPayloadShape",
     "RoutingDecodeCapability",
@@ -76,6 +83,7 @@ __all__ = [
     "native_id_map",
     "validate_decoded_routing",
     "validate_observed_routing",
+    "classify_capture_support",
     "CustomLoaderExecutionError",
     "LoadResult",
     "LoadedModel",
