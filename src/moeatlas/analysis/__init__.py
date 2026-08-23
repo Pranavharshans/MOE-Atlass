@@ -47,6 +47,12 @@ from .expert_activity import (
     LayerExpertActivity,
     summarize_expert_activity,
 )
+from .expert_candidates import (
+    EXPERT_CANDIDATE_SCHEMA_VERSION,
+    ExpertCandidateRanking,
+    ExpertInterventionCandidate,
+    rank_expert_candidates,
+)
 from .expert_similarity import (
     EXPERT_SIMILARITY_SCHEMA_VERSION,
     ExpertSimilarity,
@@ -128,6 +134,10 @@ __all__ = [
     "ExpertActivitySummary",
     "LayerExpertActivity",
     "summarize_expert_activity",
+    "EXPERT_CANDIDATE_SCHEMA_VERSION",
+    "ExpertCandidateRanking",
+    "ExpertInterventionCandidate",
+    "rank_expert_candidates",
     "EXPERT_SIMILARITY_SCHEMA_VERSION",
     "ExpertSimilarity",
     "ExpertSimilarityError",

@@ -1472,7 +1472,7 @@ def create_app(
         workspace_path, _ = _catalog_entry(stable_run_key)
         try:
             matrix = _load_matrix(workspace_path, stable_run_key)
-            from ..analysis import summarize_expert_activity
+            from ..analysis import rank_expert_candidates, summarize_expert_activity
 
             summary = summarize_expert_activity(
                 workspace_path,
@@ -1483,6 +1483,11 @@ def create_app(
                 max_source_bytes=1_000_000_000,
             )
             document = summary.to_dict()
+            document["candidate_ranking"] = rank_expert_candidates(
+                matrix,
+                summary,
+                max_candidates=8,
+            ).to_dict()
         except Exception:
             return ActivityResponse(
                 run_key=stable_run_key,

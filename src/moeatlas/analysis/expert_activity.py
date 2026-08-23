@@ -3,7 +3,7 @@
 This module turns persisted ``experts.parquet`` rows into one canonical,
 frozen, round-trippable activation summary value. It reads exclusively
 through the public storage query seam (:func:`moeatlas.store.
-query_expert_activity`), aggregates mean/max contribution norms per layer
+query_expert_activity`), aggregates mean/variance/max contribution norms per layer
 and expert with explicit zero-activity accounting for universe cells that
 never fired, and retains no raw rows anywhere.
 """
@@ -22,7 +22,7 @@ from ..events import EVENT_SCHEMA_VERSION
 from ..store import STORE_SCHEMA_VERSION
 from ..store import routing_shards as _storage
 
-EXPERT_ACTIVITY_SUMMARY_SCHEMA_VERSION = "1.0"
+EXPERT_ACTIVITY_SUMMARY_SCHEMA_VERSION = "1.1"
 
 _EXPERT_ACTIVITY_ARTIFACT_TYPE = "moeatlas.expert_activity_summary"
 
@@ -82,6 +82,7 @@ class LayerExpertActivity:
     layer_key: str
     event_counts: tuple[int, ...]
     mean_contributions: tuple[float | None, ...]
+    variance_contributions: tuple[float | None, ...]
     max_contributions: tuple[float | None, ...]
 
     def __post_init__(self) -> None:
@@ -91,6 +92,7 @@ class LayerExpertActivity:
         axes = (
             ("event_counts", self.event_counts),
             ("mean_contributions", self.mean_contributions),
+            ("variance_contributions", self.variance_contributions),
             ("max_contributions", self.max_contributions),
         )
         width = len(self.event_counts)
@@ -102,7 +104,11 @@ class LayerExpertActivity:
         for count in self.event_counts:
             if type(count) is not int or isinstance(count, bool) or count < 0:
                 raise ValueError("event_counts must contain nonnegative integers")
-        for name in ("mean_contributions", "max_contributions"):
+        for name in (
+            "mean_contributions",
+            "variance_contributions",
+            "max_contributions",
+        ):
             for value in getattr(self, name):
                 if value is None:
                     continue
@@ -116,6 +122,7 @@ class LayerExpertActivity:
             "layer_key": self.layer_key,
             "event_counts": list(self.event_counts),
             "mean_contributions": list(self.mean_contributions),
+            "variance_contributions": list(self.variance_contributions),
             "max_contributions": list(self.max_contributions),
         }
 
@@ -210,10 +217,15 @@ class ExpertActivitySummary:
         ):
             raise ValueError("total_event_count does not match the layer rows")
         for row in self.layers:
-            for count, mean_value, max_value in zip(
-                row.event_counts, row.mean_contributions, row.max_contributions
+            for count, mean_value, variance_value, max_value in zip(
+                row.event_counts,
+                row.mean_contributions,
+                row.variance_contributions,
+                row.max_contributions,
             ):
-                if count == 0 and (mean_value is not None or max_value is not None):
+                if count == 0 and any(
+                    value is not None for value in (mean_value, variance_value, max_value)
+                ):
                     raise ValueError("zero-activity cells must carry null contributions")
 
     def to_dict(self) -> dict[str, object]:
@@ -281,6 +293,9 @@ class ExpertActivitySummary:
                     event_counts=tuple(row["event_counts"]),
                     mean_contributions=optional_floats(
                         row["mean_contributions"], "mean_contributions"
+                    ),
+                    variance_contributions=optional_floats(
+                        row["variance_contributions"], "variance_contributions"
                     ),
                     max_contributions=optional_floats(
                         row["max_contributions"], "max_contributions"
@@ -383,17 +398,25 @@ def summarize_expert_activity(
     totals_events: dict[tuple[str, str], int] = {}
     totals_measured: dict[tuple[str, str], int] = {}
     totals_sums: dict[tuple[str, str], list[float]] = {}
+    totals_sum_squares: dict[tuple[str, str], list[float]] = {}
     totals_peaks: dict[tuple[str, str], list[float]] = {}
     shard_keys: list[str] = []
     for record in records:
         shard_keys.append(record.shard_key)
-        for cell_layer, cell_expert, event_count, measured, total, peak in (
-            record.activity_cells
-        ):
+        for (
+            cell_layer,
+            cell_expert,
+            event_count,
+            measured,
+            total,
+            sum_squares,
+            peak,
+        ) in record.activity_cells:
             cell = (cell_layer, cell_expert)
             totals_events[cell] = totals_events.get(cell, 0) + event_count
             totals_measured[cell] = totals_measured.get(cell, 0) + measured
             totals_sums.setdefault(cell, []).append(total)
+            totals_sum_squares.setdefault(cell, []).append(sum_squares)
             totals_peaks.setdefault(cell, []).append(peak)
 
     layer_rows: list[LayerExpertActivity] = []
@@ -402,6 +425,7 @@ def summarize_expert_activity(
     for layer_position, layer_key in enumerate(stable_layers):
         counts: list[int] = []
         means: list[float | None] = []
+        variances: list[float | None] = []
         maxima: list[float | None] = []
         for expert_key in stable_universe[layer_position]:
             cell = (layer_key, expert_key)
@@ -409,14 +433,22 @@ def summarize_expert_activity(
             if event_count is None:
                 counts.append(0)
                 means.append(None)
+                variances.append(None)
                 maxima.append(None)
                 continue
             measured = totals_measured[cell]
             sums = totals_sums[cell]
+            sum_squares = totals_sum_squares[cell]
             peaks = totals_peaks[cell]
             counts.append(event_count)
-            means.append(math.fsum(sums) / measured if measured else None)
-            maxima.append(max(peaks) if peaks else None)
+            mean = math.fsum(sums) / measured if measured else None
+            means.append(mean)
+            if measured and mean is not None:
+                variance = math.fsum(sum_squares) / measured - mean * mean
+                variances.append(max(0.0, variance))
+            else:
+                variances.append(None)
+            maxima.append(max(peaks) if measured and peaks else None)
             total_events += event_count
             if event_count > 0:
                 active_cells += 1
@@ -425,6 +457,7 @@ def summarize_expert_activity(
                 layer_key=layer_key,
                 event_counts=tuple(counts),
                 mean_contributions=tuple(means),
+                variance_contributions=tuple(variances),
                 max_contributions=tuple(maxima),
             )
         )

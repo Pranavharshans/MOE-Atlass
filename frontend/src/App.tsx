@@ -793,6 +793,23 @@ type ActivitySummary = {
   inactive_expert_cells?: number;
   total_event_count?: number;
   layers?: Array<{ layer_key: string; event_counts: number[] }>;
+  candidate_ranking?: {
+    ranked_cell_count: number;
+    incomplete_cell_count: number;
+    evidence_complete: boolean;
+    high_observed: ExpertCandidate[];
+    low_observed: ExpertCandidate[];
+    claim_boundary: string;
+  };
+};
+
+type ExpertCandidate = {
+  layer_index: number;
+  expert_index: number;
+  expert_key: string;
+  routing_share: number;
+  contribution_variance: number;
+  total_contribution: number;
 };
 
 type ActivityResponse = { status: string; reason?: string | null; summary?: ActivitySummary | null };
@@ -962,6 +979,20 @@ function RunsPage() {
       cell.classList.toggle("is-selected", active);
       cell.setAttribute("aria-checked", active ? "true" : "false");
     });
+  }
+
+  function prepareCandidate(candidate: ExpertCandidate, lane: "high" | "low") {
+    const target = interventionTargets?.targets.find(
+      (item) => item.expert_key === candidate.expert_key,
+    );
+    if (!target) {
+      setInterventionStatus("This observed expert is not independently controllable in the current runtime.");
+      return;
+    }
+    setSelectedTargets([target.label]);
+    setInterventionStatus(
+      `Prepared the ${lane}-observed L${candidate.layer_index} × E${candidate.expert_index} candidate. Run the paired intervention to test causality.`,
+    );
   }
 
   function bindHeatmapTargets() {
@@ -1188,7 +1219,7 @@ function RunsPage() {
             </section>
             <aside className="space-y-5">
               <section className="research-card research-card-dark"><div className="flex items-center gap-2"><ShieldCheck size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Evidence boundary</p></div><dl className="contract-list mt-5"><div><dt>Routing</dt><dd>{summary?.status === "available" ? "validated" : "unavailable"}</dd></div><div><dt>Causal</dt><dd>{study?.claim_status ?? (interventionEvidence ? "paired once" : "not tested")}</dd></div><div><dt>Adapter</dt><dd>{summary?.adapter_name ?? "—"}</dd></div><div><dt>Top-k</dt><dd>{summary?.routed_top_k == null ? "—" : summary.routed_top_k}</dd></div><div><dt>Digest</dt><dd>{summary?.inspection_digest ? summary.inspection_digest.slice(0, 18) + "…" : "—"}</dd></div></dl><p className="mt-3 text-[0.65rem] leading-5 text-muted">Evidence applies only to this pinned model revision, dataset revision, and run settings. It is not universal model certification.</p></section>
-              <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Expert activity</p></div>{activity?.status === "available" && activity.summary ? <><div className="mt-4 grid grid-cols-2 gap-3"><MetricCard label="Active cells" value={String(activity.summary.active_expert_cells ?? "—")} detail="experts with events"/><MetricCard label="Events" value={String(activity.summary.total_event_count ?? "—")} detail="validated expert events"/></div><p className="mt-4 text-xs leading-5 text-muted">Norm summaries are available from persisted expert-event evidence. Empty cells remain explicit zeros.</p></> : <p className="mt-4 text-xs leading-5 text-muted">{activity?.reason ?? "Loading activation evidence…"}</p>}</section>
+              <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Expert activity</p></div>{activity?.status === "available" && activity.summary ? <><div className="mt-4 grid grid-cols-2 gap-3"><MetricCard label="Active cells" value={String(activity.summary.active_expert_cells ?? "—")} detail="experts with events"/><MetricCard label="Events" value={String(activity.summary.total_event_count ?? "—")} detail="validated expert events"/></div><p className="mt-4 text-xs leading-5 text-muted">Mean, variance, and peak contribution norms come from persisted expert events. Empty cells remain explicit zeros.</p>{activity.summary.candidate_ranking?.ranked_cell_count ? <div className="mt-4 border-t border-line pt-4"><p className="label-caps text-[0.56rem] text-muted">Intervention candidates</p><div className="mt-3 grid gap-2">{activity.summary.candidate_ranking.high_observed[0] ? <button type="button" className="button-secondary w-full justify-between" onClick={() => prepareCandidate(activity.summary!.candidate_ranking!.high_observed[0], "high")}>Test high-observed L{activity.summary.candidate_ranking.high_observed[0].layer_index} × E{activity.summary.candidate_ranking.high_observed[0].expert_index}<ArrowRight size={14}/></button> : null}{activity.summary.candidate_ranking.low_observed[0] ? <button type="button" className="button-secondary w-full justify-between" onClick={() => prepareCandidate(activity.summary!.candidate_ranking!.low_observed[0], "low")}>Test low-observed L{activity.summary.candidate_ranking.low_observed[0].layer_index} × E{activity.summary.candidate_ranking.low_observed[0].expert_index}<ArrowRight size={14}/></button> : null}</div><p className="mt-3 text-[0.65rem] leading-5 text-muted">Descriptive ranking only. The paired intervention establishes whether a candidate affects this task.</p></div> : null}</> : <p className="mt-4 text-xs leading-5 text-muted">{activity?.reason ?? "Loading activation evidence…"}</p>}</section>
               <section className="research-card research-card-dark"><div className="flex items-center gap-2"><GitBranch size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Architecture</p></div>{architecture?.status === "available" && architecture.report ? <><dl className="contract-list mt-4"><div><dt>Families</dt><dd>{Array.isArray(architecture.report.architecture_families) ? architecture.report.architecture_families.join(", ") : "generic"}</dd></div><div><dt>Components</dt><dd>{Array.isArray(architecture.report.components) ? architecture.report.components.length : "—"}</dd></div><div><dt>Warnings</dt><dd>{Array.isArray(architecture.report.warnings) ? architecture.report.warnings.length : "0"}</dd></div></dl><p className="mt-3 text-xs leading-5 text-muted">{architecture.report.model_key ? `Manifest ${String(architecture.report.model_key)}` : "Persisted discovery report"}</p></> : <p className="mt-4 text-xs leading-5 text-muted">{architecture?.reason ?? "Architecture evidence is not published for this run yet."}</p>}</section>
               <section className="research-card research-card-dark">
                 <div className="flex items-center gap-2"><Lightning size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Causal intervention</p></div>

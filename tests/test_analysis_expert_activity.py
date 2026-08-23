@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -60,8 +61,8 @@ def _summary(tmp_path: Path):
 
 
 def test_summary_version_constants_and_surface() -> None:
-    assert EXPERT_ACTIVITY_SUMMARY_SCHEMA_VERSION == "1.0"
-    assert module.EXPERT_ACTIVITY_SUMMARY_SCHEMA_VERSION == "1.0"
+    assert EXPERT_ACTIVITY_SUMMARY_SCHEMA_VERSION == "1.1"
+    assert module.EXPERT_ACTIVITY_SUMMARY_SCHEMA_VERSION == "1.1"
 
 
 def test_closed_form_means_maxima_and_zero_activity_accounting(tmp_path: Path) -> None:
@@ -75,12 +76,18 @@ def test_closed_form_means_maxima_and_zero_activity_accounting(tmp_path: Path) -
     assert layer0.event_counts == (1, 1, 0)
     assert layer1.event_counts == (1, 1)
     assert layer0.mean_contributions == pytest.approx((0.5, 1.0, None))
+    assert layer0.variance_contributions == pytest.approx((0.0, 0.0, None))
     assert layer0.max_contributions == pytest.approx((0.5, 1.0, None))
     assert layer1.mean_contributions == pytest.approx((0.5, 1.0))
+    assert layer1.variance_contributions == pytest.approx((0.0, 0.0))
     assert summary.active_expert_cells == 4
     assert summary.inactive_expert_cells == 1
     # Zero-activity cells must carry null statistics.
-    assert layer0.mean_contributions[2] is None and layer0.max_contributions[2] is None
+    assert (
+        layer0.mean_contributions[2] is None
+        and layer0.variance_contributions[2] is None
+        and layer0.max_contributions[2] is None
+    )
 
 
 def test_canonical_round_trip_through_json(tmp_path: Path) -> None:
@@ -94,10 +101,47 @@ def test_canonical_round_trip_through_json(tmp_path: Path) -> None:
     assert all(type(row) is LayerExpertActivity for row in restored.layers)
 
 
+def test_unmeasured_contributions_remain_explicitly_null(tmp_path: Path) -> None:
+    from moeatlas.store import append_structured_shard
+
+    workspace = _workspace(tmp_path)
+    result = _result()
+    unmeasured = replace(
+        result,
+        expert_events=tuple(
+            event.model_copy(update={"contribution_norm": None})
+            for event in result.expert_events
+        ),
+    )
+    receipt = append_structured_shard(workspace, unmeasured)
+    summary = summarize_expert_activity(
+        workspace,
+        run_key=receipt.run_key,
+        layer_keys=(_layer_key(0), _layer_key(1)),
+        expert_keys=(
+            (_expert_key(0, 0), _expert_key(0, 1)),
+            (_expert_key(1, 0), _expert_key(1, 1)),
+        ),
+        max_expert_rows=64,
+        max_source_bytes=10_000_000,
+    )
+    assert summary.total_event_count == 4
+    assert all(
+        value is None
+        for row in summary.layers
+        for values in (
+            row.mean_contributions,
+            row.variance_contributions,
+            row.max_contributions,
+        )
+        for value in values
+    )
+
+
 def test_from_json_rejects_foreign_or_malformed_documents() -> None:
     good = {
         "artifact_type": "moeatlas.expert_activity_summary",
-        "schema_version": "1.0",
+        "schema_version": "1.1",
     }
     with pytest.raises(ValueError, match="not an expert activity summary"):
         ExpertActivitySummary.from_json(json.dumps(good | {"artifact_type": "other"}))
@@ -116,6 +160,7 @@ def test_constructor_invariants_are_strict() -> None:
         layer_key=_layer_key(0),
         event_counts=(1, 0),
         mean_contributions=(1.0, None),
+        variance_contributions=(0.0, None),
         max_contributions=(1.0, None),
     )
     assert row.event_counts == (1, 0)
@@ -124,6 +169,7 @@ def test_constructor_invariants_are_strict() -> None:
             layer_key=_layer_key(0),
             event_counts=(1,),
             mean_contributions=(1.0, None),
+            variance_contributions=(0.0, None),
             max_contributions=(1.0, None),
         )
     # A zero-activity cell may pass the layer-level shape checks but must be
@@ -132,6 +178,7 @@ def test_constructor_invariants_are_strict() -> None:
         layer_key=_layer_key(0),
         event_counts=(0,),
         mean_contributions=(1.0,),
+        variance_contributions=(None,),
         max_contributions=(None,),
     )
     with pytest.raises(ValueError, match="zero-activity"):

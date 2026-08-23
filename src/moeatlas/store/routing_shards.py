@@ -2255,7 +2255,7 @@ class RoutingShardExpertActivityQuery:
 
     shard_key: str
     expert_event_count: int
-    activity_cells: tuple[tuple[str, str, int, int, float, float], ...]
+    activity_cells: tuple[tuple[str, str, int, int, float, float, float], ...]
 
     def __post_init__(self) -> None:
         if type(self.shard_key) is not str or _SHARD_KEY.fullmatch(self.shard_key) is None:
@@ -2268,21 +2268,25 @@ class RoutingShardExpertActivityQuery:
             raise TypeError("activity_cells must be an exact tuple")
         keys: list[tuple[str, str]] = []
         for entry in self.activity_cells:
-            if type(entry) is not tuple or len(entry) != 6:
+            if type(entry) is not tuple or len(entry) != 7:
                 raise ValueError(
-                    "activity_cells entries must be (layer, expert, events, measured, sum, max)"
+                    "activity_cells entries must be "
+                    "(layer, expert, events, measured, sum, sum_squares, max)"
                 )
-            layer_key, expert_key, count, measured, total, peak = entry
+            layer_key, expert_key, count, measured, total, sum_squares, peak = entry
             if type(layer_key) is not str or type(expert_key) is not str:
                 raise TypeError("activity cell keys must be exact strings")
-            for value in (count, measured):
-                if type(value) is not int or isinstance(value, bool) or value <= 0:
-                    raise ValueError("activity cell counts must be strict positive integers")
+            if type(count) is not int or isinstance(count, bool) or count <= 0:
+                raise ValueError("activity event counts must be strict positive integers")
+            if type(measured) is not int or isinstance(measured, bool) or measured < 0:
+                raise ValueError("measured contribution counts must be nonnegative integers")
             if measured > count:
                 raise ValueError("measured contributions cannot exceed the event count")
-            for value in (total, peak):
+            for value in (total, sum_squares, peak):
                 if type(value) is not float or not math.isfinite(value) or value < 0.0:
-                    raise ValueError("activity cell sums/maxima must be finite nonnegative floats")
+                    raise ValueError(
+                        "activity cell sums/squares/maxima must be finite nonnegative floats"
+                    )
             keys.append((layer_key, expert_key))
         if keys != sorted(keys):
             raise ValueError("activity_cells must be sorted by layer and expert key")
@@ -2435,7 +2439,7 @@ def query_expert_activity(
                     ):
                         raise ValueError("expert contribution norms must be finite nonnegative")
                     cell[1].append(contribution)
-            cells: list[tuple[str, str, int, int, float, float]] = []
+            cells: list[tuple[str, str, int, int, float, float, float]] = []
             for (cell_layer, cell_expert), (event_count, contributions) in sorted(
                 grouped.items()
             ):
@@ -2446,7 +2450,8 @@ def query_expert_activity(
                         event_count,
                         len(contributions),
                         math.fsum(contributions),
-                        max(contributions),
+                        math.fsum(value * value for value in contributions),
+                        max(contributions) if contributions else 0.0,
                     )
                 )
             records.append(
