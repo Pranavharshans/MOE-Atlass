@@ -60,6 +60,17 @@ from .contracts import (
     RuntimeObservation,
     RuntimeValidationError,
 )
+from .dependency_preflight import (
+    DEPENDENCY_PREFLIGHT_SCHEMA_VERSION,
+    DependencyCheck,
+    DependencyPreflightError,
+    DependencyRequirementState,
+    DependencyStatus,
+    RuntimeDependencyInventory,
+    RuntimeDependencyPreflight,
+    check_declared_dependencies,
+    preflight_runtime_dependencies,
+)
 from .generic_capture import (
     StructuredCaptureError,
     StructuredExpertTarget,
@@ -138,6 +149,15 @@ __all__ = [
     "RuntimeLoadError",
     "RuntimeObservation",
     "RuntimeValidationError",
+    "DEPENDENCY_PREFLIGHT_SCHEMA_VERSION",
+    "DependencyCheck",
+    "DependencyPreflightError",
+    "DependencyRequirementState",
+    "DependencyStatus",
+    "RuntimeDependencyInventory",
+    "RuntimeDependencyPreflight",
+    "check_declared_dependencies",
+    "preflight_runtime_dependencies",
     "RoutingCaptureError",
     "RoutingCaptureSession",
     "RoutingCaptureTarget",
