@@ -94,6 +94,11 @@ from .routing_load import (
     aggregate_mixtral_routing_load,
     aggregate_routing_load,
 )
+from .routing_similarity import (
+    ROUTING_SIMILARITY_SCHEMA_VERSION,
+    RoutingSimilarity,
+    compare_routing_similarity,
+)
 from .routing_summary import (
     ROUTING_SUMMARY_SCHEMA_VERSION,
     RoutingLoadSummary,
@@ -172,6 +177,9 @@ __all__ = [
     "ROUTING_SUMMARY_SCHEMA_VERSION",
     "RoutingLoadSummary",
     "summarize_routing_load",
+    "ROUTING_SIMILARITY_SCHEMA_VERSION",
+    "RoutingSimilarity",
+    "compare_routing_similarity",
     "ROUTING_LOAD_SCHEMA_VERSION",
     "RoutingLoadMatrix",
     "MixtralRoutingLoadMatrix",

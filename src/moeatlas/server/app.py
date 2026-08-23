@@ -42,6 +42,7 @@ from .dto import (
     JobProgressResponse,
     JobResponse,
     RoutingShardEntryResponse,
+    RoutingSimilarityResponse,
     RunDetailResponse,
     RunEntryResponse,
     RunsResponse,
@@ -1591,6 +1592,46 @@ def create_app(
         except Exception as exc:
             raise HTTPException(status_code=404, detail="run comparison is unavailable") from exc
         return Response(content=document, media_type="text/html; charset=utf-8")
+
+    @app.get("/api/compare/similarity", response_model=RoutingSimilarityResponse)
+    def compare_similarity(
+        baseline_run_key: str = Query(...),
+        comparison_run_key: str = Query(...),
+        top_n: int = Query(default=5, ge=1, le=1024),
+    ) -> RoutingSimilarityResponse:
+        baseline = _validated_run_key(baseline_run_key)
+        comparison = _validated_run_key(comparison_run_key)
+        if baseline == comparison:
+            raise HTTPException(status_code=400, detail="comparison runs must differ")
+        baseline_workspace, _ = _catalog_entry(baseline)
+        comparison_workspace, _ = _catalog_entry(comparison)
+        if baseline_workspace != comparison_workspace:
+            raise HTTPException(status_code=400, detail="comparison runs must share a workspace")
+        try:
+            from ..analysis import compare_routing_similarity
+
+            report = compare_routing_similarity(
+                _load_matrix(baseline_workspace, baseline),
+                _load_matrix(comparison_workspace, comparison),
+                top_n=top_n,
+                max_cells=100_000,
+            ).to_dict()
+        except Exception:
+            return RoutingSimilarityResponse(
+                baseline_run_key=baseline,
+                comparison_run_key=comparison,
+                status="unavailable",
+                reason=(
+                    "routing similarity requires one immutable model and an exact shared "
+                    "routing topology"
+                ),
+            )
+        return RoutingSimilarityResponse(
+            baseline_run_key=baseline,
+            comparison_run_key=comparison,
+            status="available",
+            report=report,
+        )
 
     @app.get("/api/runs/{run_key}/export")
     def export_run(run_key: str, format: str = Query(default="bundle")) -> Any:

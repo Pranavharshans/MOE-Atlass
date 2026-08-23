@@ -797,6 +797,20 @@ type ActivitySummary = {
 
 type ActivityResponse = { status: string; reason?: string | null; summary?: ActivitySummary | null };
 type ArchitectureResponse = { status: string; reason?: string | null; report?: Record<string, unknown> | null };
+type RoutingSimilarity = {
+  top_n: number;
+  baseline_token_count: number;
+  comparison_token_count: number;
+  mean_js_divergence: number;
+  mean_spearman?: number | null;
+  mean_top_n_jaccard: number;
+  undefined_spearman_layers: number;
+};
+type RoutingSimilarityResponse = {
+  status: "available" | "unavailable";
+  reason?: string | null;
+  report?: RoutingSimilarity | null;
+};
 type InterventionTarget = {
   label: string;
   layer_index: number;
@@ -857,6 +871,7 @@ function RunsPage() {
   const [architecture, setArchitecture] = useState<ArchitectureResponse | null>(null);
   const [comparisonRun, setComparisonRun] = useState("");
   const [comparisonMetric, setComparisonMetric] = useState<"count_deltas" | "share_deltas" | "ratio_deltas">("count_deltas");
+  const [routingSimilarity, setRoutingSimilarity] = useState<RoutingSimilarityResponse | null>(null);
   const [interventionTargets, setInterventionTargets] = useState<InterventionTargetsResponse | null>(null);
   const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
   const [interventionOperation, setInterventionOperation] = useState<"ablate" | "scale">("ablate");
@@ -907,6 +922,36 @@ function RunsPage() {
       .catch((cause) => { if (cause instanceof DOMException && cause.name === "AbortError") return; setSummary(null); setSummaryState("unavailable"); });
     return () => controller.abort();
   }, [selectedRun]);
+
+  useEffect(() => {
+    if (!selectedRun || !comparisonRun || selectedRun === comparisonRun) {
+      setRoutingSimilarity(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    const query = new URLSearchParams({
+      baseline_run_key: comparisonRun,
+      comparison_run_key: selectedRun,
+      top_n: "5",
+    });
+    fetch(`/api/compare/similarity?${query.toString()}`, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("unavailable");
+        return response.json() as Promise<RoutingSimilarityResponse>;
+      })
+      .then(setRoutingSimilarity)
+      .catch((cause) => {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        setRoutingSimilarity({
+          status: "unavailable",
+          reason: "These runs cannot be compared over one shared routing topology.",
+        });
+      });
+    return () => controller.abort();
+  }, [comparisonRun, selectedRun]);
 
   function syncHeatmapSelection(targets: string[] = selectedTargets) {
     const document = heatmapFrame.current?.contentDocument;
@@ -1122,7 +1167,24 @@ function RunsPage() {
           </section> : null}
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
             <section className="research-card"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Routing load</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Layer × expert heatmap</h2><p className="mt-2 text-xs text-muted">Click cells to prepare an exact intervention target. The entire matrix remains in view.</p></div><div className="flex items-center gap-2"><label className="sr-only" htmlFor="heatmap-metric">Heatmap metric</label><select id="heatmap-metric" className="input-control input-control-compact" value={metric} onChange={(event) => setMetric(event.target.value as typeof metric)}><option value="assignment_counts">Counts</option><option value="assignment_shares">Shares</option><option value="load_ratios">Load ratios</option></select><span className="source-card-type">{summaryState === "loading" ? "loading" : summary?.status ?? "unavailable"}</span></div></div>{summary?.status === "available" && selectedRun ? <iframe ref={heatmapFrame} onLoad={bindHeatmapTargets} className="heatmap-frame-react mt-5" title={`Routing heatmap for ${selectedRun}`} src={`/api/runs/${encodeURIComponent(selectedRun)}/heatmap?metric=${metric}&view=compact`} /> : <div className="empty-heatmap mt-5"><GitBranch size={20} className="text-muted" /><p className="mt-3 text-sm text-white">No published matrix.</p><p className="mt-1 max-w-[32ch] text-center text-xs leading-5 text-muted">{summary?.reason ?? "A validated routing inspection is required before rendering heat."}</p></div>}
-              {entries.length > 1 ? <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-line pt-4"><label className="field-label min-w-[15rem]" htmlFor="comparison-run">Compare against<select id="comparison-run" className="input-control mt-2" value={comparisonRun} onChange={(event) => setComparisonRun(event.target.value)}><option value="">Select baseline</option>{entries.filter((entry) => entry.run_key !== selectedRun).map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key}</option>)}</select></label><label className="field-label" htmlFor="comparison-metric">Delta<select id="comparison-metric" className="input-control mt-2" value={comparisonMetric} onChange={(event) => setComparisonMetric(event.target.value as typeof comparisonMetric)}><option value="count_deltas">Counts</option><option value="share_deltas">Shares</option><option value="ratio_deltas">Ratios</option></select></label>{comparisonRun ? <a className="button-secondary" target="_blank" rel="noreferrer" href={`/api/compare/heatmap?baseline_run_key=${encodeURIComponent(comparisonRun)}&comparison_run_key=${encodeURIComponent(selectedRun)}&metric=${comparisonMetric}`}>Open comparison</a> : null}</div> : null}
+              {entries.length > 1 ? <div className="mt-5 border-t border-line pt-4">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="field-label min-w-[15rem]" htmlFor="comparison-run">Compare against
+                    <select id="comparison-run" className="input-control mt-2" value={comparisonRun} onChange={(event) => setComparisonRun(event.target.value)}><option value="">Select baseline</option>{entries.filter((entry) => entry.run_key !== selectedRun).map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key}</option>)}</select>
+                  </label>
+                  <label className="field-label" htmlFor="comparison-metric">Delta
+                    <select id="comparison-metric" className="input-control mt-2" value={comparisonMetric} onChange={(event) => setComparisonMetric(event.target.value as typeof comparisonMetric)}><option value="count_deltas">Counts</option><option value="share_deltas">Shares</option><option value="ratio_deltas">Ratios</option></select>
+                  </label>
+                  {comparisonRun ? <a className="button-secondary" target="_blank" rel="noreferrer" href={`/api/compare/heatmap?baseline_run_key=${encodeURIComponent(comparisonRun)}&comparison_run_key=${encodeURIComponent(selectedRun)}&metric=${comparisonMetric}`}>Open comparison</a> : null}
+                </div>
+                {routingSimilarity?.status === "available" && routingSimilarity.report ? <div className="metric-grid mt-4">
+                  <MetricCard label="Distribution agreement" value={`${((1 - routingSimilarity.report.mean_js_divergence) * 100).toFixed(1)}%`} detail="1 − mean JS divergence" />
+                  <MetricCard label="Rank correlation" value={routingSimilarity.report.mean_spearman == null ? "undefined" : routingSimilarity.report.mean_spearman.toFixed(3)} detail={routingSimilarity.report.undefined_spearman_layers ? `${routingSimilarity.report.undefined_spearman_layers} uniform layers omitted` : "mean Spearman correlation"} />
+                  <MetricCard label={`Top-${routingSimilarity.report.top_n} overlap`} value={`${(routingSimilarity.report.mean_top_n_jaccard * 100).toFixed(1)}%`} detail="mean Jaccard overlap" />
+                  <MetricCard label="Sample sizes" value={`${routingSimilarity.report.baseline_token_count} / ${routingSimilarity.report.comparison_token_count}`} detail="normalized before comparison" />
+                </div> : routingSimilarity?.status === "unavailable" ? <p className="mt-4 text-xs leading-5 text-muted">{routingSimilarity.reason}</p> : null}
+                {routingSimilarity?.status === "available" ? <p className="mt-3 text-[0.65rem] leading-5 text-muted">Similarity is association evidence. It does not identify a specialized expert or establish causality.</p> : null}
+              </div> : null}
             </section>
             <aside className="space-y-5">
               <section className="research-card research-card-dark"><div className="flex items-center gap-2"><ShieldCheck size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Evidence boundary</p></div><dl className="contract-list mt-5"><div><dt>Routing</dt><dd>{summary?.status === "available" ? "validated" : "unavailable"}</dd></div><div><dt>Causal</dt><dd>{study?.claim_status ?? (interventionEvidence ? "paired once" : "not tested")}</dd></div><div><dt>Adapter</dt><dd>{summary?.adapter_name ?? "—"}</dd></div><div><dt>Top-k</dt><dd>{summary?.routed_top_k == null ? "—" : summary.routed_top_k}</dd></div><div><dt>Digest</dt><dd>{summary?.inspection_digest ? summary.inspection_digest.slice(0, 18) + "…" : "—"}</dd></div></dl><p className="mt-3 text-[0.65rem] leading-5 text-muted">Evidence applies only to this pinned model revision, dataset revision, and run settings. It is not universal model certification.</p></section>

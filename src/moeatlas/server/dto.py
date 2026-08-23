@@ -241,6 +241,14 @@ class ActivityResponse(_WireModel):
     summary: dict[str, Any] | None = None
 
 
+class RoutingSimilarityResponse(_WireModel):
+    baseline_run_key: str
+    comparison_run_key: str
+    status: Literal["available", "unavailable"]
+    reason: str | None = None
+    report: dict[str, Any] | None = None
+
+
 class InterventionRecipeRequest(_WireModel):
     operation: Literal["ablate", "scale", "reroute", "alter_router"]
     targets: tuple[str, ...] = Field(min_length=1, max_length=1024)
@@ -318,6 +326,7 @@ __all__ = [
     "JobProgressResponse",
     "JobResponse",
     "RoutingShardEntryResponse",
+    "RoutingSimilarityResponse",
     "RunDetailResponse",
     "RunEntryResponse",
     "RunSummaryResponse",
