@@ -90,6 +90,22 @@ def build_intervention_evidence(
     for row_index in sorted(baseline):
         before = baseline[row_index]
         after = intervened[row_index]
+        before_input = before.get("input_digest")
+        after_input = after.get("input_digest")
+        if not isinstance(before_input, str) or not isinstance(after_input, str):
+            raise InterventionEvidenceError(
+                "baseline must publish exact input digests before intervention"
+            )
+        if before_input != after_input:
+            raise InterventionEvidenceError(
+                f"baseline and intervention input differ for row {row_index}"
+            )
+        before_method = before.get("evaluation_method")
+        after_method = after.get("evaluation_method")
+        if before_method != after_method:
+            raise InterventionEvidenceError(
+                f"baseline and intervention evaluators differ for row {row_index}"
+            )
         before_digest = before.get("output_digest")
         after_digest = after.get("output_digest")
         if not isinstance(before_digest, str) or not isinstance(after_digest, str):
@@ -110,6 +126,8 @@ def build_intervention_evidence(
             intervention_latency.append(float(after_ms))
         row = {
             "row_index": row_index,
+            "input_digest": before_input,
+            "evaluation_method": before_method,
             "baseline_output_digest": before_digest,
             "intervention_output_digest": after_digest,
             "output_changed": is_changed,

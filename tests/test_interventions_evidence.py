@@ -18,8 +18,17 @@ from moeatlas.services.run_engine import RowResult
 
 
 def _execution(*rows: dict[str, object]) -> SimpleNamespace:
+    normalized = []
+    for index, row in enumerate(rows):
+        normalized.append(
+            {
+                "input_digest": f"sha256:input-{index}",
+                "evaluation_method": "normalized_exact_match",
+                **row,
+            }
+        )
     return SimpleNamespace(
-        results=tuple(RowResult(index, 0, row) for index, row in enumerate(rows))
+        results=tuple(RowResult(index, 0, row) for index, row in enumerate(normalized))
     )
 
 
@@ -62,6 +71,7 @@ def test_paired_evidence_reports_output_score_latency_and_exercise(tmp_path) -> 
     assert document["task_score_delta"] == -0.5
     assert document["latency_delta_percent"] == pytest.approx(33.3333333333)
     assert document["all_targets_exercised"] is True
+    assert document["rows"][0]["input_digest"] == "sha256:input-0"
     published = publish_intervention_evidence(tmp_path, document)
     assert published.is_file()
     assert read_intervention_evidence(tmp_path, "run:" + "2" * 64) == document
@@ -84,6 +94,33 @@ def test_paired_evidence_requires_matching_rows_and_output_digests() -> None:
             intervention_run_key="run:" + "4" * 64,
             baseline_execution=_execution({"forward_ms": 1.0}),
             intervention_execution=_execution({"output_digest": "sha256:value"}),
+            recipe=recipe,
+            outcome=outcome,
+            invocation_counts={},
+        )
+
+
+def test_paired_evidence_rejects_different_tokenized_inputs() -> None:
+    recipe = InterventionRecipe(
+        operation=InterventionOperation.ABLATE,
+        targets=("layer:0/expert:0",),
+    )
+    outcome = InterventionOutcome(
+        schema_version="1.0",
+        recipe_fingerprint=recipe.fingerprint,
+        operation="ablate",
+        targets=recipe.targets,
+    )
+    with pytest.raises(Exception, match="input differ"):
+        build_intervention_evidence(
+            baseline_run_key="run:" + "5" * 64,
+            intervention_run_key="run:" + "6" * 64,
+            baseline_execution=_execution(
+                {"input_digest": "sha256:a", "output_digest": "sha256:before"}
+            ),
+            intervention_execution=_execution(
+                {"input_digest": "sha256:b", "output_digest": "sha256:after"}
+            ),
             recipe=recipe,
             outcome=outcome,
             invocation_counts={},

@@ -143,6 +143,13 @@ class RunStartRequest(_WireModel):
     dataset_split: str = Field(default="train", min_length=1, max_length=200)
     prompt_column: str = Field(default="prompt", min_length=1, max_length=200)
     reference_column: str | None = Field(default=None, min_length=1, max_length=200)
+    evaluation_method: Literal[
+        "normalized_exact_match",
+        "token_f1",
+        "contains_reference",
+        "multiple_choice_accuracy",
+        "numeric_match",
+    ] = "normalized_exact_match"
     sample_cap: int = Field(default=32, ge=1, le=10_000)
     batch_size: int = Field(default=1, ge=1, le=256)
     max_new_tokens: int = Field(default=128, ge=1, le=1_000_000)

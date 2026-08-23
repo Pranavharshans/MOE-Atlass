@@ -138,6 +138,19 @@ deliberately has no SSH onboarding page.
   both the output and the phase-labelled routing events, with all temporary
   hooks removed after success.
 
+### Phase R8 — Exact pairing and task evaluators — landed 2026-08-23
+
+- R8.1 Publish a privacy-preserving digest of the exact tokenized input,
+  reference value, run mode, generation budget, and evaluator for every row.
+- R8.2 Refuse paired intervention evidence when input digests or evaluator
+  identities differ; older baselines without this evidence must be rerun.
+- R8.3 Provide bounded built-in evaluators for normalized exact match, token
+  F1, reference containment, multiple-choice accuracy, and numeric match.
+- R8.4 Expose evaluator selection in the research console and preserve the
+  choice in resolved run metadata.
+- Acceptance: evaluator golden tests, executor evidence tests, paired-input
+  rejection tests, server contracts, and the production frontend build pass.
+
 `WORKS*` means the model-free suite and the real Ling VM path both passed; it
 does not claim every architecture/task head or every GPU placement is
 certified. The VM result is a capability boundary, not a universal performance

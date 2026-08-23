@@ -32,6 +32,7 @@ from typing import Any
 
 from ..core import ComponentKind, stable_digest, validate_stable_identifier
 from ..discovery import DiscoveryReport, scan
+from ..evaluation import EvaluationMethod, evaluate_text
 from ..events import EVENT_SCHEMA_VERSION, ExpertEvent, RoutingEvent, TokenEvent, TokenPhase
 from ..loading import HuggingFaceSource, LoadingPlan, LocalSource
 from ..probe import (
@@ -239,6 +240,7 @@ class TransformersRoutingExecutor:
         capture_routing: bool = True,
         mode: str = "generation",
         max_new_tokens: int = 128,
+        evaluation_method: EvaluationMethod | str = EvaluationMethod.EXACT_MATCH,
     ) -> None:
         if not isinstance(plan, LoadingPlan):
             raise TypeError("plan must be a validated LoadingPlan")
@@ -256,12 +258,21 @@ class TransformersRoutingExecutor:
             or max_new_tokens <= 0
         ):
             raise TypeError("max_new_tokens must be a strict positive integer")
+        try:
+            resolved_evaluation = (
+                evaluation_method
+                if isinstance(evaluation_method, EvaluationMethod)
+                else EvaluationMethod(evaluation_method)
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("unknown evaluation method") from exc
         self._plan = plan
         self._store_token_text = store_token_text
         self._capture_expert_activity = capture_expert_activity
         self._capture_routing = capture_routing
         self._mode = mode
         self._max_new_tokens = max_new_tokens
+        self._evaluation_method = resolved_evaluation
         self._loaded: LoadedModel | None = None
         self._report: DiscoveryReport | None = None
         self._targets: tuple[StructuredRouterTarget, ...] = ()
@@ -838,10 +849,13 @@ class TransformersRoutingExecutor:
         if self._store_token_text and generated_text is not None:
             evidence["output_preview"] = generated_text[:2048]
         if reference is not None and generated_text is not None:
-            normalized_output = " ".join(generated_text.strip().casefold().split())
-            normalized_reference = " ".join(str(reference).strip().casefold().split())
-            evidence["score_name"] = "normalized_exact_match"
-            evidence["task_score"] = float(normalized_output == normalized_reference)
+            evaluation = evaluate_text(
+                generated_text,
+                reference,
+                self._evaluation_method,
+            )
+            evidence["score_name"] = evaluation.method.value
+            evidence["task_score"] = evaluation.score
         return evidence
 
     def __call__(
@@ -986,6 +1000,15 @@ class TransformersRoutingExecutor:
             reference=values.get("reference"),
             captured_generation=captured_generation,
         )
+        input_digest = "sha256:" + stable_digest(
+            {
+                "evaluation_method": self._evaluation_method.value,
+                "max_new_tokens": self._max_new_tokens,
+                "mode": self._mode,
+                "reference": str(values["reference"]) if "reference" in values else None,
+                "token_ids": [token.token_id for token in token_events],
+            }
+        )
         return {
             "schema_version": EXECUTOR_RESULT_SCHEMA_VERSION,
             "event_schema_version": EVENT_SCHEMA_VERSION,
@@ -1001,6 +1024,8 @@ class TransformersRoutingExecutor:
             "routing_scope": (
                 "actual_generation" if captured_generation is not None else "single_forward"
             ),
+            "input_digest": input_digest,
+            "evaluation_method": self._evaluation_method.value,
             "routing_event_count": len(result.routing_events),
             "capability_notes": sorted(result.capability_notes),
             "forward_ms": self._forward_timings_ms[-1],

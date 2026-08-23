@@ -285,6 +285,8 @@ def test_native_forward_mode_skips_capture_and_reports_timing(fake_loader) -> No
 def test_capture_routing_requires_an_exact_boolean() -> None:
     with pytest.raises(TypeError, match="capture_routing must be an exact bool"):
         TransformersRoutingExecutor(_loading_plan(), capture_routing=1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="unknown evaluation method"):
+        TransformersRoutingExecutor(_loading_plan(), evaluation_method="arbitrary-code")
 
 
 def test_generation_output_and_routing_come_from_the_same_model_calls(fake_loader) -> None:
@@ -295,15 +297,24 @@ def test_generation_output_and_routing_come_from_the_same_model_calls(fake_loade
         store_token_text=True,
         capture_expert_activity=True,
         max_new_tokens=3,
+        evaluation_method="token_f1",
     )
     executor.bind_run_key("run-generation")
 
-    result = executor(row_index=0, batch_index=0, values={"prompt": "ab"})
+    result = executor(
+        row_index=0,
+        batch_index=0,
+        values={"prompt": "ab", "reference": "t80 t82"},
+    )
 
     assert model.calls == 3
     assert result["output_mode"] == "generated"
     assert result["output_token_count"] == 3
     assert result["output_preview"] == "t80 t81 t82"
+    assert result["score_name"] == "token_f1"
+    assert result["task_score"] == pytest.approx(0.8)
+    assert result["evaluation_method"] == "token_f1"
+    assert result["input_digest"].startswith("sha256:")
     assert isinstance(result["generation_ms"], float)
     assert result["token_count"] == 4
     assert result["prefill_token_count"] == 2

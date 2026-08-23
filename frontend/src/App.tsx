@@ -35,6 +35,7 @@ type SourceDraft = {
 
 type RunDraft = {
   mode: "generation" | "teacher_forced";
+  evaluationMethod: "normalized_exact_match" | "token_f1" | "contains_reference" | "multiple_choice_accuracy" | "numeric_match";
   sampleCap: string;
   batchSize: string;
   maxNewTokens: string;
@@ -99,6 +100,7 @@ const DEFAULT_SOURCES: SourceDraft = {
 
 const DEFAULT_RUN: RunDraft = {
   mode: "generation",
+  evaluationMethod: "normalized_exact_match",
   sampleCap: "128",
   batchSize: "1",
   maxNewTokens: "128",
@@ -691,6 +693,7 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
         dataset_split: sources.datasetSplit.trim() || "train",
         prompt_column: sources.promptColumn.trim() || "prompt",
         reference_column: sources.referenceColumn.trim() || null,
+        evaluation_method: run.evaluationMethod,
         sample_cap: Number(run.sampleCap),
         batch_size: Number(run.batchSize),
         max_new_tokens: Number(run.maxNewTokens),
@@ -745,6 +748,8 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-3"><p className={`field-hint ${sampleError ? "field-hint-error" : ""}`}>{sampleError ?? "Rows are bounded before execution."}</p><p className={`field-hint ${batchError ? "field-hint-error" : ""}`}>{batchError ?? "Schedule remains deterministic."}</p><p className={`field-hint ${tokenError ? "field-hint-error" : ""}`}>{tokenError ?? "Generation budget is recorded."}</p></div>
             <div className="mt-6"><span className="field-label">Run mode</span><div className="mt-2 inline-flex rounded-xl border border-line bg-ink p-1" role="group" aria-label="Run mode"><button type="button" className={`runner-tab ${run.mode === "generation" ? "runner-tab-active" : ""}`} aria-pressed={run.mode === "generation"} onClick={() => update("mode", "generation")}>Generation</button><button type="button" className={`runner-tab ${run.mode === "teacher_forced" ? "runner-tab-active" : ""}`} aria-pressed={run.mode === "teacher_forced"} onClick={() => update("mode", "teacher_forced")}>Teacher-forced</button></div></div>
+            <label className="field-label mt-6 block" htmlFor="evaluation-method">Task evaluator<select id="evaluation-method" className="input-control mt-2" value={run.evaluationMethod} onChange={(event) => update("evaluationMethod", event.target.value)}><option value="normalized_exact_match">Exact text match</option><option value="token_f1">Token F1</option><option value="contains_reference">Contains reference</option><option value="multiple_choice_accuracy">Multiple-choice accuracy</option><option value="numeric_match">Numeric match</option></select></label>
+            <p className="field-hint mt-2">Scoring is available when the analysis contract maps a reference column.</p>
           </section>
           <section className="research-card">
             <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Evidence and privacy</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">What may be retained</h2></div><ShieldCheck size={19} className="text-cyan" /></div>

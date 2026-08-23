@@ -591,6 +591,7 @@ def _run_worker(
         capture_routing=True,
         mode=payload.get("mode", "generation"),
         max_new_tokens=payload.get("max_new_tokens", 128),
+        evaluation_method=payload.get("evaluation_method", "normalized_exact_match"),
     )
     executor.bind_run_key(specification.run_key)
     try:
