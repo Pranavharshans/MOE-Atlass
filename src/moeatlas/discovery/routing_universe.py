@@ -34,6 +34,66 @@ def _leaf(module_path: str) -> str:
     return module_path.rpartition(".")[2]
 
 
+def _publishes_router_output_width(
+    component: ComponentManifest, expert_count: int
+) -> bool:
+    """Return whether observed parameter shapes prove one router output axis.
+
+    A linear router publishes ``weight[out_features, in_features]`` and may
+    publish ``bias[out_features]``.  Requiring the output dimension, rather
+    than accepting the expert count on any tensor axis, keeps hidden sizes
+    that happen to equal the expert count from becoming false evidence.
+    """
+
+    for name, shape in component.tensor_shapes.items():
+        leaf = name.rpartition(".")[2]
+        if leaf == "weight" and len(shape) >= 2 and shape[0] == expert_count:
+            return True
+        if leaf == "bias" and shape == [expert_count]:
+            return True
+    return False
+
+
+def _resolve_duplicate_router_layers(
+    routers: Sequence[ComponentManifest], expert_count: int | None
+) -> tuple[ComponentManifest, ...]:
+    """Use exact output-shape evidence only when one layer has duplicates.
+
+    Shared-expert scalar gates often sit beside the routed expert gate and are
+    intentionally retained by static discovery.  When exactly one candidate
+    on a duplicated layer publishes an output width equal to the configured
+    routed expert count, it is the only candidate eligible for routed capture.
+    Missing or conflicting evidence remains unresolved so downstream capture
+    fails closed instead of guessing.
+    """
+
+    ordered = tuple(sorted(routers, key=lambda item: item.module_path))
+    if (
+        type(expert_count) is not int
+        or isinstance(expert_count, bool)
+        or expert_count <= 0
+    ):
+        return ordered
+    by_layer: dict[int, list[ComponentManifest]] = {}
+    for router in ordered:
+        if router.layer_index is None:  # excluded by the caller
+            continue
+        by_layer.setdefault(router.layer_index, []).append(router)
+    selected: list[ComponentManifest] = []
+    for layer_index in sorted(by_layer):
+        candidates = by_layer[layer_index]
+        if len(candidates) == 1:
+            selected.extend(candidates)
+            continue
+        shape_matches = [
+            candidate
+            for candidate in candidates
+            if _publishes_router_output_width(candidate, expert_count)
+        ]
+        selected.extend(shape_matches if len(shape_matches) == 1 else candidates)
+    return tuple(sorted(selected, key=lambda item: item.module_path))
+
+
 def has_whole_word_moe_marker(module_path: str) -> bool:
     """Match ``moe`` as a whole word on dotted segments, never CamelCase parts.
 
@@ -50,7 +110,9 @@ def has_whole_word_moe_marker(module_path: str) -> bool:
     return False
 
 
-def trusted_routers(components: Sequence[ComponentManifest]) -> tuple[ComponentManifest, ...]:
+def trusted_routers(
+    components: Sequence[ComponentManifest], *, expert_count: int | None = None
+) -> tuple[ComponentManifest, ...]:
     """Return the router components bound to published structure evidence.
 
     A ROUTER component is trusted when its parent block hosts a published
@@ -58,7 +120,12 @@ def trusted_routers(components: Sequence[ComponentManifest]) -> tuple[ComponentM
     real routing decision point. Reports without such a publication fall back
     to strict name guards: the final path segment must be exactly ``gate`` and
     the router's layer must carry expert-container or routed-expert evidence.
-    The result is ordered by module path and may be empty.
+    If one layer publishes multiple structurally trusted gates, exact linear
+    output-shape evidence may select the sole candidate whose output width
+    equals ``expert_count``.  This separates routed gates from shared-expert
+    scalar gates without relying on family names.  Missing or conflicting
+    shape evidence remains ambiguous.  The result is ordered by module path
+    and may be empty.
     """
 
     routers = [
@@ -77,7 +144,7 @@ def trusted_routers(components: Sequence[ComponentManifest]) -> tuple[ComponentM
         if _parent_path(router.module_path) in container_parents
     ]
     if structured:
-        return tuple(sorted(structured, key=lambda item: item.module_path))
+        return _resolve_duplicate_router_layers(structured, expert_count)
 
     containers = [
         component.module_path
@@ -101,7 +168,7 @@ def trusted_routers(components: Sequence[ComponentManifest]) -> tuple[ComponentM
         ) or router.layer_index in expert_layers
         if hosted:
             fallback.append(router)
-    return tuple(sorted(fallback, key=lambda item: item.module_path))
+    return _resolve_duplicate_router_layers(fallback, expert_count)
 
 
 def bind_moe_layer_key(

@@ -170,7 +170,7 @@ def structured_router_targets(report: DiscoveryReport) -> tuple[StructuredRouter
         )
 
     components = fresh.components
-    routers = trusted_routers(components)
+    routers = trusted_routers(components, expert_count=expert_count)
     if not routers:
         raise StructuredCaptureError(
             "resolution", "structure report does not publish any routed router"

@@ -79,6 +79,7 @@ class _HookedModel:
         num_layers: int = 2,
         reverse_fire_order: bool = False,
         skip_paths: tuple[str, ...] = (),
+        shared_gate_width: int | None = None,
     ) -> None:
         config = SyntheticConfig(num_layers=num_layers)
 
@@ -94,17 +95,22 @@ class _HookedModel:
                     for index in range(4)
                 }
             )
-            return SyntheticMoEBlock(
-                children={
-                    "router": _HookedRouter(
-                        parameters={"weight": type("P", (), {"shape": (4, 8)})()}
-                    ),
-                    "experts": experts,
-                    "shared_expert": SyntheticSharedExpert(
-                        parameters={"weight": type("P", (), {"shape": (8, 8)})()}
-                    ),
-                }
-            )
+            children: dict[str, object] = {
+                "router": _HookedRouter(
+                    parameters={"weight": type("P", (), {"shape": (4, 8)})()}
+                ),
+                "experts": experts,
+                "shared_expert": SyntheticSharedExpert(
+                    parameters={"weight": type("P", (), {"shape": (8, 8)})()}
+                ),
+            }
+            if shared_gate_width is not None:
+                children["shared_expert_gate"] = _HookedRouter(
+                    parameters={
+                        "weight": type("P", (), {"shape": (shared_gate_width, 8)})()
+                    }
+                )
+            return SyntheticMoEBlock(children=children)
 
         self.config = config
         root_children = {
@@ -131,6 +137,11 @@ class _HookedModel:
             for nested_name, nested_module in child.named_modules():
                 full_name = child_name if not nested_name else f"{child_name}.{nested_name}"
                 yield full_name, nested_module
+
+    def named_parameters(self):
+        for child_name, child in self._children.items():
+            for nested_name, parameter in child.named_parameters():
+                yield f"{child_name}.{nested_name}", parameter
 
     def __call__(self, **kwargs: object) -> object:
         self.calls += 1
@@ -176,6 +187,32 @@ def test_targets_bind_layers_experts_and_top_k() -> None:
     assert all(len(target.expert_keys) == 4 for target in targets)
     assert all(target.routed_top_k == 2 for target in targets)
     assert all(target.module_path.endswith(".router") for target in targets)
+
+
+def test_shared_expert_scalar_gate_is_not_a_second_routed_router() -> None:
+    model = _HookedModel(_flat_logits(1), shared_gate_width=1)
+    report = _report(model)
+    discovered_router_paths = [
+        component.module_path
+        for component in report.components
+        if component.kind.value == "router"
+    ]
+    assert "layers.0.router" in discovered_router_paths
+    assert "layers.0.shared_expert_gate" in discovered_router_paths
+
+    targets = structured_router_targets(report)
+
+    assert [target.module_path for target in targets] == [
+        "layers.0.router",
+        "layers.1.router",
+    ]
+
+
+def test_duplicate_full_width_router_candidates_remain_rejected() -> None:
+    model = _HookedModel(_flat_logits(1), shared_gate_width=4)
+
+    with pytest.raises(StructuredCaptureError, match="publishes more than one router"):
+        structured_router_targets(_report(model))
 
 
 def test_missing_facts_are_rejected_before_hooks() -> None:

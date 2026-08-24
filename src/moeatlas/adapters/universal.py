@@ -221,7 +221,7 @@ def _derive_universal_inspection(
         raise ValueError("discovery facts are not complete routing facts")
 
     components = tuple(report.components)
-    routers = trusted_routers(components)
+    routers = trusted_routers(components, expert_count=fact_expert_count)
     if not routers:
         raise ValueError("discovery report has no router universe")
 
