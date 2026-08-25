@@ -11,6 +11,7 @@ import {
 
 type RunEntry = {
   run_key: string;
+  run_name?: string | null;
   state?: string | null;
   token_event_count?: number;
   routing_event_count?: number;
@@ -115,6 +116,12 @@ type InterventionStudy = {
   };
 };
 
+const RUN_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+
+function runLabel(entry: RunEntry | undefined): string {
+  return entry?.run_name ?? (entry ? `legacy-${entry.run_key.slice(-8)}` : "unknown-run");
+}
+
 export function RunsPage() {
   const [state, setState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [entries, setEntries] = useState<RunEntry[]>([]);
@@ -130,6 +137,7 @@ export function RunsPage() {
   const [interventionTargets, setInterventionTargets] = useState<InterventionTargetsResponse | null>(null);
   const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
   const [interventionOperation, setInterventionOperation] = useState<"ablate" | "scale">("ablate");
+  const [interventionRunName, setInterventionRunName] = useState("");
   const [scaleFactor, setScaleFactor] = useState("0.5");
   const [interventionJobId, setInterventionJobId] = useState<string | null>(null);
   const [interventionStatus, setInterventionStatus] = useState<string | null>(null);
@@ -363,6 +371,10 @@ export function RunsPage() {
   }, [selectedRun]);
 
   async function startIntervention() {
+    if (!RUN_NAME_PATTERN.test(interventionRunName.trim())) {
+      setInterventionStatus("Enter a unique run name using letters, numbers, dots, underscores, or hyphens.");
+      return;
+    }
     if (!selectedTargets.length) {
       setInterventionStatus("Select at least one layer × expert target.");
       return;
@@ -374,14 +386,15 @@ export function RunsPage() {
     try {
       setInterventionStatus("Starting an exact baseline-derived run…");
       const response = await postJson<{ job_id: string }>("/api/interventions/start", {
+        run_name: interventionRunName.trim(),
         baseline_run_key: selectedRun,
         operation: interventionOperation,
         targets: [...selectedTargets].sort(),
         factor: interventionOperation === "scale" ? Number(scaleFactor) : null,
       });
       setInterventionJobId(response.job_id);
-    } catch {
-      setInterventionStatus("This baseline cannot run that intervention. Use a fresh completed baseline and discovered targets.");
+    } catch (cause) {
+      setInterventionStatus(cause instanceof Error ? cause.message : "This baseline cannot run that intervention.");
     }
   }
 
@@ -416,7 +429,7 @@ export function RunsPage() {
       <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Runs / Inspect</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white">Trace inventory.</h1><p className="mt-3 max-w-[58ch] text-sm leading-6 text-muted">Routing heatmaps, validation status, and activation artifacts belong to a completed run. The UI never fills missing evidence with a visual guess.</p></div><div className="research-header-meta"><StatusDot tone={state === "unavailable" ? "warn" : "good"} /><span>{state === "loading" ? "Reading workspace…" : state === "unavailable" ? "Workspace offline" : `${entries.length} registered`}</span></div></header>
       {state === "loading" ? <section className="empty-surface"><p className="text-sm text-muted">Reading run catalog…</p></section> : state === "unavailable" ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">Workspace unavailable.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Make the MoEAtlas server available before asking for stored traces.</p></section> : entries.length === 0 ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">No published traces.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Stage a run and let the executor publish its immutable shards. Heatmap cells appear only after routing events are validated.</p></section> : (
         <>
-          <div className="run-selector-row"><label className="field-label" htmlFor="run-selector">Run key<select id="run-selector" className="input-control mt-2" value={selectedRun} onChange={(event) => setSelectedRun(event.target.value)}>{entries.map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key} · {entry.state ?? "unknown"}</option>)}</select></label><div className="runtime-pill"><StatusDot tone={selectedEntry?.state === "completed" ? "good" : "warn"} />{selectedEntry?.state ?? "unknown"}</div><div className="ml-auto flex flex-wrap gap-2"><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=bundle`} download>Export bundle</a><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=csv`} download>CSV</a></div></div>
+          <div className="run-selector-row"><label className="field-label" htmlFor="run-selector">Run<select id="run-selector" className="input-control mt-2" value={selectedRun} onChange={(event) => setSelectedRun(event.target.value)}>{entries.map((entry) => <option key={entry.run_key} value={entry.run_key}>{runLabel(entry)} · {entry.state ?? "unknown"}</option>)}</select><span className="mt-2 block font-mono text-[0.58rem] text-muted">{selectedRun}</span></label><div className="runtime-pill"><StatusDot tone={selectedEntry?.state === "completed" ? "good" : "warn"} />{selectedEntry?.state ?? "unknown"}</div><div className="ml-auto flex flex-wrap gap-2"><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=bundle`} download>Export bundle</a><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=csv`} download>CSV</a></div></div>
           <div className="metric-grid"><MetricCard label="Tokens" value={summary?.token_count == null ? "—" : String(summary.token_count)} detail="validated token rows" /><MetricCard label="Assignments" value={summary?.assignment_count == null ? "—" : String(summary.assignment_count)} detail="selected expert routes" /><MetricCard label="Layers" value={summary?.layer_count == null ? "—" : String(summary.layer_count)} detail="published routing layers" /><MetricCard label="Experts" value={summary?.expert_count == null ? "—" : String(summary.expert_count)} detail="routed expert universe" /></div>
           {interventionEvidence ? <section className="research-card">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-signal">Paired causal evidence</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Baseline versus intervention</h2></div><span className="source-card-type">{interventionEvidence.all_targets_exercised ? "targets exercised" : "target not exercised"}</span></div>
@@ -426,8 +439,8 @@ export function RunsPage() {
             <div className="mt-5 border-t border-line pt-5">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="label-caps text-[0.57rem] text-muted">Replication study</p><p className="mt-2 max-w-[62ch] text-xs leading-5 text-muted">Select repeated runs of the same intervention. Add runs against unrelated experts as negative controls.</p></div>{study ? <span className="source-card-type">{study.claim_status}</span> : null}</div>
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                <label className="field-label" htmlFor="study-runs">Repeated intervention runs<select id="study-runs" className="input-control mt-2 min-h-32" multiple value={studyRuns} onChange={(event) => setStudyRuns(Array.from(event.target.selectedOptions, (option) => option.value))}>{studyCandidates.filter((candidate) => candidate.recipe_fingerprint === interventionEvidence.recipe_fingerprint).map((candidate) => <option key={candidate.intervention_run_key} value={candidate.intervention_run_key}>{candidate.intervention_run_key}</option>)}</select></label>
-                <label className="field-label" htmlFor="control-runs">Negative-control runs<select id="control-runs" className="input-control mt-2 min-h-32" multiple value={controlRuns} onChange={(event) => setControlRuns(Array.from(event.target.selectedOptions, (option) => option.value))}>{studyCandidates.filter((candidate) => candidate.recipe_fingerprint !== interventionEvidence.recipe_fingerprint && (!selectedControlRecipe || candidate.recipe_fingerprint === selectedControlRecipe) && !studyRuns.includes(candidate.intervention_run_key)).map((candidate) => <option key={candidate.intervention_run_key} value={candidate.intervention_run_key}>{candidate.intervention_run_key}</option>)}</select></label>
+                <label className="field-label" htmlFor="study-runs">Repeated intervention runs<select id="study-runs" className="input-control mt-2 min-h-32" multiple value={studyRuns} onChange={(event) => setStudyRuns(Array.from(event.target.selectedOptions, (option) => option.value))}>{studyCandidates.filter((candidate) => candidate.recipe_fingerprint === interventionEvidence.recipe_fingerprint).map((candidate) => <option key={candidate.intervention_run_key} value={candidate.intervention_run_key}>{runLabel(entries.find((entry) => entry.run_key === candidate.intervention_run_key))}</option>)}</select></label>
+                <label className="field-label" htmlFor="control-runs">Negative-control runs<select id="control-runs" className="input-control mt-2 min-h-32" multiple value={controlRuns} onChange={(event) => setControlRuns(Array.from(event.target.selectedOptions, (option) => option.value))}>{studyCandidates.filter((candidate) => candidate.recipe_fingerprint !== interventionEvidence.recipe_fingerprint && (!selectedControlRecipe || candidate.recipe_fingerprint === selectedControlRecipe) && !studyRuns.includes(candidate.intervention_run_key)).map((candidate) => <option key={candidate.intervention_run_key} value={candidate.intervention_run_key}>{runLabel(entries.find((entry) => entry.run_key === candidate.intervention_run_key))}</option>)}</select></label>
               </div>
               <button type="button" className="button-secondary mt-4" onClick={() => void createStudy()}>Build replicated study</button>
               {studyStatus ? <p className="mt-3 text-xs leading-5 text-muted" role="status">{studyStatus}</p> : null}
@@ -439,7 +452,7 @@ export function RunsPage() {
               {entries.length > 1 ? <div className="mt-5 border-t border-line pt-4">
                 <div className="flex flex-wrap items-end gap-3">
                   <label className="field-label min-w-[15rem]" htmlFor="comparison-run">Compare against
-                    <select id="comparison-run" className="input-control mt-2" value={comparisonRun} onChange={(event) => setComparisonRun(event.target.value)}><option value="">Select baseline</option>{entries.filter((entry) => entry.run_key !== selectedRun).map((entry) => <option key={entry.run_key} value={entry.run_key}>{entry.run_key}</option>)}</select>
+                    <select id="comparison-run" className="input-control mt-2" value={comparisonRun} onChange={(event) => setComparisonRun(event.target.value)}><option value="">Select baseline</option>{entries.filter((entry) => entry.run_key !== selectedRun).map((entry) => <option key={entry.run_key} value={entry.run_key}>{runLabel(entry)}</option>)}</select>
                   </label>
                   <label className="field-label" htmlFor="comparison-metric">Delta
                     <select id="comparison-metric" className="input-control mt-2" value={comparisonMetric} onChange={(event) => setComparisonMetric(event.target.value as typeof comparisonMetric)}><option value="count_deltas">Counts</option><option value="share_deltas">Shares</option><option value="ratio_deltas">Ratios</option></select>
@@ -469,6 +482,7 @@ export function RunsPage() {
                     </select>
                   </label>
                   <p className="mt-2 text-[0.65rem] leading-5 text-muted">Select one or more independently controllable experts. Hold Ctrl or Command to select several.</p>
+                  <label className="field-label mt-3 block" htmlFor="intervention-run-name">New run name<input id="intervention-run-name" className="input-control mt-2" value={interventionRunName} onChange={(event) => setInterventionRunName(event.target.value)} placeholder={`${runLabel(selectedEntry)}-ablation`} autoComplete="off" /></label>
                   <label className="field-label mt-3" htmlFor="intervention-operation">Operation
                     <select id="intervention-operation" className="input-control mt-2" value={interventionOperation} onChange={(event) => setInterventionOperation(event.target.value as typeof interventionOperation)}><option value="ablate">Disable output</option><option value="scale">Scale output</option></select>
                   </label>

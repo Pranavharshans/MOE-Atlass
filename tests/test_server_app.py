@@ -112,6 +112,7 @@ def test_runs_listing_is_bounded_and_sorted(
     from tests.test_run_contracts import data_provenance, model_provenance
 
     specification = RunSpecification(
+        run_name="readable-baseline",
         model=model_provenance(),
         data=data_provenance(),
     )
@@ -122,6 +123,18 @@ def test_runs_listing_is_bounded_and_sorted(
     document = response.json()
     assert document["count"] == 1
     assert document["entries"][0]["state"] == "planned"
+    assert document["entries"][0]["run_name"] == "readable-baseline"
+
+    duplicate = client.post(
+        "/api/runs/start",
+        json={
+            "run_name": "READABLE-BASELINE",
+            "model_id": "org/model",
+            "dataset_id": "org/data",
+        },
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == "run name is already in use"
 
     empty_state = client.get("/api/runs", params={"state": "completed"})
     assert empty_state.status_code == 200

@@ -31,6 +31,7 @@ class WorkspaceResponse(_WireModel):
 
 class RunEntryResponse(_WireModel):
     run_key: str
+    run_name: str | None = None
     state: str | None = None
     attempt: int = 1
     shard_count: int = 0
@@ -56,6 +57,7 @@ class RoutingShardEntryResponse(_WireModel):
 
 class RunDetailResponse(_WireModel):
     run_key: str
+    run_name: str | None = None
     state: str | None = None
     attempt: int = 1
     specification_fingerprint: str | None = None
@@ -135,6 +137,7 @@ class DiscoveryRequest(_WireModel):
 class RunStartRequest(_WireModel):
     """Bounded live run intent accepted by the local control plane."""
 
+    run_name: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
     model_id: str = Field(min_length=3, max_length=500)
     model_revision: str = Field(default="main", min_length=1, max_length=200)
     dataset_id: str = Field(min_length=3, max_length=500)
@@ -267,6 +270,7 @@ class InterventionRecipeResponse(_WireModel):
 class InterventionStartRequest(_WireModel):
     """One real baseline-derived expert intervention request."""
 
+    run_name: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
     baseline_run_key: str = Field(min_length=5, max_length=80)
     operation: Literal["ablate", "scale"] = "ablate"
     targets: tuple[str, ...] = Field(min_length=1, max_length=64)

@@ -183,6 +183,7 @@ def test_record_run_record_preserves_counts(tmp_path: Path) -> None:
     spec = run_specification()
     entry_with_counts = RunRegistryEntry(
         run_key=spec.run_key,
+        run_name="preserved-name",
         specification_fingerprint=spec.run_key,
         state="planned",
         attempt=1,
@@ -201,6 +202,7 @@ def test_record_run_record_preserves_counts(tmp_path: Path) -> None:
     assert entry.token_event_count == 100
     assert entry.routing_event_count == 20
     assert entry.state == "running"
+    assert entry.run_name == "preserved-name"
 
 
 # ---------------------------------------------------------------------------

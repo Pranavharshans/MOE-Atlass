@@ -111,6 +111,7 @@ def test_run_key_is_content_addressed_and_metadata_insensitive() -> None:
         {"tags": ("different",)},
         {"created_at": "1999-01-01T00:00:00Z"},
         {"workspace": "elsewhere"},
+        {"run_name": "readable-baseline"},
         {"execution": ExecutionEnvironment(python_version="3.11")},
     ):
         assert run_specification(**metadata).run_key == spec.run_key
@@ -118,6 +119,15 @@ def test_run_key_is_content_addressed_and_metadata_insensitive() -> None:
     assert run_specification(
         generation=GenerationConfig(seed=8, temperature=0.7)
     ).run_key != spec.run_key
+
+
+@pytest.mark.parametrize(
+    "name",
+    ("", "has spaces", "../escape", "-starts-with-symbol", "x" * 81),
+)
+def test_run_name_rejects_unsafe_folder_names(name: str) -> None:
+    with pytest.raises(ValidationError):
+        run_specification(run_name=name)
 
 
 def test_run_key_is_stable_across_hash_seeds() -> None:

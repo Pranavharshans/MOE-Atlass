@@ -189,6 +189,7 @@ def test_real_intervention_route_reconstructs_a_completed_baseline(
 
     def fake_run(workspace, payload, *, cancel, report_progress, **kwargs):
         del workspace, cancel, kwargs
+        assert payload["run_name"] == "baseline-ablation"
         assert payload["baseline_run_key"] == specification.run_key
         assert payload["model_revision"] == "a" * 40
         assert payload["intervention"]["operation"] == "ablate"
@@ -210,6 +211,7 @@ def test_real_intervention_route_reconstructs_a_completed_baseline(
     created = client.post(
         "/api/interventions/start",
         json={
+            "run_name": "baseline-ablation",
             "baseline_run_key": specification.run_key,
             "operation": "ablate",
             "targets": [selected],
@@ -263,6 +265,7 @@ def test_optional_overhead_can_be_skipped_without_cancelling_capture(
     created = client.post(
         "/api/runs/start",
         json={
+            "run_name": "overhead-test",
             "model_id": "org/model",
             "dataset_id": "org/data",
             "measure_capture_overhead": True,

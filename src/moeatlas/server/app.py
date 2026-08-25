@@ -369,12 +369,20 @@ def create_app(
         from ..services import open_workspace
 
         try:
-            open_workspace(bound_workspace)
+            workspace_snapshot = open_workspace(bound_workspace)
         except Exception as exc:
             raise _not_initialized() from exc
         payload = request.model_dump(mode="python")
         resume_from: str | None = None
         resume_job_id = payload.get("resume_job_id")
+        named_folder = Path(bound_workspace) / "runs" / request.run_name
+        name_registered = any(
+            entry.run_name is not None
+            and entry.run_name.casefold() == request.run_name.casefold()
+            for entry in workspace_snapshot.catalog.runs
+        )
+        if resume_job_id is None and (name_registered or named_folder.exists()):
+            raise HTTPException(status_code=409, detail="run name is already in use")
         if resume_job_id:
             prior = jobs.snapshot(resume_job_id)
             if prior is None or prior["kind"] != "run" or prior["state"] != "cancelled":
@@ -547,6 +555,7 @@ def create_app(
             entries=tuple(
                 RunEntryResponse(
                     run_key=entry.run_key,
+                    run_name=entry.run_name,
                     state=entry.state,
                     attempt=entry.attempt,
                     shard_count=entry.shard_count,
@@ -571,6 +580,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="run shards are unavailable") from exc
         return RunDetailResponse(
             run_key=entry.run_key,
+            run_name=entry.run_name,
             state=entry.state,
             attempt=entry.attempt,
             specification_fingerprint=entry.specification_fingerprint,
@@ -965,6 +975,22 @@ def create_app(
     def start_intervention(request: InterventionStartRequest) -> JobCreatedResponse:
         baseline_run_key = _validated_run_key(request.baseline_run_key)
         workspace_path, entry = _catalog_entry(baseline_run_key)
+        named_folder = workspace_path / "runs" / request.run_name
+        if named_folder.exists():
+            raise HTTPException(status_code=409, detail="run name is already in use")
+        try:
+            from ..services import open_workspace
+
+            if any(
+                item.run_name is not None
+                and item.run_name.casefold() == request.run_name.casefold()
+                for item in open_workspace(workspace_path).catalog.runs
+            ):
+                raise HTTPException(status_code=409, detail="run name is already in use")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _not_initialized() from exc
         if entry.state != "completed":
             raise HTTPException(status_code=409, detail="baseline run must be completed")
         try:
@@ -1014,6 +1040,7 @@ def create_app(
 
         payload = {
             **metadata["request"],
+            "run_name": request.run_name,
             "baseline_run_key": baseline_run_key,
             "intervention": recipe.to_dict(),
             "resume_job_id": None,

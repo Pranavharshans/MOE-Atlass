@@ -29,7 +29,7 @@ from pydantic import (
 )
 
 from ..core import StrictManifestModel, VersionedManifest, validate_stable_identifier
-from ..runs import RunState
+from ..runs import RunState, validate_run_name
 from .routing_inventory import list_routing_runs
 
 WORKSPACE_CATALOG_SCHEMA_VERSION = "1.0"
@@ -70,6 +70,7 @@ class RunRegistryEntry(StrictManifestModel):
     """One registered run in a workspace catalog."""
 
     run_key: StrictStr
+    run_name: StrictStr | None = None
     specification_fingerprint: StrictStr | None = None
     state: StrictStr | None = None
     attempt: StrictInt = Field(default=1, ge=1)
@@ -88,6 +89,11 @@ class RunRegistryEntry(StrictManifestModel):
         # run key the storage layer already committed.
         validate_stable_identifier(value, field_name="run_key")
         return value
+
+    @field_validator("run_name")
+    @classmethod
+    def _check_run_name(cls, value: str | None) -> str | None:
+        return None if value is None else validate_run_name(value)
 
     @field_validator("specification_fingerprint")
     @classmethod
@@ -135,6 +141,9 @@ class WorkspaceCatalog(VersionedManifest):
             raise ValueError("runs must be sorted ascending by run_key")
         if len(set(keys)) != len(keys):
             raise ValueError("runs must have unique run_key values")
+        names = [entry.run_name.casefold() for entry in self.runs if entry.run_name]
+        if len(set(names)) != len(names):
+            raise ValueError("runs must have unique run_name values")
         return self
 
 
@@ -214,11 +223,22 @@ def upsert_run_entry(
     if old is not None:
         # Registration time is immutable history: an update never overrides it.
         data["registered_at"] = old.registered_at
+        if old.run_name is not None and data["run_name"] != old.run_name:
+            raise WorkspaceCatalogError("conflict", "a run cannot be renamed")
+        if data["run_name"] is None:
+            data["run_name"] = old.run_name
         if data["updated_at"] is None:
             data["updated_at"] = old.updated_at
     if timestamp is not None:
         data["updated_at"] = timestamp
     merged = RunRegistryEntry.model_validate(data)
+    if merged.run_name is not None and any(
+        item.run_key != merged.run_key
+        and item.run_name is not None
+        and item.run_name.casefold() == merged.run_name.casefold()
+        for item in catalog.runs
+    ):
+        raise WorkspaceCatalogError("conflict", "run_name is already in use")
     by_key = dict(existing)
     by_key[merged.run_key] = merged
     result = WorkspaceCatalog(
@@ -269,6 +289,7 @@ def rebuild_catalog(
         old = existing.get(summary.run_key)
         refreshed = RunRegistryEntry(
             run_key=summary.run_key,
+            run_name=old.run_name if old is not None else None,
             specification_fingerprint=(
                 old.specification_fingerprint if old is not None else None
             ),

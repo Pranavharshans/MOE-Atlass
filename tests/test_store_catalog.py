@@ -130,6 +130,20 @@ def test_upsert_add_update_and_idempotence(tmp_path: Path) -> None:
     assert catalog_path(ws).stat().st_mtime_ns == stat_before
 
 
+def test_catalog_enforces_unique_immutable_run_names(tmp_path: Path) -> None:
+    ws = _workspace(tmp_path)
+    initialize_catalog(ws)
+    upsert_run_entry(ws, entry(run_name="cyber-baseline"))
+
+    with pytest.raises(WorkspaceCatalogError, match="cannot be renamed"):
+        upsert_run_entry(ws, entry(run_name="renamed"))
+    with pytest.raises(WorkspaceCatalogError, match="already in use"):
+        upsert_run_entry(
+            ws,
+            RunRegistryEntry(run_key=_RUN_KEY_B, run_name="CYBER-BASELINE"),
+        )
+
+
 def test_upsert_max_runs_conflict(tmp_path: Path) -> None:
     ws = _workspace(tmp_path)
     initialize_catalog(ws)

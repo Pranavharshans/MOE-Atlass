@@ -91,6 +91,7 @@ def register_run(
         )
     entry = RunRegistryEntry(
         run_key=specification.run_key,
+        run_name=specification.run_name,
         specification_fingerprint=specification.run_key,
         state="planned",
         attempt=1,
@@ -136,6 +137,7 @@ def record_run_record(
         )
         entry = RunRegistryEntry(
             run_key=record.run_key,
+            run_name=old.run_name,
             specification_fingerprint=fingerprint,
             state=record.state.value if record.state else None,
             attempt=record.attempt,

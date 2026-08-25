@@ -37,6 +37,22 @@ def test_run_metadata_round_trips_idempotently(tmp_path: Path) -> None:
     assert document["specification"]["run_key"] == specification.run_key
 
 
+def test_named_run_metadata_uses_the_readable_workspace_folder(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    initialize_workspace(workspace)
+    specification = run_specification(
+        workspace=str(workspace), run_name="v4-cybersecurity-baseline"
+    )
+
+    published = publish_run_metadata(workspace, specification, {"sample_cap": 4})
+
+    assert published == workspace / "runs" / "v4-cybersecurity-baseline" / "run.json"
+    assert read_run_metadata(workspace, specification.run_key)["request"] == {
+        "sample_cap": 4
+    }
+
+
 def test_run_metadata_rejects_conflicting_reconstruction_request(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

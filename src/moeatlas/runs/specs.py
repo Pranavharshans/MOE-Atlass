@@ -45,11 +45,23 @@ RUN_SPEC_SCHEMA_VERSION = "1.0"
 _RUN_KEY = re.compile(r"^run:([0-9a-f]{64})$")
 _PLAN_ID = re.compile(r"^plan:([0-9a-f]{64})$")
 _DIGEST = re.compile(r"^sha256:([0-9a-f]{64})$")
+_RUN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 _MAX_TEXT = 1_000_000
 _MAX_LOCATION = 500
 _MAX_LABEL = 200
 _MAX_MESSAGE = 500
+
+
+def validate_run_name(value: str, *, field_name: str = "run_name") -> str:
+    """Validate a readable run label that is also safe as one folder name."""
+
+    if type(value) is not str or _RUN_NAME.fullmatch(value) is None:
+        raise ValueError(
+            f"{field_name} must be 1-80 characters using letters, numbers, '.', '_', or '-', "
+            "and must start with a letter or number"
+        )
+    return value
 
 
 class RunInputKind(str, Enum):
@@ -443,13 +455,14 @@ class RunSpecification(VersionedManifest):
     """Immutable, content-addressed intent for exactly one run.
 
     The ``run_key`` is derived from every identity-bearing group below.
-    ``workspace``, ``tags``, ``created_at``, ``created_by``, and the observed
+    ``run_name``, ``workspace``, ``tags``, ``created_at``, ``created_by``, and the observed
     ``execution`` environment are metadata and do not affect the key.
     """
 
     manifest_type: ClassVar[str] = "run_specification"
 
     run_key: StrictStr = ""
+    run_name: StrictStr | None = None
     workspace: StrictStr | None = None
     tags: tuple[StrictStr, ...] = ()
     created_at: StrictStr | None = Field(default=None, max_length=_MAX_LABEL)
@@ -476,6 +489,11 @@ class RunSpecification(VersionedManifest):
         if value is None:
             return None
         return _bounded_label(value, field_name="workspace", maximum=_MAX_LABEL)
+
+    @field_validator("run_name")
+    @classmethod
+    def _safe_run_name(cls, value: str | None) -> str | None:
+        return None if value is None else validate_run_name(value)
 
     def _identity_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {

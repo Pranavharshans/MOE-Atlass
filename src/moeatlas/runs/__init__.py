@@ -43,6 +43,7 @@ from .specs import (
     make_run_key,
     parse_probe_plan_id,
     parse_run_key,
+    validate_run_name,
 )
 
 __all__ = [
@@ -78,4 +79,5 @@ __all__ = [
     "parse_probe_plan_id",
     "parse_run_key",
     "transition",
+    "validate_run_name",
 ]

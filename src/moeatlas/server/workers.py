@@ -392,7 +392,9 @@ def _run_worker(
     if (recipe is None) != (baseline_run_key is None):
         raise ValueError("intervention recipe and baseline run key must be provided together")
 
-    def make_specification(*, capture_level: int, expert_activity: bool) -> RunSpecification:
+    def make_specification(
+        *, capture_level: int, expert_activity: bool, run_name: str | None
+    ) -> RunSpecification:
         probe_payload = {
             "model": plan.plan_id,
             "capture_level": capture_level,
@@ -401,6 +403,7 @@ def _run_worker(
             "intervention_recipe": recipe.fingerprint if recipe is not None else None,
         }
         return RunSpecification(
+            run_name=run_name,
             workspace=workspace,
             created_by="local-server",
             model=model_provenance,
@@ -433,6 +436,7 @@ def _run_worker(
     specification = make_specification(
         capture_level=5,
         expert_activity=bool(payload.get("capture_expert_activity", True)),
+        run_name=payload.get("run_name"),
     )
     _publish_run_policy(workspace, specification.run_key, specification.privacy)
     resolved_request = {
@@ -504,7 +508,9 @@ def _run_worker(
             "delta_ms": None,
             "delta_percent": None,
         }
-        native_specification = make_specification(capture_level=0, expert_activity=False)
+        native_specification = make_specification(
+            capture_level=0, expert_activity=False, run_name=None
+        )
         overhead_report["native_run_key"] = native_specification.run_key
         native_executor = executor_type(
             plan,

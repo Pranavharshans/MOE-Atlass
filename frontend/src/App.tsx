@@ -45,6 +45,7 @@ type SourceDraft = {
 };
 
 type RunDraft = {
+  runName: string;
   mode: "generation" | "teacher_forced";
   evaluationMethod: "normalized_exact_match" | "token_f1" | "contains_reference" | "multiple_choice_accuracy" | "numeric_match";
   sampleCap: string;
@@ -79,6 +80,7 @@ const DEFAULT_SOURCES: SourceDraft = {
 };
 
 const DEFAULT_RUN: RunDraft = {
+  runName: "",
   mode: "generation",
   evaluationMethod: "normalized_exact_match",
   sampleCap: "128",
@@ -114,6 +116,14 @@ function validateHubId(value: string, label: string): string | null {
   const parts = normalized.split("/");
   if (parts.length !== 2 || parts.some((part) => !part)) {
     return "Use the Hugging Face form namespace/repository.";
+  }
+  return null;
+}
+
+function validateRunName(value: string): string | null {
+  if (!value.trim()) return "Run name is required.";
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(value.trim())) {
+    return "Use 1–80 letters, numbers, dots, underscores, or hyphens; start with a letter or number.";
   }
   return null;
 }
@@ -541,7 +551,8 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
   const sampleError = validatePositiveSetting(run.sampleCap, "Sample cap", 1_000_000);
   const batchError = validatePositiveSetting(run.batchSize, "Batch size", 4096);
   const tokenError = validatePositiveSetting(run.maxNewTokens, "Max new tokens", 1_000_000);
-  const ready = !modelError && !datasetError && !sampleError && !batchError && !tokenError;
+  const runNameError = validateRunName(run.runName);
+  const ready = !modelError && !datasetError && !sampleError && !batchError && !tokenError && !runNameError;
   const running = job?.state === "queued" || job?.state === "running";
   const overhead = (job?.result?.capture_overhead ?? null) as Record<string, unknown> | null;
   const overheadRunning = running && job?.progress.stage === "overhead";
@@ -557,6 +568,7 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
     window.localStorage.setItem("moeatlas-run", JSON.stringify(run));
     try {
       const created = await postJson<{ job_id: string }>("/api/runs/start", {
+        run_name: run.runName.trim(),
         model_id: sources.modelId.trim(),
         model_revision: sources.modelRevision.trim() || "main",
         dataset_id: sources.datasetId.trim(),
@@ -582,8 +594,8 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
       });
       window.localStorage.setItem("moeatlas-run-job", created.job_id);
       setJobId(created.job_id);
-    } catch {
-      setRequestError("The capture job could not be started. Check the server and dataset prompt column.");
+    } catch (cause) {
+      setRequestError(cause instanceof Error ? cause.message : "The capture job could not be started.");
     } finally {
       setStarting(false);
     }
@@ -611,6 +623,11 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
       <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Run / Capture</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Set the capture budget.</h1><p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">This starts a real server-side model run over the selected dataset. Progress, checkpoints, routing, and activation evidence remain tied to the resulting run key.</p></div><div className="research-header-meta"><StatusDot tone={job?.state === "failed" ? "warn" : ready ? "good" : "quiet"} /><span>{job?.state === "running" ? job.progress.stage === "overhead" ? `Native baseline · ${job.progress.completed}/${job.progress.total ?? "?"}` : `${job.progress.stage} · ${job.progress.completed}/${job.progress.total ?? "?"}` : job?.state === "completed" ? "Capture complete" : job?.state === "cancelled" ? "Capture cancelled" : ready ? "Ready to run" : "Invalid budget"}</span></div></header>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <main className="space-y-5">
+          <section className="research-card">
+            <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Run identity</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Give this run a readable name</h2></div><GitBranch size={19} className="text-cyan" /></div>
+            <label className="field-label mt-6 block" htmlFor="run-name">Run name<input id="run-name" className={`input-control mt-2 ${runNameError ? "input-control-error" : ""}`} value={run.runName} onChange={(event) => update("runName", event.target.value)} placeholder="v4-cybersecurity-baseline" autoComplete="off" /></label>
+            <p className={`field-hint mt-2 ${runNameError ? "field-hint-error" : ""}`}>{runNameError ?? "This appears in Runs and becomes the folder name under workspace/runs/."}</p>
+          </section>
           <section className="research-card">
             <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Execution budget</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Rows and generation</h2></div><Lightning size={19} className="text-signal" /></div>
             <div className="mt-6 grid gap-4 sm:grid-cols-3">
