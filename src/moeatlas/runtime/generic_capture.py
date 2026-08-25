@@ -18,6 +18,10 @@ absent.
 Score normalization is driven by the model config where determinable (a
 ``score_function`` of ``softmax`` or ``sigmoid``); when it is not determinable,
 raw logits are emitted and a capability note is returned alongside the events.
+Packed router scores are classified from their observed invariants rather than
+their tuple position: only complete rows in the unit interval that sum to one
+are published as probabilities. Scaled native scores remain weights, including
+DeepSeek V4-style payloads whose valid routed contribution weights exceed one.
 The module imports no model stack and downloads nothing; real checkpoint and
 payload equivalence remain deferred to the final VM phase.
 """
@@ -443,6 +447,31 @@ def _softmax_row(values: list[float]) -> list[float]:
     return [exponent / total for exponent in exponents]
 
 
+def _packed_scores_are_probabilities(
+    scores: list[list[float]], *, top_k: int
+) -> bool:
+    """Return whether every selected score row proves probability semantics.
+
+    Tuple position and model family are not evidence that routed scores are
+    probabilities.  Some routers apply a contribution scaling factor after
+    selecting experts, so their valid weights can exceed one.  A packed payload
+    earns the stronger probability claim only when every complete top-k row is
+    non-negative, bounded by one, and normalized within a strict numerical
+    tolerance.  Otherwise callers retain the values as weights without losing
+    the routing assignments.
+    """
+
+    for row in scores:
+        if len(row) < top_k:
+            return False
+        selected = row[:top_k]
+        if any(value < 0.0 or value > 1.0 for value in selected):
+            return False
+        if not math.isclose(sum(selected), 1.0, rel_tol=1e-5, abs_tol=1e-6):
+            return False
+    return True
+
+
 def decode_structured_payload(
     payload: object,
     *,
@@ -452,15 +481,16 @@ def decode_structured_payload(
 ) -> tuple[tuple[RoutingEvent, ...], str | None]:
     """Decode one opaque router hook payload into generic top-k event rows.
 
-    Packed ``(logits, scores, indices)`` tuples use their native scores as
-    probabilities.  Ling-style ``(indices, weights, logits)`` tuples preserve
-    native weights separately and never relabel them as probabilities: router
-    implementations commonly apply a scaling factor, so a value above one is
-    valid weight evidence but not a probability claim. Flat ``[tokens,
-    experts]`` logit matrices are reduced with deterministic tie-rejecting
-    top-k whose score columns follow the config's declared ``score_function``
-    when present. The optional second return value is a capability note
-    describing evidence limits.
+    Packed ``(logits, scores, indices)`` tuples publish probabilities only when
+    every observed top-k score row proves the probability invariants. Otherwise
+    their native scores are retained as weights. Ling-style ``(indices,
+    weights, logits)`` tuples likewise preserve native weights separately and
+    never relabel them as probabilities: router implementations commonly apply
+    a scaling factor, so a value above one is valid weight evidence but not a
+    probability claim. Flat ``[tokens, experts]`` logit matrices are reduced
+    with deterministic tie-rejecting top-k whose score columns follow the
+    config's declared ``score_function`` when present. The optional second
+    return value is a capability note describing evidence limits.
     """
 
     if type(payload) is tuple:
@@ -536,6 +566,13 @@ def decode_structured_payload(
                 "packed router payloads must carry exactly one row per captured token",
             )
         top_k = target.routed_top_k
+        if any(len(row) < top_k for row in scores) or any(
+            len(row) < top_k for row in indices
+        ):
+            raise StructuredCaptureError(
+                "decode", "packed router payloads do not carry the discovered routed top-k"
+            )
+        probability_scores = _packed_scores_are_probabilities(scores, top_k=top_k)
         events: list[RoutingEvent] = []
         for position, token in enumerate(token_events):
             for rank in range(top_k):
@@ -558,12 +595,18 @@ def decode_structured_payload(
                         rank=rank,
                         expert_key=target.expert_keys[native_index],
                         router_logit=logit,
-                        probability=score,
+                        probability=score if probability_scores else None,
                         weight=score,
                         selected=True,
                     )
                 )
-        return tuple(events), None
+        note = None
+        if not probability_scores:
+            note = (
+                "packed router scores were retained as weights because probability "
+                "normalization was not proven"
+            )
+        return tuple(events), note
 
     logits = _materialize_floats(payload)
     token_count = len(token_events)

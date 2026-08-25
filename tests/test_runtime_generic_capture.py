@@ -303,6 +303,43 @@ def test_packed_payload_decodes_native_indices_and_scores() -> None:
     assert result.capability_notes == ()
 
 
+def test_packed_payload_preserves_scaled_scores_as_weights() -> None:
+    """DeepSeek V4-style scaled scores are weights, not probabilities."""
+
+    logits = [[1.0, 2.0, 3.0, 4.0]]
+    scores = [[1.4, 0.6]]
+    indices = [[3, 0]]
+    model = _HookedModel((logits, scores, indices))
+    result = run_structured_routing_forward(
+        model, _report(model), _tokens(1), {"input_ids": [[10]]}, max_events=32
+    )
+    layer0 = sorted(result.routing_events[:2], key=lambda event: event.rank)
+    assert [event.weight for event in layer0] == pytest.approx([1.4, 0.6])
+    assert all(event.probability is None for event in layer0)
+    assert any("retained as weights" in note for note in result.capability_notes)
+
+
+def test_packed_payload_requires_every_row_to_prove_probability_semantics() -> None:
+    logits = [[1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0]]
+    scores = [[0.7, 0.3], [0.8, 0.1]]
+    indices = [[3, 0], [0, 1]]
+    model = _HookedModel((logits, scores, indices))
+    result = run_structured_routing_forward(
+        model, _report(model), _tokens(2), {"input_ids": [[10, 11]]}, max_events=32
+    )
+    assert all(event.probability is None for event in result.routing_events)
+    assert all(event.weight is not None for event in result.routing_events)
+    assert any("normalization was not proven" in note for note in result.capability_notes)
+
+
+def test_packed_payload_rejects_short_top_k_rows_before_event_construction() -> None:
+    model = _HookedModel(([[1.0, 2.0, 3.0, 4.0]], [[1.0]], [[3]]))
+    with pytest.raises(StructuredCaptureError, match="discovered routed top-k"):
+        run_structured_routing_forward(
+            model, _report(model), _tokens(1), {"input_ids": [[10]]}, max_events=32
+        )
+
+
 def test_ling_style_payload_preserves_scaled_weights_without_probability_claims() -> None:
     # Ling-3.0-tiny emits (indices, weights, logits).  Its routed weights can
     # include a model-specific scaling factor and therefore are not guaranteed
