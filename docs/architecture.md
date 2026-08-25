@@ -40,10 +40,12 @@ complete; each will arrive with a testable feature and a documented contract.
 
 The foundation requires only Pydantic v2 for strict, JSON-compatible schema
 validation and does not import model libraries. PyTorch, Transformers,
-Accelerate, and safetensors are optional dependencies in the `model` extra.
-They remain lazy imports behind explicit resolved loading calls. This
-keeps package import, docs, and tests usable on a CPU-only machine and makes it
-impossible for the baseline test command to silently download a checkpoint.
+Accelerate, safetensors, and the Hugging Face `datasets` reader are optional
+dependencies in the `model` extra; `server` includes `datasets` as well because
+its run worker accepts `hf_datasets` inputs. They remain lazy imports behind
+explicit resolved loading or dataset-reading calls. This keeps package import,
+docs, and tests usable on a CPU-only machine and makes it impossible for the
+baseline test command to silently download a checkpoint or dataset.
 
 The eventual runtime will prefer native PyTorch module boundaries and native
 router outputs, then use adapters for packed/fused or architecture-specific

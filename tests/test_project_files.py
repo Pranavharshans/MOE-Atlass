@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -7,6 +8,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProjectFilesTests(unittest.TestCase):
+    def test_runtime_extras_install_hf_dataset_reader(self) -> None:
+        metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
+        extras = metadata["project"]["optional-dependencies"]
+        for extra in ("model", "server"):
+            with self.subTest(extra=extra):
+                self.assertTrue(
+                    any(requirement.startswith("datasets>=") for requirement in extras[extra]),
+                    f"{extra} extra must install the hf_datasets reader",
+                )
+        # The model-free contributor environment remains intentionally small.
+        self.assertFalse(any(item.startswith("datasets>=") for item in extras["dev"]))
+
     def test_packaging_and_deferred_validation_docs_are_present(self) -> None:
         required_files = (
             ROOT / "pyproject.toml",

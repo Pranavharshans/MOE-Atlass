@@ -71,18 +71,13 @@ uv sync --extra dev --extra model --extra server --extra store
 uv run moeatlas doctor
 ```
 
-For Hugging Face datasets, install the optional dataset runtime in the same
-environment:
-
-```bash
-uv pip install datasets
-```
+The `model` and `server` extras include the Hugging Face `datasets` runtime
+used by `hf_datasets` run inputs.
 
 Using pip:
 
 ```bash
 python -m pip install -e '.[model,server,store]'
-python -m pip install datasets
 ```
 
 ## Start the research console

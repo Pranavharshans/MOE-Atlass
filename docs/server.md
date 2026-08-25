@@ -18,8 +18,10 @@ response exposes only a safe diagnostics reference; the
 the running server and returns the bounded sanitized entries. Diagnostic write
 failures never change the job outcome or bypass model cleanup.
 
-FastAPI is an optional dependency (`pip install moeatlas[server]`). The
-wire DTOs in `moeatlas.server.dto` stay importable without it;
+FastAPI and the Hugging Face dataset reader are optional dependencies
+(`pip install moeatlas[server]`). The server extra includes both because
+`POST /api/runs/start` can stream an `hf_datasets` input. The wire DTOs in
+`moeatlas.server.dto` stay importable without FastAPI;
 `create_app()` raises the fixed
 `server dependency 'fastapi' is not installed` failure when the extra is
 missing.
