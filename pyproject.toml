@@ -26,6 +26,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    # Transformers loads optimized MoE kernels such as DeepGEMM lazily from
+    # the Hugging Face Kernel Hub.  Keep the lightweight loader in the base
+    # installation so a normal ``pip install -e .`` is sufficient on GPU VMs.
+    "kernels~=0.16.0",
     "pydantic>=2.7,<3",
 ]
 
