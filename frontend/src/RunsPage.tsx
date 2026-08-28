@@ -16,6 +16,8 @@ type RunEntry = {
   token_event_count?: number;
   routing_event_count?: number;
 };
+type RunGroupChild = { slug: string; child_run_name: string; run_key?: string | null; state: string; dataset_id: string; dataset_config?: string | null };
+type RunGroup = { group_name: string; state: string; children: RunGroupChild[] };
 
 type RunSummary = {
   status: string;
@@ -125,6 +127,7 @@ function runLabel(entry: RunEntry | undefined): string {
 export function RunsPage() {
   const [state, setState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [entries, setEntries] = useState<RunEntry[]>([]);
+  const [runGroups, setRunGroups] = useState<RunGroup[]>([]);
   const [selectedRun, setSelectedRun] = useState("");
   const [summary, setSummary] = useState<RunSummary | null>(null);
   const [summaryState, setSummaryState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
@@ -165,6 +168,15 @@ export function RunsPage() {
         setState("ready");
       })
       .catch((cause) => { if (cause instanceof DOMException && cause.name === "AbortError") return; setState("unavailable"); });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/run-groups", { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then((response) => response.ok ? response.json() as Promise<{ groups?: RunGroup[] }> : Promise.reject(new Error("unavailable")))
+      .then((document) => setRunGroups(Array.isArray(document.groups) ? document.groups : []))
+      .catch((cause) => { if (!(cause instanceof DOMException && cause.name === "AbortError")) setRunGroups([]); });
     return () => controller.abort();
   }, []);
 
@@ -436,6 +448,7 @@ export function RunsPage() {
   return (
     <div className="space-y-6">
       <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Runs / Inspect</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white">Trace inventory.</h1><p className="mt-3 max-w-[58ch] text-sm leading-6 text-muted">Routing heatmaps, validation status, and activation artifacts belong to a completed run. The UI never fills missing evidence with a visual guess.</p></div><div className="research-header-meta"><StatusDot tone={state === "unavailable" ? "warn" : "good"} /><span>{state === "loading" ? "Reading workspace…" : state === "unavailable" ? "Workspace offline" : `${entries.length} registered`}</span></div></header>
+      {runGroups.length ? <section className="research-card"><div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Dataset groups</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Managed master runs</h2></div><span className="source-card-type">{runGroups.length} groups</span></div><div className="mt-5 grid gap-3">{runGroups.map((group) => <div key={group.group_name} className="rounded-xl border border-line bg-ink/50 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-mono text-xs text-white">{group.group_name}</p><p className="mt-1 text-[0.68rem] text-muted">{group.children.filter((child) => child.state === "completed").length}/{group.children.length} datasets completed</p></div><span className="runtime-pill"><StatusDot tone={group.state === "completed" ? "good" : group.state === "failed" || group.state === "partial" ? "warn" : "quiet"} />{group.state}</span></div><div className="mt-3 flex flex-wrap gap-2">{group.children.map((child) => <button key={child.slug} type="button" className="button-secondary" disabled={!child.run_key} onClick={() => child.run_key && setSelectedRun(child.run_key)}>{child.dataset_config ? `${child.dataset_id} · ${child.dataset_config}` : child.dataset_id} · {child.state}</button>)}</div></div>)}</div></section> : null}
       {state === "loading" ? <section className="empty-surface"><p className="text-sm text-muted">Reading run catalog…</p></section> : state === "unavailable" ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">Workspace unavailable.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Make the MoEAtlas server available before asking for stored traces.</p></section> : entries.length === 0 ? <section className="empty-surface"><div className="grid size-12 place-items-center rounded-2xl border border-line-bright bg-white/[0.04] text-signal"><Pulse size={21} /></div><h2 className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-white">No published traces.</h2><p className="mt-3 max-w-[42ch] text-center text-sm leading-6 text-muted">Stage a run and let the executor publish its immutable shards. Heatmap cells appear only after routing events are validated.</p></section> : (
         <>
           <div className="run-selector-row"><label className="field-label" htmlFor="run-selector">Run<select id="run-selector" className="input-control mt-2" value={selectedRun} onChange={(event) => setSelectedRun(event.target.value)}>{entries.map((entry) => <option key={entry.run_key} value={entry.run_key}>{runLabel(entry)} · {entry.state ?? "unknown"}</option>)}</select><span className="mt-2 block font-mono text-[0.58rem] text-muted">{selectedRun}</span></label><div className="runtime-pill"><StatusDot tone={selectedEntry?.state === "completed" ? "good" : "warn"} />{selectedEntry?.state ?? "unknown"}</div><div className="ml-auto flex flex-wrap gap-2"><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=bundle`} download>Export bundle</a><a className="button-secondary" href={`/api/runs/${encodeURIComponent(selectedRun)}/export?format=csv`} download>CSV</a></div></div>

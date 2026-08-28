@@ -170,6 +170,51 @@ class RunStartRequest(_WireModel):
     resume_job_id: str | None = Field(default=None, max_length=100)
 
 
+class DatasetRunRequest(_WireModel):
+    """One dataset/config child in a parent run group."""
+
+    dataset_id: str = Field(min_length=3, max_length=500)
+    dataset_revision: str = Field(default="main", min_length=1, max_length=200)
+    dataset_config: str | None = Field(default=None, max_length=200)
+    dataset_split: str = Field(default="train", min_length=1, max_length=200)
+    prompt_column: str = Field(default="prompt", min_length=1, max_length=200)
+    reference_column: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class RunGroupStartRequest(_WireModel):
+    """One model/settings contract expanded across multiple datasets."""
+
+    run_name: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$")
+    model_id: str = Field(min_length=3, max_length=500)
+    model_revision: str = Field(default="main", min_length=1, max_length=200)
+    datasets: tuple[DatasetRunRequest, ...] = Field(min_length=2, max_length=16)
+    evaluation_method: Literal[
+        "normalized_exact_match",
+        "token_f1",
+        "contains_reference",
+        "multiple_choice_accuracy",
+        "numeric_match",
+    ] = "normalized_exact_match"
+    sample_cap: int = Field(default=32, ge=1, le=10_000)
+    dataset_seed: int | None = Field(default=None, ge=0)
+    batch_size: int = Field(default=1, ge=1, le=256)
+    max_new_tokens: int = Field(default=128, ge=1, le=1_000_000)
+    token_text_policy: Literal["redacted", "stored"] = "redacted"
+    allow_export: bool = True
+    retain_raw_payloads: bool = False
+    mode: Literal["generation", "teacher_forced"] = "generation"
+    device: str = Field(default="auto", min_length=1, max_length=32)
+    dtype: Literal["preserve", "float32", "float16", "bfloat16"] = "preserve"
+    trust_remote_code: bool = False
+    allow_downloads: bool = True
+    capture_expert_activity: bool = True
+    measure_capture_overhead: bool = False
+
+
+class RunGroupsResponse(_WireModel):
+    groups: tuple[dict[str, Any], ...] = Field(default_factory=tuple)
+
+
 class JobProgressResponse(_WireModel):
     stage: str
     completed: int = 0
@@ -334,9 +379,12 @@ __all__ = [
     "RoutingShardEntryResponse",
     "RoutingSimilarityResponse",
     "RunDetailResponse",
+    "RunGroupStartRequest",
+    "RunGroupsResponse",
     "RunEntryResponse",
     "RunSummaryResponse",
     "RunStartRequest",
+    "DatasetRunRequest",
     "RunsResponse",
     "WorkspaceResponse",
 ]

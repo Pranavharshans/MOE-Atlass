@@ -138,6 +138,56 @@ def test_json_job_routes_and_intervention_recipe_are_live(tmp_path: Path, monkey
     assert recipe.json()["fingerprint"].startswith("sha256:")
 
 
+def test_multi_dataset_group_route_submits_one_parent_job(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    initialize_workspace(workspace)
+    observed: dict[str, object] = {}
+
+    import moeatlas.server.app as app_module
+
+    def fake_group(workspace, payload, *, cancel, report_progress, execute_child):
+        del cancel, execute_child
+        observed["workspace"] = workspace
+        observed["payload"] = payload
+        report_progress(stage="dataset_group", completed=2, total=2, message="done")
+        return JobOutcome(
+            {"status": "completed", "group_name": payload["run_name"], "children": []},
+            "completed",
+        )
+
+    monkeypatch.setattr(app_module, "_run_group_worker", fake_group)
+    client = TestClient(create_app(workspace, isolate_model_workers=False))
+    created = client.post(
+        "/api/run-groups/start",
+        json={
+            "run_name": "cyber-study",
+            "model_id": "org/model",
+            "datasets": [
+                {"dataset_id": "cais/mmlu", "dataset_config": "computer_security"},
+                {
+                    "dataset_id": "cais/mmlu",
+                    "dataset_config": "college_computer_science",
+                },
+            ],
+        },
+    )
+
+    assert created.status_code == 202
+    job_id = created.json()["job_id"]
+    for _ in range(50):
+        status = client.get(f"/api/jobs/{job_id}")
+        if status.json()["state"] not in {"queued", "running"}:
+            break
+        time.sleep(0.01)
+    assert status.json()["state"] == "completed"
+    assert observed["workspace"] == str(workspace)
+    assert len(observed["payload"]["datasets"]) == 2
+    groups = client.get("/api/run-groups")
+    assert groups.status_code == 200
+    assert groups.json() == {"groups": []}
+
+
 def test_real_intervention_route_reconstructs_a_completed_baseline(
     tmp_path: Path, monkeypatch
 ) -> None:

@@ -30,6 +30,15 @@ type NavigationItem = "analysis" | "discovery" | "run" | "runs";
 type HubKind = "model" | "dataset";
 type SearchState = "idle" | "loading" | "ready" | "unavailable";
 
+type DatasetDraft = {
+  datasetId: string;
+  datasetRevision: string;
+  datasetConfig: string;
+  datasetSplit: string;
+  promptColumn: string;
+  referenceColumn: string;
+};
+
 type SourceDraft = {
   modelId: string;
   modelRevision: string;
@@ -42,6 +51,8 @@ type SourceDraft = {
   device: string;
   dtype: "preserve" | "float32" | "float16" | "bfloat16";
   trustRemoteCode: boolean;
+  datasetMode: "one" | "many";
+  additionalDatasets: DatasetDraft[];
 };
 
 type RunDraft = {
@@ -78,7 +89,29 @@ const DEFAULT_SOURCES: SourceDraft = {
   device: "auto",
   dtype: "preserve",
   trustRemoteCode: false,
+  datasetMode: "one",
+  additionalDatasets: [],
 };
+
+function normalizeSources(value: Partial<SourceDraft>): SourceDraft {
+  return {
+    ...DEFAULT_SOURCES,
+    ...value,
+    additionalDatasets: Array.isArray(value.additionalDatasets) ? value.additionalDatasets : [],
+  };
+}
+
+function datasetsFromSources(sources: SourceDraft): DatasetDraft[] {
+  const primary = {
+    datasetId: sources.datasetId,
+    datasetRevision: sources.datasetRevision,
+    datasetConfig: sources.datasetConfig,
+    datasetSplit: sources.datasetSplit,
+    promptColumn: sources.promptColumn,
+    referenceColumn: sources.referenceColumn,
+  };
+  return sources.datasetMode === "many" ? [primary, ...sources.additionalDatasets] : [primary];
+}
 
 const DEFAULT_RUN: RunDraft = {
   runName: "",
@@ -127,6 +160,13 @@ function validateRunName(value: string): string | null {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(value.trim())) {
     return "Use 1–80 letters, numbers, dots, underscores, or hyphens; start with a letter or number.";
   }
+  return null;
+}
+
+function validateMasterRunName(value: string): string | null {
+  const error = validateRunName(value);
+  if (error) return error;
+  if (value.trim().length > 50) return "Master run names must be 50 characters or fewer so child names remain readable.";
   return null;
 }
 
@@ -268,6 +308,9 @@ function SourceCard({
   referenceColumn,
   onReferenceColumnChange,
   error,
+  idSuffix = "primary",
+  sequence,
+  onRemove,
 }: {
   kind: HubKind;
   value: string;
@@ -283,30 +326,34 @@ function SourceCard({
   referenceColumn?: string;
   onReferenceColumnChange?: (value: string) => void;
   error: string | null;
+  idSuffix?: string;
+  sequence?: number;
+  onRemove?: () => void;
 }) {
   const isModel = kind === "model";
+  const inputPrefix = `${kind}-${idSuffix}`;
   return (
     <section className="research-card">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="source-card-icon"><span>{isModel ? "M" : "D"}</span></div>
           <div>
-            <p className="label-caps text-[0.59rem] text-signal">{isModel ? "01 / Model" : "02 / Dataset"}</p>
+            <p className="label-caps text-[0.59rem] text-signal">{isModel ? "01 / Model" : `02.${sequence ?? 1} / Dataset`}</p>
             <h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">
               {isModel ? "Model source" : "Dataset source"}
             </h2>
           </div>
         </div>
-        <span className="source-card-type">Hugging Face</span>
+        <div className="flex items-center gap-2"><span className="source-card-type">Hugging Face</span>{onRemove ? <button type="button" className="runner-tab" onClick={onRemove} aria-label={`Remove dataset ${sequence ?? ""}`}><XCircle size={15} /> Remove</button> : null}</div>
       </div>
       <div className="mt-6">
-        <label className="field-label" htmlFor={`${kind}-id`}>Repository ID</label>
-        <SourceSearchField inputId={`${kind}-id`} kind={kind} value={value} onChange={onChange} placeholder={isModel ? "inclusionAI/Ling-3.0-tiny" : "HuggingFaceH4/ultrachat_200k"} error={error} />
+        <label className="field-label" htmlFor={`${inputPrefix}-id`}>Repository ID</label>
+        <SourceSearchField inputId={`${inputPrefix}-id`} kind={kind} value={value} onChange={onChange} placeholder={isModel ? "inclusionAI/Ling-3.0-tiny" : "HuggingFaceH4/ultrachat_200k"} error={error} />
       </div>
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
-        <label className="field-label" htmlFor={`${kind}-revision`}>
+        <label className="field-label" htmlFor={`${inputPrefix}-revision`}>
           Revision <span className="field-optional">optional</span>
-          <input id={`${kind}-revision`} className="input-control mt-2" value={revision ?? ""} onChange={(event) => onRevisionChange?.(event.target.value)} placeholder="main" spellCheck={false} />
+          <input id={`${inputPrefix}-revision`} className="input-control mt-2" value={revision ?? ""} onChange={(event) => onRevisionChange?.(event.target.value)} placeholder="main" spellCheck={false} />
         </label>
         {isModel ? (
           <div className="field-note">
@@ -314,29 +361,29 @@ function SourceCard({
             <span className="mt-2 flex items-center gap-2 text-xs text-muted"><ShieldCheck size={15} className="text-cyan" />Revision is pinned during discovery.</span>
           </div>
         ) : (
-          <label className="field-label" htmlFor="dataset-config">
+          <label className="field-label" htmlFor={`${inputPrefix}-config`}>
             Config <span className="field-optional">optional</span>
-            <input id="dataset-config" className="input-control mt-2" value={config ?? ""} onChange={(event) => onConfigChange?.(event.target.value)} placeholder="default" spellCheck={false} />
+            <input id={`${inputPrefix}-config`} className="input-control mt-2" value={config ?? ""} onChange={(event) => onConfigChange?.(event.target.value)} placeholder="default" spellCheck={false} />
           </label>
         )}
       </div>
       {!isModel ? (
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className="field-label" htmlFor="dataset-split">
+          <label className="field-label" htmlFor={`${inputPrefix}-split`}>
             Split
-            <input id="dataset-split" className="input-control mt-2" value={split ?? ""} onChange={(event) => onSplitChange?.(event.target.value)} placeholder="train" spellCheck={false} />
+            <input id={`${inputPrefix}-split`} className="input-control mt-2" value={split ?? ""} onChange={(event) => onSplitChange?.(event.target.value)} placeholder="train" spellCheck={false} />
           </label>
           <div className="field-note">
             <span className="label-caps text-[0.56rem] text-muted">Read policy</span>
             <span className="mt-2 flex items-center gap-2 text-xs text-muted"><Database size={15} className="text-cyan" />Bounded rows and explicit provenance.</span>
           </div>
-          <label className="field-label" htmlFor="dataset-prompt-column">
+          <label className="field-label" htmlFor={`${inputPrefix}-prompt-column`}>
             Prompt column
-            <input id="dataset-prompt-column" className="input-control mt-2" value={promptColumn ?? "prompt"} onChange={(event) => onPromptColumnChange?.(event.target.value)} placeholder="prompt or text" spellCheck={false} />
+            <input id={`${inputPrefix}-prompt-column`} className="input-control mt-2" value={promptColumn ?? "prompt"} onChange={(event) => onPromptColumnChange?.(event.target.value)} placeholder="prompt or text" spellCheck={false} />
           </label>
-          <label className="field-label" htmlFor="dataset-reference-column">
+          <label className="field-label" htmlFor={`${inputPrefix}-reference-column`}>
             Reference column <span className="field-optional">optional</span>
-            <input id="dataset-reference-column" className="input-control mt-2" value={referenceColumn ?? ""} onChange={(event) => onReferenceColumnChange?.(event.target.value)} placeholder="answer or label" spellCheck={false} />
+            <input id={`${inputPrefix}-reference-column`} className="input-control mt-2" value={referenceColumn ?? ""} onChange={(event) => onReferenceColumnChange?.(event.target.value)} placeholder="answer or label" spellCheck={false} />
           </label>
         </div>
       ) : null}
@@ -345,17 +392,41 @@ function SourceCard({
 }
 
 function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => void }) {
-  const [sources, setSources] = useState<SourceDraft>(() => readStored("moeatlas-analysis-sources", DEFAULT_SOURCES));
+  const [sources, setSources] = useState<SourceDraft>(() => normalizeSources(readStored<Partial<SourceDraft>>("moeatlas-analysis-sources", {})));
   const [queued, setQueued] = useState(false);
   const [starting, setStarting] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const modelError = useMemo(() => validateHubId(sources.modelId, "Model ID"), [sources.modelId]);
-  const datasetError = useMemo(() => validateHubId(sources.datasetId, "Dataset ID"), [sources.datasetId]);
-  const ready = !modelError && !datasetError;
+  const datasets = datasetsFromSources(sources);
+  const datasetErrors = datasets.map((dataset) => validateHubId(dataset.datasetId, "Dataset ID"));
+  const ready = !modelError && datasetErrors.every((error) => !error) && (sources.datasetMode === "one" || datasets.length > 1);
 
   function update(field: keyof SourceDraft, value: string | boolean) {
     setSources((current) => ({ ...current, [field]: value } as SourceDraft));
     setQueued(false);
+  }
+
+  function updateAdditional(index: number, field: keyof DatasetDraft, value: string) {
+    setSources((current) => ({
+      ...current,
+      additionalDatasets: current.additionalDatasets.map((dataset, itemIndex) => itemIndex === index ? { ...dataset, [field]: value } : dataset),
+    }));
+    setQueued(false);
+  }
+
+  function addDataset() {
+    setSources((current) => ({
+      ...current,
+      datasetMode: "many",
+      additionalDatasets: [...current.additionalDatasets, {
+        datasetId: current.datasetId,
+        datasetRevision: current.datasetRevision || "main",
+        datasetConfig: "",
+        datasetSplit: current.datasetSplit || "train",
+        promptColumn: current.promptColumn || "prompt",
+        referenceColumn: current.referenceColumn,
+      }],
+    }));
   }
 
   async function queueDiscovery() {
@@ -388,17 +459,17 @@ function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => vo
         <div>
           <p className="label-caps text-[0.61rem] text-signal">Analysis / New</p>
           <h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Define a routing capture.</h1>
-          <p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">Bind one model revision to one dataset. Discovery will inspect the resolved runtime before any token-level capture starts.</p>
+          <p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted">Bind one model revision to one or more datasets. Discovery inspects the shared runtime before token-level capture starts.</p>
         </div>
         <div className="research-header-meta"><StatusDot tone={ready ? "good" : "quiet"} /><span>{ready ? "Ready for discovery" : "Awaiting sources"}</span></div>
       </header>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <main className="space-y-5">
-          <div className="grid gap-5 lg:grid-cols-2">
-            <SourceCard kind="model" value={sources.modelId} onChange={(value) => update("modelId", value)} revision={sources.modelRevision} onRevisionChange={(value) => update("modelRevision", value)} error={modelError} />
-            <SourceCard kind="dataset" value={sources.datasetId} onChange={(value) => update("datasetId", value)} revision={sources.datasetRevision} onRevisionChange={(value) => update("datasetRevision", value)} config={sources.datasetConfig} onConfigChange={(value) => update("datasetConfig", value)} split={sources.datasetSplit} onSplitChange={(value) => update("datasetSplit", value)} promptColumn={sources.promptColumn} onPromptColumnChange={(value) => update("promptColumn", value)} referenceColumn={sources.referenceColumn} onReferenceColumnChange={(value) => update("referenceColumn", value)} error={datasetError} />
-          </div>
+          <div className="grid gap-5 lg:grid-cols-2"><SourceCard kind="model" value={sources.modelId} onChange={(value) => update("modelId", value)} revision={sources.modelRevision} onRevisionChange={(value) => update("modelRevision", value)} error={modelError} /><div className="space-y-3"><span className="field-label">Dataset mode</span><div className="inline-flex rounded-xl border border-line bg-ink p-1" role="group" aria-label="Dataset mode"><button type="button" className={`runner-tab ${sources.datasetMode === "one" ? "runner-tab-active" : ""}`} aria-pressed={sources.datasetMode === "one"} onClick={() => setSources((current) => ({ ...current, datasetMode: "one" }))}>One dataset</button><button type="button" className={`runner-tab ${sources.datasetMode === "many" ? "runner-tab-active" : ""}`} aria-pressed={sources.datasetMode === "many"} onClick={() => { setSources((current) => ({ ...current, datasetMode: "many" })); if (sources.additionalDatasets.length === 0) addDataset(); }}>Many datasets</button></div><p className="text-xs leading-5 text-muted">Many mode creates one managed master run with a separate child run for every dataset config.</p></div></div>
+          <SourceCard kind="dataset" sequence={1} value={sources.datasetId} onChange={(value) => update("datasetId", value)} revision={sources.datasetRevision} onRevisionChange={(value) => update("datasetRevision", value)} config={sources.datasetConfig} onConfigChange={(value) => update("datasetConfig", value)} split={sources.datasetSplit} onSplitChange={(value) => update("datasetSplit", value)} promptColumn={sources.promptColumn} onPromptColumnChange={(value) => update("promptColumn", value)} referenceColumn={sources.referenceColumn} onReferenceColumnChange={(value) => update("referenceColumn", value)} error={datasetErrors[0]} />
+          {sources.datasetMode === "many" ? sources.additionalDatasets.map((dataset, index) => <SourceCard key={`dataset-${index}`} kind="dataset" idSuffix={`additional-${index}`} sequence={index + 2} value={dataset.datasetId} onChange={(value) => updateAdditional(index, "datasetId", value)} revision={dataset.datasetRevision} onRevisionChange={(value) => updateAdditional(index, "datasetRevision", value)} config={dataset.datasetConfig} onConfigChange={(value) => updateAdditional(index, "datasetConfig", value)} split={dataset.datasetSplit} onSplitChange={(value) => updateAdditional(index, "datasetSplit", value)} promptColumn={dataset.promptColumn} onPromptColumnChange={(value) => updateAdditional(index, "promptColumn", value)} referenceColumn={dataset.referenceColumn} onReferenceColumnChange={(value) => updateAdditional(index, "referenceColumn", value)} error={datasetErrors[index + 1]} onRemove={() => setSources((current) => ({ ...current, additionalDatasets: current.additionalDatasets.filter((_, itemIndex) => itemIndex !== index) }))} />) : null}
+          {sources.datasetMode === "many" ? <button type="button" className="button-secondary" onClick={addDataset}><Plus size={16} weight="bold" /> Add dataset</button> : null}
           <section className="research-card">
             <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Runtime policy</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">How the model is loaded</h2></div><Cpu size={19} className="text-cyan" /></div>
             <div className="mt-5 grid gap-4 sm:grid-cols-3">
@@ -415,7 +486,7 @@ function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => vo
             <dl className="contract-list mt-5">
               <div><dt>Model</dt><dd>{sources.modelId.trim() || "—"}</dd></div>
               <div><dt>Revision</dt><dd>{sources.modelRevision.trim() || "main"}</dd></div>
-              <div><dt>Dataset</dt><dd>{sources.datasetId.trim() || "—"}</dd></div>
+              <div><dt>Datasets</dt><dd>{datasets.length}</dd></div>
               <div><dt>Data rev.</dt><dd>{sources.datasetRevision.trim() || "main"}</dd></div>
               <div><dt>Split</dt><dd>{sources.datasetSplit.trim() || "train"}</dd></div>
               <div><dt>Execution</dt><dd>bound server</dd></div>
@@ -441,7 +512,7 @@ function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => vo
 }
 
 function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => void }) {
-  const [sources] = useState<SourceDraft>(() => readStored("moeatlas-analysis-sources", DEFAULT_SOURCES));
+  const [sources] = useState<SourceDraft>(() => normalizeSources(readStored<Partial<SourceDraft>>("moeatlas-analysis-sources", {})));
   const [jobId, setJobId] = useState<string | null>(() => readStored<string | null>("moeatlas-discovery-job", null));
   const [starting, setStarting] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -549,19 +620,21 @@ function validateDatasetSeed(value: string): string | null {
 }
 
 function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => void }) {
-  const [sources] = useState<SourceDraft>(() => ({ ...DEFAULT_SOURCES, ...readStored<Partial<SourceDraft>>("moeatlas-analysis-sources", {}) }));
+  const [sources] = useState<SourceDraft>(() => normalizeSources(readStored<Partial<SourceDraft>>("moeatlas-analysis-sources", {})));
   const [run, setRun] = useState<RunDraft>(() => ({ ...DEFAULT_RUN, ...readStored<Partial<RunDraft>>("moeatlas-run", {}) }));
   const [jobId, setJobId] = useState<string | null>(() => readStored<string | null>("moeatlas-run-job", null));
   const [starting, setStarting] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const job = useJob(jobId);
   const modelError = validateHubId(sources.modelId, "Model ID");
-  const datasetError = validateHubId(sources.datasetId, "Dataset ID");
+  const datasets = datasetsFromSources(sources);
+  const datasetError = datasets.map((dataset) => validateHubId(dataset.datasetId, "Dataset ID")).find(Boolean) ?? null;
+  const isGroup = datasets.length > 1;
   const sampleError = validatePositiveSetting(run.sampleCap, "Sample cap", 1_000_000);
   const seedError = validateDatasetSeed(run.datasetSeed);
   const batchError = validatePositiveSetting(run.batchSize, "Batch size", 4096);
   const tokenError = validatePositiveSetting(run.maxNewTokens, "Max new tokens", 1_000_000);
-  const runNameError = validateRunName(run.runName);
+  const runNameError = isGroup ? validateMasterRunName(run.runName) : validateRunName(run.runName);
   const ready = !modelError && !datasetError && !sampleError && !seedError && !batchError && !tokenError && !runNameError;
   const running = job?.state === "queued" || job?.state === "running";
   const overhead = (job?.result?.capture_overhead ?? null) as Record<string, unknown> | null;
@@ -577,16 +650,10 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
     setRequestError(null);
     window.localStorage.setItem("moeatlas-run", JSON.stringify(run));
     try {
-      const created = await postJson<{ job_id: string }>("/api/runs/start", {
+      const commonPayload = {
         run_name: run.runName.trim(),
         model_id: sources.modelId.trim(),
         model_revision: sources.modelRevision.trim() || "main",
-        dataset_id: sources.datasetId.trim(),
-        dataset_revision: sources.datasetRevision.trim() || "main",
-        dataset_config: sources.datasetConfig.trim() || null,
-        dataset_split: sources.datasetSplit.trim() || "train",
-        prompt_column: sources.promptColumn.trim() || "prompt",
-        reference_column: sources.referenceColumn.trim() || null,
         evaluation_method: run.evaluationMethod,
         sample_cap: Number(run.sampleCap),
         dataset_seed: Number(run.datasetSeed),
@@ -601,8 +668,18 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
         allow_downloads: true,
         capture_expert_activity: true,
         measure_capture_overhead: run.measureCaptureOverhead,
-        resume_job_id: resumeJobId,
+      };
+      const datasetPayload = (dataset: DatasetDraft) => ({
+        dataset_id: dataset.datasetId.trim(),
+        dataset_revision: dataset.datasetRevision.trim() || "main",
+        dataset_config: dataset.datasetConfig.trim() || null,
+        dataset_split: dataset.datasetSplit.trim() || "train",
+        prompt_column: dataset.promptColumn.trim() || "prompt",
+        reference_column: dataset.referenceColumn.trim() || null,
       });
+      const created = isGroup
+        ? await postJson<{ job_id: string }>("/api/run-groups/start", { ...commonPayload, datasets: datasets.map(datasetPayload) })
+        : await postJson<{ job_id: string }>("/api/runs/start", { ...commonPayload, ...datasetPayload(datasets[0]), resume_job_id: resumeJobId });
       window.localStorage.setItem("moeatlas-run-job", created.job_id);
       setJobId(created.job_id);
     } catch (cause) {
@@ -621,7 +698,7 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
     }
   }
 
-  const canResume = job?.state === "cancelled" && typeof job.result?.checkpoint_path === "string";
+  const canResume = !isGroup && job?.state === "cancelled" && typeof job.result?.checkpoint_path === "string";
 
   if (modelError || datasetError) {
     return (
@@ -636,8 +713,8 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
         <main className="space-y-5">
           <section className="research-card">
             <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Run identity</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Give this run a readable name</h2></div><GitBranch size={19} className="text-cyan" /></div>
-            <label className="field-label mt-6 block" htmlFor="run-name">Run name<input id="run-name" className={`input-control mt-2 ${runNameError ? "input-control-error" : ""}`} value={run.runName} onChange={(event) => update("runName", event.target.value)} placeholder="v4-cybersecurity-baseline" autoComplete="off" /></label>
-            <p className={`field-hint mt-2 ${runNameError ? "field-hint-error" : ""}`}>{runNameError ?? "This appears in Runs and becomes the folder name under workspace/runs/."}</p>
+            <label className="field-label mt-6 block" htmlFor="run-name">{isGroup ? "Master run name" : "Run name"}<input id="run-name" className={`input-control mt-2 ${runNameError ? "input-control-error" : ""}`} value={run.runName} onChange={(event) => update("runName", event.target.value)} placeholder="v4-cybersecurity-baseline" autoComplete="off" /></label>
+            <p className={`field-hint mt-2 ${runNameError ? "field-hint-error" : ""}`}>{runNameError ?? (isGroup ? "Each dataset is saved as a named child under this managed group." : "This appears in Runs and becomes the folder name under workspace/runs/.")}</p>
           </section>
           <section className="research-card">
             <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Execution budget</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Rows and generation</h2></div><Lightning size={19} className="text-signal" /></div>
@@ -663,7 +740,7 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
           </section>
           <section className="research-card"><div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Worker boundary</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">Execution handoff</h2></div><WifiHigh size={19} className="text-cyan" /></div><div className="mt-5 flex flex-wrap items-center gap-3"><span className="runtime-pill"><StatusDot />Bound server</span><span className="text-xs text-muted">The server resolves its own accelerator and model cache.</span></div><p className="mt-4 text-xs leading-5 text-muted">Use the same UI on a local machine or inside a provider VM. Only the server process needs access to the model and dataset; no SSH or path selector is involved.</p></section>
         </main>
-        <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Run contract</p><GitBranch size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Model</dt><dd>{sources.modelId}</dd></div><div><dt>Dataset</dt><dd>{sources.datasetId}</dd></div><div><dt>Prompt</dt><dd>{sources.promptColumn}</dd></div><div><dt>Rows</dt><dd>{run.sampleCap}</dd></div><div><dt>Seed</dt><dd>{run.datasetSeed}</dd></div><div><dt>Batch</dt><dd>{run.batchSize}</dd></div><div><dt>Mode</dt><dd>{run.mode.replace("_", " ")}</dd></div><div><dt>Tokens</dt><dd>{run.tokenTextPolicy}</dd></div><div><dt>Overhead</dt><dd>{run.measureCaptureOverhead ? "optional native pass" : "off"}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Live state</p></div><p className="mt-4 text-xs leading-5 text-muted">{job?.progress.message ?? "The executor will resolve the model, stream bounded dataset rows, and publish immutable evidence."}</p>{job?.progress.total ? <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, (job.progress.completed / job.progress.total) * 100)}%` }} /></div> : null}</section>{overhead ? <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Overhead result</p></div><dl className="contract-list mt-4"><div><dt>Status</dt><dd>{String(overhead.status ?? "unknown")}</dd></div><div><dt>Native forward</dt><dd>{typeof (overhead.native as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.native as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Captured forward</dt><dd>{typeof (overhead.captured as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.captured as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Delta</dt><dd>{typeof overhead.delta_percent === "number" ? `${(overhead.delta_percent as number).toFixed(2)}%` : "—"}</dd></div></dl></section> : null}<button type="button" className="button-primary w-full justify-between" disabled={!ready || starting || running} onClick={() => void startRun()}>{starting ? "Starting capture…" : running ? "Capture running…" : job?.state === "completed" ? "Capture complete" : "Start capture"}<ArrowRight size={16} weight="bold" /></button>{jobId && overheadRunning ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void skipOverhead()}>Skip overhead measurement <XCircle size={16} /></button> : null}{jobId && running ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void postJson(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {})}>{overheadRunning ? "Cancel study" : "Cancel capture"} <XCircle size={16} /></button> : null}{canResume && jobId ? <button type="button" className="button-secondary w-full justify-between" disabled={starting} onClick={() => void startRun(jobId)}>Resume from checkpoint <ArrowRight size={16} /></button> : null}{job?.state === "completed" ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("runs")}>Inspect evidence <ArrowRight size={16} /></button> : null}{requestError || job?.error ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError ?? job?.error}</p> : null}<FailureDiagnostics job={job} /></aside>
+        <aside className="space-y-5"><section className="research-card research-card-dark"><div className="flex items-center justify-between"><p className="label-caps text-[0.59rem] text-muted">Run contract</p><GitBranch size={16} className="text-cyan" /></div><dl className="contract-list mt-5"><div><dt>Model</dt><dd>{sources.modelId}</dd></div><div><dt>Datasets</dt><dd>{datasets.length}</dd></div><div><dt>Prompt</dt><dd>{datasets[0].promptColumn}</dd></div><div><dt>Rows each</dt><dd>{run.sampleCap}</dd></div><div><dt>Seed</dt><dd>{run.datasetSeed}</dd></div><div><dt>Batch</dt><dd>{run.batchSize}</dd></div><div><dt>Mode</dt><dd>{run.mode.replace("_", " ")}</dd></div><div><dt>Tokens</dt><dd>{run.tokenTextPolicy}</dd></div><div><dt>Overhead</dt><dd>{run.measureCaptureOverhead ? "optional native pass" : "off"}</dd></div></dl></section><section className="research-card research-card-dark"><div className="flex items-center gap-2"><Lightning size={15} weight="fill" className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Live state</p></div><p className="mt-4 text-xs leading-5 text-muted">{job?.progress.message ?? "The executor will resolve the model, stream bounded dataset rows, and publish immutable evidence."}</p>{job?.progress.total ? <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.min(100, (job.progress.completed / job.progress.total) * 100)}%` }} /></div> : null}</section>{overhead ? <section className="research-card research-card-dark"><div className="flex items-center gap-2"><Pulse size={16} className="text-cyan" /><p className="label-caps text-[0.59rem] text-muted">Overhead result</p></div><dl className="contract-list mt-4"><div><dt>Status</dt><dd>{String(overhead.status ?? "unknown")}</dd></div><div><dt>Native forward</dt><dd>{typeof (overhead.native as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.native as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Captured forward</dt><dd>{typeof (overhead.captured as Record<string, unknown> | null)?.mean_ms === "number" ? `${((overhead.captured as Record<string, unknown>).mean_ms as number).toFixed(2)} ms/row` : "—"}</dd></div><div><dt>Delta</dt><dd>{typeof overhead.delta_percent === "number" ? `${(overhead.delta_percent as number).toFixed(2)}%` : "—"}</dd></div></dl></section> : null}<button type="button" className="button-primary w-full justify-between" disabled={!ready || starting || running} onClick={() => void startRun()}>{starting ? "Starting…" : running ? (isGroup ? "Dataset group running…" : "Capture running…") : job?.state === "completed" ? "Capture complete" : isGroup ? "Start dataset group" : "Start capture"}<ArrowRight size={16} weight="bold" /></button>{jobId && overheadRunning ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void skipOverhead()}>Skip overhead measurement <XCircle size={16} /></button> : null}{jobId && running ? <button type="button" className="button-secondary w-full justify-between" onClick={() => void postJson(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {})}>{overheadRunning ? "Cancel study" : isGroup ? "Cancel dataset group" : "Cancel capture"} <XCircle size={16} /></button> : null}{canResume && jobId ? <button type="button" className="button-secondary w-full justify-between" disabled={starting} onClick={() => void startRun(jobId)}>Resume from checkpoint <ArrowRight size={16} /></button> : null}{job?.state === "completed" ? <button type="button" className="button-secondary w-full justify-between" onClick={() => onNavigate("runs")}>Inspect evidence <ArrowRight size={16} /></button> : null}{requestError || job?.error ? <p className="rounded-xl border border-signal/30 bg-signal/[0.06] p-3 text-xs leading-5 text-signal" role="alert">{requestError ?? job?.error}</p> : null}<FailureDiagnostics job={job} /></aside>
       </div>
     </div>
   );

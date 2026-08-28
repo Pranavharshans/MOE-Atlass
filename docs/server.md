@@ -91,6 +91,14 @@ missing.
   run; its forward-only timing report is persisted under
   `benchmarks/capture-overhead/`. Include `resume_job_id` for a cancelled job
   with a durable checkpoint; resumed runs do not repeat the optional pass.
+- `POST /api/run-groups/start` — expands one model and capture contract over
+  2–16 dataset/config children. Children run sequentially with the same sample
+  cap and dataset seed, publish ordinary independently inspectable runs, and
+  retain partial results if a later dataset fails.
+- `GET /api/run-groups` — lists durable master manifests and their child run
+  keys. The master index is stored at `runs/<master>/group.json`, with readable
+  dataset pointers under `runs/<master>/datasets/<slug>/run.json`; immutable
+  child artifacts continue to use the normal run registry.
 - `POST /api/jobs/{job_id}/cancel` — requests cooperative cancellation at a
   safe batch boundary.
 - `POST /api/jobs/{job_id}/skip-overhead` — skips only the optional native pass

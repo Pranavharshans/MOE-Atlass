@@ -740,6 +740,126 @@ def _run_worker(
         executor.close()
 
 
+def _run_group_worker(
+    workspace: str,
+    payload: dict[str, Any],
+    *,
+    cancel: Any,
+    report_progress: Any,
+    execute_child: Any,
+) -> Any:
+    """Execute dataset children sequentially and persist their parent index."""
+
+    from ..services.run_groups import (
+        child_run_name,
+        dataset_slug,
+        publish_run_group,
+    )
+    from .jobs import JobOutcome
+
+    datasets = payload.get("datasets")
+    group_name = payload.get("run_name")
+    if not isinstance(datasets, list | tuple) or not isinstance(group_name, str):
+        raise TypeError("run group payload is invalid")
+    children: list[dict[str, Any]] = []
+    for index, dataset in enumerate(datasets):
+        if not isinstance(dataset, dict):
+            raise TypeError("run group dataset payload is invalid")
+        slug = dataset_slug(dataset["dataset_id"], dataset.get("dataset_config"), index)
+        children.append(
+            {
+                "slug": slug,
+                "dataset_id": dataset["dataset_id"],
+                "dataset_config": dataset.get("dataset_config"),
+                "dataset_revision": dataset.get("dataset_revision", "main"),
+                "dataset_split": dataset.get("dataset_split", "train"),
+                "child_run_name": child_run_name(group_name, slug),
+                "run_key": None,
+                "state": "queued",
+            }
+        )
+    publish_run_group(workspace, group_name, children, state="queued")
+    common = {key: value for key, value in payload.items() if key not in {"datasets", "run_name"}}
+    completed = 0
+    for index, (dataset, child) in enumerate(zip(datasets, children)):
+        if cancel.is_set():
+            child["state"] = "cancelled"
+            publish_run_group(workspace, group_name, children, state="cancelled")
+            return JobOutcome(
+                {"status": "cancelled", "group_name": group_name, "children": children},
+                "cancelled",
+            )
+        child["state"] = "running"
+        publish_run_group(workspace, group_name, children, state="running")
+        report_progress(
+            stage="dataset_group",
+            completed=index,
+            total=len(children),
+            message=f"Running dataset {index + 1} of {len(children)}: {child['slug']}",
+        )
+        child_payload = {**common, **dataset, "run_name": child["child_run_name"]}
+
+        def child_progress(**fields: Any) -> None:
+            message = fields.get("message")
+            report_progress(
+                stage="dataset_group",
+                completed=index,
+                total=len(children),
+                message=(
+                    f"Dataset {index + 1} of {len(children)} · {message}"
+                    if isinstance(message, str) and message
+                    else f"Running dataset {index + 1} of {len(children)}"
+                ),
+            )
+
+        try:
+            outcome = execute_child(child_payload, child_progress)
+            child["state"] = outcome.state
+            run_key = outcome.payload.get("run_key")
+            child["run_key"] = run_key if isinstance(run_key, str) else None
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException as exc:
+            child["state"] = "failed"
+            child["error_type"] = type(exc).__name__[:80]
+        if child["state"] == "completed":
+            completed += 1
+        elif child["state"] == "cancelled":
+            publish_run_group(workspace, group_name, children, state="cancelled")
+            return JobOutcome(
+                {"status": "cancelled", "group_name": group_name, "children": children},
+                "cancelled",
+            )
+        publish_run_group(workspace, group_name, children, state="running")
+
+    if completed == len(children):
+        state = "completed"
+        outcome_state = "completed"
+    elif completed:
+        state = "partial"
+        outcome_state = "failed"
+    else:
+        state = "failed"
+        outcome_state = "failed"
+    path = publish_run_group(workspace, group_name, children, state=state)
+    report_progress(
+        stage="dataset_group",
+        completed=len(children),
+        total=len(children),
+        message=f"Completed {completed} of {len(children)} dataset runs",
+    )
+    return JobOutcome(
+        {
+            "status": state,
+            "group_name": group_name,
+            "group_path": path.relative_to(workspace).as_posix(),
+            "completed_children": completed,
+            "children": children,
+        },
+        outcome_state,
+    )
+
+
 class _ChildCancellation:
     """Cancellation view exposed inside an isolated model process."""
 

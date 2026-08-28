@@ -45,6 +45,8 @@ from .dto import (
     RoutingSimilarityResponse,
     RunDetailResponse,
     RunEntryResponse,
+    RunGroupsResponse,
+    RunGroupStartRequest,
     RunsResponse,
     RunStartRequest,
     RunSummaryResponse,
@@ -56,6 +58,7 @@ from .workers import (
     _intervention_recipe,
     _intervention_recipe_object,
     _isolated_job_worker,
+    _run_group_worker,
     _run_process_entry,
     _run_worker,
 )
@@ -459,6 +462,85 @@ def create_app(
         snapshot = jobs.snapshot(job_id)
         assert snapshot is not None
         return JobCreatedResponse(job_id=job_id, kind="run", state=snapshot["state"])
+
+    @app.get("/api/run-groups", response_model=RunGroupsResponse)
+    def run_groups() -> RunGroupsResponse:
+        try:
+            from ..services.run_groups import list_run_groups
+
+            return RunGroupsResponse(groups=list_run_groups(bound_workspace))
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail="run groups are unavailable") from exc
+
+    @app.post(
+        "/api/run-groups/start",
+        response_model=JobCreatedResponse,
+        status_code=202,
+    )
+    def start_run_group(request: RunGroupStartRequest) -> JobCreatedResponse:
+        from ..services import open_workspace
+        from ..services.run_groups import child_run_name, dataset_slug
+
+        try:
+            workspace_snapshot = open_workspace(bound_workspace)
+        except Exception as exc:
+            raise _not_initialized() from exc
+        group_folder = Path(bound_workspace) / "runs" / request.run_name
+        if group_folder.exists():
+            raise HTTPException(status_code=409, detail="run group name is already in use")
+        registered_names = {
+            entry.run_name.casefold()
+            for entry in workspace_snapshot.catalog.runs
+            if entry.run_name is not None
+        }
+        child_names: list[str] = []
+        for index, dataset in enumerate(request.datasets):
+            slug = dataset_slug(dataset.dataset_id, dataset.dataset_config, index)
+            name = child_run_name(request.run_name, slug)
+            if name.casefold() in registered_names or (
+                Path(bound_workspace) / "runs" / name
+            ).exists():
+                raise HTTPException(
+                    status_code=409,
+                    detail="one or more child run names are already in use",
+                )
+            child_names.append(name)
+        if len({name.casefold() for name in child_names}) != len(child_names):
+            raise HTTPException(status_code=409, detail="dataset children do not have unique names")
+        payload = request.model_dump(mode="python")
+
+        def worker(cancel: Any, progress: Any) -> Any:
+            def execute_child(child_payload: dict[str, Any], child_progress: Any) -> Any:
+                if isolate_model_workers:
+                    return _isolated_job_worker(
+                        _run_process_entry,
+                        {
+                            "workspace": bound_workspace,
+                            "request": child_payload,
+                            "resume_from": None,
+                        },
+                        cancel=cancel,
+                        report_progress=child_progress,
+                    )
+                return _run_worker(
+                    bound_workspace,
+                    child_payload,
+                    cancel=cancel,
+                    report_progress=child_progress,
+                )
+
+            return _run_group_worker(
+                bound_workspace,
+                payload,
+                cancel=cancel,
+                report_progress=progress,
+                execute_child=execute_child,
+            )
+
+        job_id = jobs.submit("run_group", worker)
+        snapshot = jobs.snapshot(job_id)
+        assert snapshot is not None
+        return JobCreatedResponse(job_id=job_id, kind="run_group", state=snapshot["state"])
 
     @app.get("/api/jobs/{job_id}", response_model=JobResponse)
     def job_status(job_id: str) -> JobResponse:
