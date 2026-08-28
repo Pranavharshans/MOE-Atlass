@@ -44,8 +44,10 @@ Error stages are fixed: `contract`, `capture`, `apply`, `execute`,
 
 ## Live baseline-derived workflow
 
-The local server can now execute real `ablate` and `scale` recipes against
-independently exposed routed-expert modules. A completed baseline records its
+The local server can execute real `ablate` and `scale` recipes against
+independently exposed routed-expert modules. It can also execute `ablate`
+against proven packed expert containers when the loaded model declares a
+reversible Hugging Face expert backend. A completed baseline records its
 resolved model and dataset revisions, chosen columns, row budget, generation
 settings, and privacy policy. `POST /api/interventions/start` reconstructs
 that exact request, adds immutable `InterventionLineage`, installs temporary
@@ -87,9 +89,11 @@ operation instead of a single generic support flag:
 
 - `capture_routing` is a run-validation candidate when static router targets
   exist; it becomes evidence only after a real forward.
-- `zero_contribution` and `scale_contribution` are available only for the
-  independently exposed expert hooks implemented today. They do not alter
-  routing and do not skip expert compute.
+- `zero_contribution` and `scale_contribution` are available for independently
+  exposed expert hooks. `zero_contribution` is additionally available for a
+  proven packed layout with a live expert backend: MoEAtlas preserves the
+  selected top-k indices and masks only matching dispatch weights. Neither path
+  changes routing or skips expert compute.
 - `exclude_and_renormalize` is reported as not implemented when a router seam
   exists because safe execution still needs writable top-k weights and exact
   renormalization.
@@ -100,9 +104,9 @@ operation instead of a single generic support flag:
   was bypassed.
 
 Every row includes its status, bounded reason, structural/runtime evidence,
-and whether the requested semantics change routing or skip compute. The UI
-uses the same report and does not show a packed or fused seam as an executable
-intervention.
+and whether the requested semantics change routing or skip compute. Static
+packed targets may be selected, but the worker still requires and verifies a
+reversible live backend before mutation.
 
 ## Honest scope
 
@@ -111,10 +115,11 @@ certification remains a VM/GPU validation step. Models whose expert weights
 are packed into tensors are reported separately from models whose execution
 backend is fused. Static discovery reports the weight layout but leaves the
 execution backend unresolved; it never treats packed storage as proof of
-kernel fusion. A backend name is declaration evidence, not proof that a
-particular forward exercised it; that requires the runtime handshake. Models
-that do not expose independent forward-hook modules or
-return a non-tensor expert payload are reported as unsupported rather than
-silently approximated. One changed output is not enough to label an expert as
+kernel fusion. Packed ablation is proven locally at the backend contract and
+still requires real-checkpoint GPU certification. A backend name is declaration
+evidence, not proof that a particular forward exercised it; that requires the
+runtime handshake. Models that expose neither independent forward-hook modules
+nor a proven packed expert axis are reported as unsupported rather than silently
+approximated. One changed output is not enough to label an expert as
 task-specialized: use scored task rows, negative-control datasets, repeated
 runs, and multiple target controls before making that claim.

@@ -424,6 +424,15 @@ export function RunsPage() {
   const selectedControlRecipe = studyCandidates.find((candidate) => (
     controlRuns.includes(candidate.intervention_run_key)
   ))?.recipe_fingerprint;
+  const scaleCapability = interventionTargets?.capability?.operation_capabilities?.find(
+    (operation) => operation.operation === "scale_contribution",
+  );
+  const supportsScaling = scaleCapability?.status === "available";
+  useEffect(() => {
+    if (!supportsScaling && interventionOperation === "scale") {
+      setInterventionOperation("ablate");
+    }
+  }, [interventionOperation, supportsScaling]);
   return (
     <div className="space-y-6">
       <header className="research-header"><div><p className="label-caps text-[0.61rem] text-signal">Runs / Inspect</p><h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.055em] text-white">Trace inventory.</h1><p className="mt-3 max-w-[58ch] text-sm leading-6 text-muted">Routing heatmaps, validation status, and activation artifacts belong to a completed run. The UI never fills missing evidence with a visual guess.</p></div><div className="research-header-meta"><StatusDot tone={state === "unavailable" ? "warn" : "good"} /><span>{state === "loading" ? "Reading workspace…" : state === "unavailable" ? "Workspace offline" : `${entries.length} registered`}</span></div></header>
@@ -481,10 +490,10 @@ export function RunsPage() {
                       {interventionTargets.targets.map((target) => <option key={target.label} value={target.label}>L{target.layer_index} × E{target.expert_index}</option>)}
                     </select>
                   </label>
-                  <p className="mt-2 text-[0.65rem] leading-5 text-muted">Select one or more independently controllable experts. Hold Ctrl or Command to select several.</p>
+                  <p className="mt-2 text-[0.65rem] leading-5 text-muted">Select one or more controllable experts. Packed experts are validated against the live backend when the run starts. Hold Ctrl or Command to select several.</p>
                   <label className="field-label mt-3 block" htmlFor="intervention-run-name">New run name<input id="intervention-run-name" className="input-control mt-2" value={interventionRunName} onChange={(event) => setInterventionRunName(event.target.value)} placeholder={`${runLabel(selectedEntry)}-ablation`} autoComplete="off" /></label>
                   <label className="field-label mt-3" htmlFor="intervention-operation">Operation
-                    <select id="intervention-operation" className="input-control mt-2" value={interventionOperation} onChange={(event) => setInterventionOperation(event.target.value as typeof interventionOperation)}><option value="ablate">Disable output</option><option value="scale">Scale output</option></select>
+                    <select id="intervention-operation" className="input-control mt-2" value={interventionOperation} onChange={(event) => setInterventionOperation(event.target.value as typeof interventionOperation)}><option value="ablate">Disable contribution</option>{supportsScaling ? <option value="scale">Scale contribution</option> : null}</select>
                   </label>
                   {interventionOperation === "scale" ? <label className="field-label mt-3" htmlFor="scale-factor">Scale factor<input id="scale-factor" className="input-control mt-2" type="number" min="0" step="0.1" value={scaleFactor} onChange={(event) => setScaleFactor(event.target.value)} /></label> : null}
                   <button type="button" className="button-primary mt-4 w-full justify-between" disabled={interventionJob?.state === "queued" || interventionJob?.state === "running"} onClick={() => void startIntervention()}>{interventionJob?.state === "queued" || interventionJob?.state === "running" ? "Intervention running…" : "Run intervention"}<ArrowRight size={15}/></button>

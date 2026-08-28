@@ -2,15 +2,16 @@
 
 This module intentionally contains no model-family allowlist.  It resolves a
 human layer/expert coordinate against the immutable discovery report and owns
-only temporary forward-hook handles.  Models that do not expose each routed
-expert as an independently hookable module are rejected explicitly; packed
-storage and fused execution are recorded as separate facts and neither is
-reported as successfully ablated without runtime evidence.
+temporary forward hooks or reversible Hugging Face backend delegates. Packed
+storage and fused execution remain separate facts; packed contribution zeroing
+requires both a proven expert axis and a live backend declaration.
 """
 
 from __future__ import annotations
 
+import importlib
 import re
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -217,14 +218,12 @@ class ExpertInterventionTarget:
 
 
 def intervention_targets(report: DiscoveryReport) -> tuple[ExpertInterventionTarget, ...]:
-    """Return stable layer × expert coordinates for independently exposed experts."""
+    """Return stable layer × expert coordinates for exposed or packed experts."""
 
     try:
         discovered = structured_expert_targets(report)
-    except StructuredCaptureError as exc:
-        raise TransformersInterventionError(
-            "model does not expose independently hookable routed experts"
-        ) from exc
+    except StructuredCaptureError:
+        discovered = ()
     grouped: dict[int, list[Any]] = {}
     for target in discovered:
         grouped.setdefault(target.layer_index, []).append(target)
@@ -243,8 +242,52 @@ def intervention_targets(report: DiscoveryReport) -> tuple[ExpertInterventionTar
                 )
             )
     if not resolved:
+        expert_count = report.facts.expert_count
+        containers = {
+            component.layer_index: component
+            for component in report.components
+            if component.kind is ComponentKind.EXPERT_CONTAINER
+            and component.layer_index is not None
+            and type(expert_count) is int
+            and any(
+                len(shape) >= 3 and expert_count in shape
+                for shape in component.tensor_shapes.values()
+            )
+        }
+        if type(expert_count) is int and expert_count > 0:
+            layers = {
+                component.layer_index: component
+                for component in report.components
+                if component.kind is ComponentKind.MOE_LAYER and component.layer_index is not None
+            }
+            routers = sorted(
+                (
+                    component
+                    for component in report.components
+                    if component.kind is ComponentKind.ROUTER and component.layer_index is not None
+                ),
+                key=lambda component: component.layer_index,  # type: ignore[arg-type]
+            )
+            for router in routers:
+                assert router.layer_index is not None
+                container = containers.get(router.layer_index)
+                layer = layers.get(router.layer_index)
+                if container is None or layer is None:
+                    continue
+                for expert_index in range(expert_count):
+                    resolved.append(
+                        ExpertInterventionTarget(
+                            label=f"layer:{router.layer_index}/expert:{expert_index}",
+                            layer_index=router.layer_index,
+                            expert_index=expert_index,
+                            layer_key=layer.component_key,
+                            expert_key=f"{container.component_key}.packed.{expert_index}",
+                            module_path=container.module_path,
+                        )
+                    )
+    if not resolved:
         raise TransformersInterventionError(
-            "model does not expose independently hookable routed experts"
+            "model does not expose independently hookable or proven packed routed experts"
         )
     return tuple(resolved)
 
@@ -258,7 +301,10 @@ def classify_intervention_capability(report: DiscoveryReport) -> InterventionCap
         targets = intervention_targets(report)
     except TransformersInterventionError:
         targets = ()
-    if targets:
+    has_indexed_experts = any(
+        component.kind is ComponentKind.EXPERT for component in report.components
+    )
+    if targets and has_indexed_experts:
         capability = InterventionCapabilityReport(
             tier=InterventionSupportTier.EXPOSED_EXPERTS,
             operations=(InterventionOperation.ABLATE, InterventionOperation.SCALE),
@@ -289,8 +335,8 @@ def classify_intervention_capability(report: DiscoveryReport) -> InterventionCap
             capability = InterventionCapabilityReport(
                 tier=InterventionSupportTier.PACKED_EXPERTS,
                 operations=(),
-                target_count=0,
-                target_format=None,
+                target_count=len(targets),
+                target_format="layer:N/expert:M" if targets else None,
                 reason=(
                     "routed expert weights are packed tensors; the active execution backend "
                     "has not been inspected"
@@ -342,8 +388,11 @@ def _operation_capabilities(
     has_moe_structure = capability.weight_layout is not ExpertWeightLayout.UNAVAILABLE
     expert_evidence = (
         (f"structure.exposed_experts={capability.target_count}",)
-        if capability.target_count
-        else (f"structure.weight_layout={capability.weight_layout.value}",)
+        if capability.weight_layout is ExpertWeightLayout.INDEXED_MODULES
+        else (
+            f"structure.weight_layout={capability.weight_layout.value}",
+            f"structure.logical_targets={capability.target_count}",
+        )
     )
     backend_evidence = (
         (f"runtime.expert_backend={capability.execution_backend or 'mixed'}",)
@@ -358,13 +407,21 @@ def _operation_capabilities(
     ) -> OperationCapability:
         if available:
             status = OperationCapabilityStatus.AVAILABLE
-            reason = "independent expert modules support temporary output hooks"
+            reason = (
+                "the live expert backend supports temporary routing-weight masking"
+                if capability.weight_layout is ExpertWeightLayout.PACKED_TENSORS
+                else "independent expert modules support temporary output hooks"
+            )
+        elif (
+            operation is ExpertOperation.ZERO_CONTRIBUTION
+            and capability.weight_layout is ExpertWeightLayout.PACKED_TENSORS
+            and not has_backend
+        ):
+            status = OperationCapabilityStatus.RUN_VALIDATION_REQUIRED
+            reason = "packed ablation requires a reversible live expert backend"
         elif has_backend or capability.weight_layout is ExpertWeightLayout.PACKED_TENSORS:
             status = OperationCapabilityStatus.NOT_IMPLEMENTED
-            reason = (
-                "an expert backend seam was detected, but packed contribution control "
-                "is not implemented"
-            )
+            reason = "packed contribution control requires a supported live expert backend"
         else:
             status = OperationCapabilityStatus.UNAVAILABLE
             reason = "no independently controllable expert contribution seam was proven"
@@ -613,8 +670,19 @@ def inspect_intervention_capability(
         execution_backend = "mixed"
     fused_values = {item.fused for item in backends if item.fused is not None}
     fused_backend = next(iter(fused_values)) if len(fused_values) == 1 else None
+    packed_ablation = (
+        capability.weight_layout is ExpertWeightLayout.PACKED_TENSORS
+        and backend_discovery.status is ExpertBackendDiscoveryStatus.OBSERVED
+        and bool(backends)
+    )
     enriched = replace(
         capability,
+        operations=(InterventionOperation.ABLATE,) if packed_ablation else capability.operations,
+        reason=(
+            "packed expert contributions can be zeroed at the active Hugging Face backend seam"
+            if packed_ablation
+            else capability.reason
+        ),
         execution_backend=execution_backend,
         fused_backend=fused_backend,
         execution_backends=backends,
@@ -645,14 +713,22 @@ def _scale_output(output: object, factor: float) -> object:
 
 
 class TransformersExpertInterventionCapability:
-    """Temporary ablate/scale hooks resolved only from discovery evidence."""
+    """Temporary exposed hooks or packed-backend weight masking."""
 
-    def __init__(self, report: DiscoveryReport) -> None:
+    def __init__(self, report: DiscoveryReport, *, registry: object | None = None) -> None:
         if type(report) is not DiscoveryReport:
             raise TypeError("report must be an exact DiscoveryReport")
         self._targets = intervention_targets(report)
+        self._packed = (
+            classify_intervention_capability(report).weight_layout
+            is ExpertWeightLayout.PACKED_TENSORS
+        )
+        self._registry = registry
         self._handles: list[object] = []
         self._invocations: dict[str, int] = {}
+        self._backend_snapshot: dict[str, str | None] | None = None
+        self._registered_backends: list[str] = []
+        self._setter: Any = None
 
     @property
     def target_inventory(self) -> tuple[ExpertInterventionTarget, ...]:
@@ -662,14 +738,27 @@ class TransformersExpertInterventionCapability:
     def invocation_counts(self) -> dict[str, int]:
         return dict(sorted(self._invocations.items()))
 
-    def capture(self, module: object) -> tuple[()]:
-        del module
-        if self._handles:
+    def capture(self, module: object) -> object:
+        if self._handles or self._backend_snapshot is not None:
             raise TransformersInterventionError("intervention capability is already active")
         self._invocations = {}
+        if self._packed:
+            getter = getattr(module, "get_experts_implementation", None)
+            setter = getattr(module, "set_experts_implementation", None)
+            if not callable(getter) or not callable(setter):
+                raise TransformersInterventionError("loaded model cannot switch expert backends")
+            snapshot = getter()
+            if not isinstance(snapshot, Mapping):
+                raise TransformersInterventionError("expert backend snapshot is invalid")
+            self._backend_snapshot = dict(snapshot)
+            self._setter = setter
+            return dict(snapshot)
         return ()
 
     def apply(self, module: object, recipe: InterventionRecipe) -> None:
+        if self._packed:
+            self._apply_packed(module, recipe)
+            return
         if recipe.operation not in {InterventionOperation.ABLATE, InterventionOperation.SCALE}:
             raise TransformersInterventionError(
                 "live execution currently supports only expert ablation and scaling"
@@ -722,6 +811,9 @@ class TransformersExpertInterventionCapability:
 
     def restore(self, module: object, snapshot: object) -> None:
         del module
+        if self._packed:
+            self._restore_packed(snapshot)
+            return
         if snapshot != ():
             raise TransformersInterventionError("intervention snapshot is invalid")
         self._remove_handles()
@@ -737,6 +829,120 @@ class TransformersExpertInterventionCapability:
         if failures:
             raise TransformersInterventionError(
                 f"failed to remove {len(failures)} intervention hook(s)"
+            ) from failures[0]
+
+    def _apply_packed(self, module: object, recipe: InterventionRecipe) -> None:
+        if recipe.operation is not InterventionOperation.ABLATE:
+            raise TransformersInterventionError("packed experts currently support ablation only")
+        by_label = {target.label: target for target in self._targets}
+        unknown = tuple(label for label in recipe.targets if label not in by_label)
+        if unknown:
+            raise TransformersInterventionError(
+                "recipe targets are outside the discovered routed-expert universe"
+            )
+        named_modules = getattr(module, "named_modules", None)
+        if not callable(named_modules):
+            raise TransformersInterventionError("loaded model does not expose named_modules()")
+        modules = dict(named_modules())
+        selected: dict[int, tuple[tuple[str, int], ...]] = {}
+        grouped: dict[int, list[tuple[str, int]]] = {}
+        for label in recipe.targets:
+            target = by_label[label]
+            container = modules.get(target.module_path)
+            if container is None:
+                raise TransformersInterventionError("packed expert container is unavailable")
+            grouped.setdefault(id(container), []).append((label, target.expert_index))
+        selected = {key: tuple(value) for key, value in grouped.items()}
+
+        registry = self._registry
+        if registry is None:
+            try:
+                registry = getattr(
+                    importlib.import_module("transformers.integrations.moe"),
+                    "ALL_EXPERTS_FUNCTIONS",
+                )
+            except Exception as exc:
+                raise TransformersInterventionError(
+                    "Hugging Face expert backend registry is unavailable"
+                ) from exc
+        if not callable(getattr(type(registry), "__setitem__", None)) or not callable(
+            getattr(type(registry), "__delitem__", None)
+        ):
+            raise TransformersInterventionError("expert backend registry is not reversible")
+        assert self._backend_snapshot is not None and callable(self._setter)
+        replacements = dict(self._backend_snapshot)
+        implementations = sorted(
+            {value for value in replacements.values() if isinstance(value, str) and value}
+        )
+        for implementation in implementations:
+            try:
+                original = registry[implementation]  # type: ignore[index]
+            except Exception as exc:
+                raise TransformersInterventionError(
+                    "active expert backend is absent from the registry"
+                ) from exc
+            if not callable(original):
+                raise TransformersInterventionError("active expert backend is not callable")
+            temporary_name = f"moeatlas_ablate_{uuid.uuid4().hex}"
+
+            def ablate_backend(
+                expert_module: object,
+                hidden_states: object,
+                top_k_index: object,
+                top_k_weights: object,
+                *args: object,
+                _original: Any = original,
+                **kwargs: object,
+            ) -> object:
+                adjusted = top_k_weights
+                for label, expert_index in selected.get(id(expert_module), ()):
+                    try:
+                        mask = top_k_index == expert_index
+                        any_selected = bool(mask.any().item())
+                        adjusted = adjusted.masked_fill(mask, 0.0)
+                    except Exception as exc:
+                        raise TransformersInterventionError(
+                            "expert routing tensors do not support safe contribution masking"
+                        ) from exc
+                    if any_selected:
+                        self._invocations[label] = self._invocations.get(label, 0) + 1
+                return _original(
+                    expert_module,
+                    hidden_states,
+                    top_k_index,
+                    adjusted,
+                    *args,
+                    **kwargs,
+                )
+
+            registry[temporary_name] = ablate_backend  # type: ignore[index]
+            self._registered_backends.append(temporary_name)
+            replacements = {
+                scope: temporary_name if active == implementation else active
+                for scope, active in replacements.items()
+            }
+        self._registry = registry
+        self._setter(replacements)
+
+    def _restore_packed(self, snapshot: object) -> None:
+        if not isinstance(snapshot, Mapping) or self._backend_snapshot is None:
+            raise TransformersInterventionError("intervention snapshot is invalid")
+        failures: list[BaseException] = []
+        try:
+            self._setter(dict(snapshot))
+        except BaseException as exc:
+            failures.append(exc)
+        while self._registered_backends:
+            name = self._registered_backends.pop()
+            try:
+                del self._registry[name]  # type: ignore[index]
+            except BaseException as exc:
+                failures.append(exc)
+        self._backend_snapshot = None
+        self._setter = None
+        if failures:
+            raise TransformersInterventionError(
+                f"packed expert restoration failed ({len(failures)} error(s))"
             ) from failures[0]
 
 

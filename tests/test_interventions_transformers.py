@@ -35,6 +35,54 @@ class _TensorLike:
         return _TensorLike(self.value * factor)
 
 
+class _BoolResult:
+    def __init__(self, values: list[list[bool]]) -> None:
+        self.values = values
+
+    def any(self) -> _BoolResult:
+        return _BoolResult([[any(any(row) for row in self.values)]])
+
+    def item(self) -> bool:
+        return self.values[0][0]
+
+
+class _Matrix:
+    def __init__(self, values: list[list[float | int]]) -> None:
+        self.values = values
+
+    def __eq__(self, value: object) -> _BoolResult:
+        return _BoolResult([[cell == value for cell in row] for row in self.values])
+
+    def masked_fill(self, mask: _BoolResult, value: float) -> _Matrix:
+        return _Matrix(
+            [
+                [value if selected else cell for cell, selected in zip(row, mask_row)]
+                for row, mask_row in zip(self.values, mask.values)
+            ]
+        )
+
+
+class _Registry(dict[str, object]):
+    pass
+
+
+class _PackedModel:
+    def __init__(self, containers: dict[str, object], registry: _Registry) -> None:
+        self.containers = containers
+        self.registry = registry
+        self.implementations: dict[str, str | None] = {"": "grouped_mm"}
+
+    def named_modules(self):
+        yield "", self
+        yield from self.containers.items()
+
+    def get_experts_implementation(self) -> dict[str, str | None]:
+        return dict(self.implementations)
+
+    def set_experts_implementation(self, value: dict[str, str | None]) -> None:
+        self.implementations = dict(value)
+
+
 def _model() -> _ExpertHookedModel:
     outputs = {
         f"layers.{layer}.experts.{expert}": _TensorLike(4.0)
@@ -166,6 +214,11 @@ def test_packed_experts_are_separate_from_unresolved_execution_backend() -> None
     assert capability.execution_backend is None
     assert capability.fused_backend is None
     assert capability.to_dict()["weight_layout"] == "packed_tensors"
+    operations = {item.operation: item for item in capability.operation_capabilities}
+    assert (
+        operations[ExpertOperation.ZERO_CONTRIBUTION].status
+        is OperationCapabilityStatus.RUN_VALIDATION_REQUIRED
+    )
 
 
 def test_opaque_expert_storage_is_not_mislabeled_as_fused() -> None:
@@ -295,7 +348,7 @@ def test_operation_report_distinguishes_capture_contribution_and_compute() -> No
     assert operations[ExpertOperation.SKIP_COMPUTE].skips_compute is True
 
 
-def test_packed_backend_report_does_not_claim_packed_intervention_support() -> None:
+def test_packed_backend_report_declares_zero_contribution_support() -> None:
     report = scan_report(_model())
     packed = report.model_copy(
         update={
@@ -320,14 +373,123 @@ def test_packed_backend_report_does_not_claim_packed_intervention_support() -> N
     operations = {item.operation: item for item in capability.operation_capabilities}
 
     assert capability.weight_layout is ExpertWeightLayout.PACKED_TENSORS
+    assert capability.operations == (InterventionOperation.ABLATE,)
     assert (
-        operations[ExpertOperation.ZERO_CONTRIBUTION].status
+        operations[ExpertOperation.ZERO_CONTRIBUTION].status is OperationCapabilityStatus.AVAILABLE
+    )
+    assert (
+        operations[ExpertOperation.SCALE_CONTRIBUTION].status
         is OperationCapabilityStatus.NOT_IMPLEMENTED
     )
     assert (
         "runtime.expert_backend=grouped_mm"
         in operations[ExpertOperation.ZERO_CONTRIBUTION].evidence
     )
+
+
+def test_packed_ablation_masks_only_selected_routing_weights_and_restores() -> None:
+    report = scan_report(_model())
+    packed = report.model_copy(
+        update={
+            "candidates": [
+                candidate
+                for candidate in report.candidates
+                if candidate.kind is not ComponentKind.EXPERT
+            ],
+            "components": [
+                component.model_copy(update={"tensor_shapes": {"weights": [4, 16, 8]}})
+                if component.kind is ComponentKind.EXPERT_CONTAINER
+                else component
+                for component in report.components
+                if component.kind is not ComponentKind.EXPERT
+            ],
+        }
+    )
+    containers = {
+        component.module_path: object()
+        for component in packed.components
+        if component.kind is ComponentKind.EXPERT_CONTAINER
+    }
+    observed: list[list[list[float | int]]] = []
+
+    def grouped_mm(
+        _module: object,
+        _hidden: object,
+        _indices: _Matrix,
+        weights: _Matrix,
+    ) -> object:
+        observed.append(weights.values)
+        return object()
+
+    registry = _Registry(grouped_mm=grouped_mm)
+    model = _PackedModel(containers, registry)
+    capability = TransformersExpertInterventionCapability(packed, registry=registry)
+    recipe = InterventionRecipe(
+        operation=InterventionOperation.ABLATE,
+        targets=("layer:0/expert:1",),
+    )
+    layer_zero = containers["layers.0.experts"]
+
+    def execute(active_model: object) -> None:
+        assert active_model is model
+        backend = model.implementations[""]
+        assert isinstance(backend, str)
+        registry[backend](
+            layer_zero,
+            object(),
+            _Matrix([[1, 3], [0, 1]]),
+            _Matrix([[0.7, 0.3], [0.6, 0.4]]),
+        )
+
+    run_intervention(model, recipe, capability, execute)
+
+    assert observed == [[[0.0, 0.3], [0.6, 0.0]]]
+    assert capability.invocation_counts == {"layer:0/expert:1": 1}
+    assert model.implementations == {"": "grouped_mm"}
+    assert set(registry) == {"grouped_mm"}
+
+
+def test_packed_ablation_restores_backend_after_execution_failure() -> None:
+    report = scan_report(_model())
+    packed = report.model_copy(
+        update={
+            "candidates": [
+                candidate
+                for candidate in report.candidates
+                if candidate.kind is not ComponentKind.EXPERT
+            ],
+            "components": [
+                component.model_copy(update={"tensor_shapes": {"weights": [4, 16, 8]}})
+                if component.kind is ComponentKind.EXPERT_CONTAINER
+                else component
+                for component in report.components
+                if component.kind is not ComponentKind.EXPERT
+            ],
+        }
+    )
+    containers = {
+        component.module_path: object()
+        for component in packed.components
+        if component.kind is ComponentKind.EXPERT_CONTAINER
+    }
+    registry = _Registry(grouped_mm=lambda *_args: object())
+    model = _PackedModel(containers, registry)
+    capability = TransformersExpertInterventionCapability(packed, registry=registry)
+    recipe = InterventionRecipe(
+        operation=InterventionOperation.ABLATE,
+        targets=("layer:1/expert:2",),
+    )
+
+    with pytest.raises(Exception, match="intervention failed at execute"):
+        run_intervention(
+            model,
+            recipe,
+            capability,
+            lambda _model: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+
+    assert model.implementations == {"": "grouped_mm"}
+    assert set(registry) == {"grouped_mm"}
 
 
 def test_dense_operation_report_is_explicitly_unavailable() -> None:

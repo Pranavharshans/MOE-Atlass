@@ -67,16 +67,19 @@ Exit criteria:
 5. The validation ledger contains commands and artifacts that another machine
    can reproduce.
 
-## Next milestone 2: packed and fused expert interventions
+## Milestone 2: packed and fused expert interventions
 
-Current detection is evidence, not intervention support.
+Packed zero-contribution ablation is implemented at the reversible Hugging
+Face expert-backend seam. It preserves routing indices, masks matching top-k
+weights, records target exercise, and restores the exact backend snapshot.
+Scaling, fused-backend certification, and real-checkpoint GPU validation remain.
 
 Planned order:
 
-1. Wrap a declared Hugging Face expert backend without changing its output.
-2. Implement contribution zeroing and scaling at the backend boundary.
-3. Prove restoration and passive equivalence.
-4. Verify the requested layer × expert target was exercised.
+1. Validate packed zeroing on the target Qwen checkpoint and GPU.
+2. Implement contribution scaling at the backend boundary.
+3. Prove passive equivalence and numerical tolerance on real checkpoints.
+4. Certify accelerated and fused backends individually.
 5. Benchmark overhead and memory.
 6. Add backend adapters only when the common Hugging Face seam cannot express
    the required operation.
