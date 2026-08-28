@@ -103,6 +103,8 @@ def _close_after_success(loaded: Any) -> None:
 def load_scan_and_observe(
     plan: LoadingPlan,
     observer: Callable[[object, DiscoveryReport], _Observation],
+    *,
+    load_progress: Callable[[str, int, int, str], None] | None = None,
 ) -> tuple[DiscoveryReport, _Observation]:
     """Load once, scan, and run one read-only observer before cleanup.
 
@@ -116,7 +118,10 @@ def load_scan_and_observe(
     if not callable(observer):
         raise TypeError("observer must be callable")
     loader = _select_loader(plan)
-    loaded = loader(plan)
+    if load_progress is not None and loader is load_huggingface:
+        loaded = load_huggingface(plan, progress_callback=load_progress)
+    else:
+        loaded = loader(plan)
     try:
         model = loaded.model
         manifest = loaded.manifest

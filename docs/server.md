@@ -18,6 +18,11 @@ response exposes only a safe diagnostics reference; the
 the running server and returns the bounded sanitized entries. Diagnostic write
 failures never change the job outcome or bypass model cleanup.
 
+Discovery and run jobs publish explicit model-download phases for configuration,
+tokenizer files, and weight shards. The console polls those phases and renders
+the current message plus a progress bar; cached files pass through the same
+stages without forcing another download.
+
 FastAPI and the Hugging Face dataset reader are optional dependencies
 (`pip install moeatlas[server]`). The server extra includes both because
 `POST /api/runs/start` can stream an `hf_datasets` input. The wire DTOs in

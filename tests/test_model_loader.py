@@ -262,6 +262,31 @@ def test_declared_transformers_class_precedes_ambiguous_conditional_auto_factory
     result.close()
 
 
+def test_huggingface_loader_reports_configuration_tokenizer_and_weight_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+    _install_fake(monkeypatch, _fake_transformers(calls, close_log))
+    progress: list[tuple[str, int, int, str]] = []
+
+    result = load_huggingface(
+        _plan(),
+        progress_callback=lambda stage, completed, total, message: progress.append(
+            (stage, completed, total, message)
+        ),
+    )
+
+    assert [(stage, completed, total) for stage, completed, total, _ in progress] == [
+        ("model_download", 0, 3),
+        ("model_download", 1, 3),
+        ("model_download", 2, 3),
+        ("model_download", 3, 3),
+    ]
+    assert "weight shards" in progress[2][3]
+    result.close()
+
+
 @pytest.mark.parametrize(
     "architectures",
     [["_PrivateModel"], ["not-a-python-identifier"], [1], None],

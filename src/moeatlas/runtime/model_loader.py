@@ -383,6 +383,7 @@ def _load_transformers(
     tokenizer_target: str,
     local_files_only: bool,
     resolution_data: tuple[ResolvedSource, str, str, str],
+    progress_callback: Callable[[str, int, int, str], None] | None = None,
 ) -> LoadedModel:
     resolution, model_revision, _tokenizer_identifier, tokenizer_revision = resolution_data
     transformers = _import_optional("transformers")
@@ -402,16 +403,24 @@ def _load_transformers(
     )
     stack = _CleanupStack()
     submitted = False
+
+    def progress(stage: str, completed: int, message: str) -> None:
+        if progress_callback is not None:
+            progress_callback(stage, completed, 3, message)
+
     try:
         with remote_code_compatibility(
             transformers, enabled=plan.config.trust_remote_code
         ) as compatibility_bridges:
+            progress("model_download", 0, "Downloading model configuration")
             loaded_config = _call_stage("config", config_loader, model_target, **common_model)
             stack.add_object(loaded_config)
+            progress("model_download", 1, "Downloading tokenizer files")
             tokenizer = _call_stage(
                 "tokenizer", tokenizer_loader, tokenizer_target, **common_tokenizer
             )
             stack.add_object(tokenizer)
+            progress("model_download", 2, "Downloading and loading model weight shards")
             model_loader = _model_loader(transformers, loaded_config)
             model = _call_stage(
                 "model",
@@ -427,6 +436,7 @@ def _load_transformers(
                     device_map=device_map,
                 ),
             )
+            progress("model_download", 3, "Model files downloaded; finalizing runtime")
         stack.add_object(model)
         model = _place_model(model, plan, stack)
         model_config_object, config_warnings = model_config(model, loaded_config)
@@ -489,7 +499,11 @@ def _load_transformers(
         raise
 
 
-def load_huggingface(plan: LoadingPlan) -> LoadedModel:
+def load_huggingface(
+    plan: LoadingPlan,
+    *,
+    progress_callback: Callable[[str, int, int, str], None] | None = None,
+) -> LoadedModel:
     """Load a resolved Hugging Face source through lazy Transformers APIs."""
 
     resolution_data = _validate_plan(plan, HuggingFaceSource)
@@ -501,6 +515,7 @@ def load_huggingface(plan: LoadingPlan) -> LoadedModel:
         tokenizer_target=resolution_data[2],
         local_files_only=not source.allow_downloads,
         resolution_data=resolution_data,
+        progress_callback=progress_callback,
     )
 
 

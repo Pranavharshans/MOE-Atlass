@@ -17,6 +17,7 @@ _BENCHMARK_DIRECTORY = "benchmarks"
 _CAPTURE_OVERHEAD_DIRECTORY = "capture-overhead"
 _MAX_JOB_PAYLOAD_BYTES = 5_000_000
 
+
 def _json_document(value: object, *, max_bytes: int = _MAX_JOB_PAYLOAD_BYTES) -> dict[str, Any]:
     """Return one bounded JSON object from a domain manifest."""
 
@@ -180,6 +181,12 @@ def _discovery_worker(
     discovery, intervention_capability = load_scan_and_observe(
         plan,
         lambda model, report: inspect_intervention_capability(report, model),
+        load_progress=lambda stage, completed, total, message: report_progress(
+            stage=stage,
+            completed=completed,
+            total=total,
+            message=message,
+        ),
     )
 
     capture_support = classify_capture_support(discovery)
@@ -455,6 +462,14 @@ def _run_worker(
     executor_module = import_module("moeatlas.executors." + "transform" + "ers_routing")
     executor_type = getattr(executor_module, "Transform" + "ersRoutingExecutor")
 
+    def on_load_progress(stage: str, completed: int, total: int, message: str) -> None:
+        report_progress(
+            stage=stage,
+            completed=completed,
+            total=total,
+            message=message,
+        )
+
     def on_record(record: Any, *, phase: str | None = None) -> None:
         progress = getattr(record, "progress", None)
         if progress is None:
@@ -520,6 +535,7 @@ def _run_worker(
             capture_routing=False,
             mode=payload.get("mode", "generation"),
             max_new_tokens=payload.get("max_new_tokens", 128),
+            load_progress=on_load_progress,
         )
         native_executor.bind_run_key(native_specification.run_key)
         native_execution = None
@@ -582,6 +598,7 @@ def _run_worker(
         mode=payload.get("mode", "generation"),
         max_new_tokens=payload.get("max_new_tokens", 128),
         evaluation_method=payload.get("evaluation_method", "normalized_exact_match"),
+        load_progress=on_load_progress,
     )
     executor.bind_run_key(specification.run_key)
     try:

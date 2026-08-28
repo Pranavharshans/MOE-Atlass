@@ -76,6 +76,8 @@ _RUN_KEY_FAILURE = "executor run key was not bound before execution"
 _GENERATION_CAPTURE_FAILURE = (
     "model generation does not expose a compatible top-level forward pre-hook"
 )
+
+
 class TransformersRoutingExecutor:
     """One plan-bound, single-run real-model routing executor."""
 
@@ -89,6 +91,7 @@ class TransformersRoutingExecutor:
         mode: str = "generation",
         max_new_tokens: int = 128,
         evaluation_method: EvaluationMethod | str = EvaluationMethod.EXACT_MATCH,
+        load_progress: Callable[[str, int, int, str], None] | None = None,
     ) -> None:
         if not isinstance(plan, LoadingPlan):
             raise TypeError("plan must be a validated LoadingPlan")
@@ -121,6 +124,9 @@ class TransformersRoutingExecutor:
         self._mode = mode
         self._max_new_tokens = max_new_tokens
         self._evaluation_method = resolved_evaluation
+        if load_progress is not None and not callable(load_progress):
+            raise TypeError("load_progress must be callable")
+        self._load_progress = load_progress
         self._loaded: LoadedModel | None = None
         self._report: DiscoveryReport | None = None
         self._targets: tuple[StructuredRouterTarget, ...] = ()
@@ -230,7 +236,14 @@ class TransformersRoutingExecutor:
             from ..runtime.model_loader import load_huggingface, load_local
 
             if isinstance(self._plan.source, HuggingFaceSource):
-                loaded = load_huggingface(self._plan)
+                loaded = (
+                    load_huggingface(
+                        self._plan,
+                        progress_callback=self._load_progress,
+                    )
+                    if self._load_progress is not None
+                    else load_huggingface(self._plan)
+                )
             elif isinstance(self._plan.source, LocalSource):
                 loaded = load_local(self._plan)
             else:

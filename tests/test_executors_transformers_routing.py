@@ -286,6 +286,8 @@ def test_capture_routing_requires_an_exact_boolean() -> None:
         TransformersRoutingExecutor(_loading_plan(), capture_routing=1)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="unknown evaluation method"):
         TransformersRoutingExecutor(_loading_plan(), evaluation_method="arbitrary-code")
+    with pytest.raises(TypeError, match="load_progress must be callable"):
+        TransformersRoutingExecutor(_loading_plan(), load_progress=object())  # type: ignore[arg-type]
 
 
 def test_generation_output_and_routing_come_from_the_same_model_calls(fake_loader) -> None:
