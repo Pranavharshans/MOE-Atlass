@@ -91,3 +91,36 @@ def test_group_worker_runs_children_sequentially_and_persists_results(tmp_path: 
     document = json.loads((tmp_path / "runs" / "study" / "group.json").read_text())
     assert document["state"] == "completed"
     assert progress[-1]["completed"] == 2
+
+
+def test_group_worker_preserves_child_process_failure_details(tmp_path: Path) -> None:
+    initialize_workspace(tmp_path)
+
+    class DetailedFailure(RuntimeError):
+        error_type = "RoutingRunInventoryError"
+        safe_message = "routing run inventory failed at budget"
+
+    def execute_child(_payload: object, _report_progress: object) -> JobOutcome:
+        raise DetailedFailure
+
+    outcome = _run_group_worker(
+        str(tmp_path),
+        {
+            "run_name": "study",
+            "model_id": "org/model",
+            "datasets": [
+                {"dataset_id": "cais/mmlu", "dataset_config": "computer_security"},
+                {"dataset_id": "cais/mmlu", "dataset_config": "college_computer_science"},
+            ],
+        },
+        cancel=_Cancel(),
+        report_progress=lambda **_fields: None,
+        execute_child=execute_child,
+    )
+
+    assert outcome.state == "failed"
+    assert outcome.payload["children"][0]["error_type"] == "RoutingRunInventoryError"
+    assert (
+        outcome.payload["children"][0]["error_message"]
+        == "routing run inventory failed at budget"
+    )

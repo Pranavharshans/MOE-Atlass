@@ -165,6 +165,40 @@ def record_run_record(
     raise RuntimeError(f"run {entry.run_key} not found after upsert")
 
 
+def reconcile_run_shards(
+    workspace: str | Path,
+    run_key: str,
+    *,
+    at: str | None = None,
+) -> RunRegistryEntry:
+    """Refresh one catalog entry from its committed shards without a global scan."""
+
+    from moeatlas.store import list_routing_shards
+
+    path = _resolve(workspace)
+    catalog = read_catalog(path)
+    old = next((entry for entry in catalog.runs if entry.run_key == run_key), None)
+    shards = list_routing_shards(path, run_key=run_key)
+    if not shards:
+        raise ValueError("run has no committed routing shards")
+    text_policies = {"stored" if shard.token_text_stored else "redacted" for shard in shards}
+    entry = RunRegistryEntry(
+        run_key=run_key,
+        run_name=old.run_name if old is not None else None,
+        specification_fingerprint=old.specification_fingerprint if old is not None else None,
+        state=old.state if old is not None else None,
+        attempt=old.attempt if old is not None else 1,
+        shard_count=len(shards),
+        token_event_count=sum(shard.token_count for shard in shards),
+        routing_event_count=sum(shard.routing_count for shard in shards),
+        token_text_policy=next(iter(text_policies)) if len(text_policies) == 1 else "mixed",
+        registered_at=old.registered_at if old is not None else at,
+        updated_at=at,
+    )
+    updated = upsert_run_entry(path, entry, at=at)
+    return next(item for item in updated.runs if item.run_key == run_key)
+
+
 def sync_runs_from_shards(
     workspace: str | Path,
     *,

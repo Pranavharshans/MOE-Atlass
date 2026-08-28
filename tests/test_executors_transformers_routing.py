@@ -466,6 +466,35 @@ def test_store_token_text_opt_in_is_forwarded(
     assert entry.token_event_count == 2
 
 
+def test_publication_reconciles_only_the_committed_run(
+    tmp_path: Path,
+    fake_loader,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    initialize_workspace(workspace)
+    executor = TransformersRoutingExecutor(_loading_plan())
+    executor.bind_run_key("run-1")
+    executor(row_index=0, batch_index=0, values={"prompt": "ab"})
+
+    def reject_global_inventory(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("publication must not rebuild the global routing inventory")
+
+    monkeypatch.setattr(
+        "moeatlas.store.catalog.rebuild_catalog",
+        reject_global_inventory,
+    )
+
+    receipt = executor.publish_run_artifacts(workspace)
+
+    assert receipt is not None
+    entry = query_runs(workspace)[0]
+    assert entry.shard_count == 1
+    assert entry.token_event_count == receipt.token_count
+    assert entry.routing_event_count == receipt.routing_count
+
+
 # ---------------------------------------------------------------------------
 # Isolation guards
 # ---------------------------------------------------------------------------

@@ -1001,7 +1001,8 @@ class TransformersRoutingExecutor:
             routing_events=ordered_events,
             expert_events=tuple(self._expert_events),
         )
-        from ..store import append_structured_shard, rebuild_catalog
+        from ..services import reconcile_run_shards
+        from ..store import append_structured_shard
 
         receipt = append_structured_shard(
             workspace,
@@ -1012,7 +1013,7 @@ class TransformersRoutingExecutor:
             raise RuntimeError("routing discovery report was not retained for publication")
         _publish_discovery_report(workspace, self._run_key, self._report)
         _publish_universal_inspection(workspace, self._run_key, self._report)
-        rebuild_catalog(workspace, at=None)
+        reconcile_run_shards(workspace, self._run_key, at=None)
         self._release()
         return receipt
 

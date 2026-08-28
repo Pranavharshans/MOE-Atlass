@@ -821,7 +821,10 @@ def _run_group_worker(
             raise
         except BaseException as exc:
             child["state"] = "failed"
-            child["error_type"] = type(exc).__name__[:80]
+            child["error_type"] = str(getattr(exc, "error_type", type(exc).__name__))[:96]
+            safe_message = getattr(exc, "safe_message", None)
+            if isinstance(safe_message, str) and safe_message:
+                child["error_message"] = safe_message[:512]
         if child["state"] == "completed":
             completed += 1
         elif child["state"] == "cancelled":
