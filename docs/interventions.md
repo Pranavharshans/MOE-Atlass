@@ -91,9 +91,11 @@ operation instead of a single generic support flag:
   exist; it becomes evidence only after a real forward.
 - `zero_contribution` and `scale_contribution` are available for independently
   exposed expert hooks. `zero_contribution` is additionally available for a
-  proven packed layout with a live expert backend: MoEAtlas preserves the
-  selected top-k indices and masks only matching dispatch weights. Neither path
-  changes routing or skips expert compute.
+  proven packed layout with a certified `grouped_mm` or `batched_mm` Hugging
+  Face backend: MoEAtlas preserves the selected top-k indices and masks only
+  matching dispatch weights. Neither path changes routing or skips expert
+  compute. Other fused backends fail closed until their calling contract is
+  tested against a real checkpoint.
 - `exclude_and_renormalize` is reported as not implemented when a router seam
   exists because safe execution still needs writable top-k weights and exact
   renormalization.

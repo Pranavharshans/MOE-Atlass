@@ -670,10 +670,13 @@ def inspect_intervention_capability(
         execution_backend = "mixed"
     fused_values = {item.fused for item in backends if item.fused is not None}
     fused_backend = next(iter(fused_values)) if len(fused_values) == 1 else None
+    supported_packed_backends = frozenset({"batched_mm", "grouped_mm"})
     packed_ablation = (
         capability.weight_layout is ExpertWeightLayout.PACKED_TENSORS
         and backend_discovery.status is ExpertBackendDiscoveryStatus.OBSERVED
         and bool(backends)
+        and bool(implementations)
+        and implementations <= supported_packed_backends
     )
     enriched = replace(
         capability,
@@ -875,6 +878,10 @@ class TransformersExpertInterventionCapability:
             {value for value in replacements.values() if isinstance(value, str) and value}
         )
         for implementation in implementations:
+            if implementation not in {"batched_mm", "grouped_mm"}:
+                raise TransformersInterventionError(
+                    f"expert backend {implementation!r} is not certified for packed ablation"
+                )
             try:
                 original = registry[implementation]  # type: ignore[index]
             except Exception as exc:

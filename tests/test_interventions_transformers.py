@@ -387,6 +387,33 @@ def test_packed_backend_report_declares_zero_contribution_support() -> None:
     )
 
 
+def test_uncertified_packed_backend_does_not_advertise_ablation() -> None:
+    report = scan_report(_model())
+    packed = report.model_copy(
+        update={
+            "candidates": [
+                candidate
+                for candidate in report.candidates
+                if candidate.kind is not ComponentKind.EXPERT
+            ],
+            "components": [
+                component.model_copy(update={"tensor_shapes": {"weights": [4, 16, 8]}})
+                if component.kind is ComponentKind.EXPERT_CONTAINER
+                else component
+                for component in report.components
+                if component.kind is not ComponentKind.EXPERT
+            ],
+        }
+    )
+    model = _model()
+    model.get_experts_implementation = lambda: {"": "deepgemm_megamoe"}  # type: ignore[attr-defined]
+
+    capability = inspect_intervention_capability(packed, model)
+
+    assert capability.execution_backend == "deepgemm_megamoe"
+    assert capability.operations == ()
+
+
 def test_packed_ablation_masks_only_selected_routing_weights_and_restores() -> None:
     report = scan_report(_model())
     packed = report.model_copy(
