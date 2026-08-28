@@ -78,7 +78,10 @@ missing.
   loads the selected model, and returns a generic static `DiscoveryReport`.
 - `POST /api/runs/start` — resolves model and dataset revisions, infers a
   common string prompt column when needed, executes the bounded dataset, and
-  publishes routing plus expert evidence. Set `measure_capture_overhead: true`
+  publishes routing plus expert evidence. `dataset_seed` deterministically
+  selects a capped subset from the immutable dataset revision; the same
+  revision, split, config, cap, and seed produce the same row indices for a
+  baseline, resume, or derived intervention run. Set `measure_capture_overhead: true`
   to add an optional native, capture-disabled forward pass before the evidence
   run; its forward-only timing report is persisted under
   `benchmarks/capture-overhead/`. Include `resume_job_id` for a cancelled job

@@ -132,7 +132,9 @@ task-role projection when a column mapping is declared, preserving
 read-order indices; their schedules apply the descriptor's own
 sample/batch/shuffle/seed settings through the SHA-256-keyed planner.
 Preparation is deterministic and touches no clock, no randomness, no
-network, and no model dependency.
+network, and no model dependency. The local server exposes the selection
+seed as `dataset_seed`, persists it with resolved run metadata, and reuses it
+when reconstructing interventions.
 
 ## Deterministic execution core
 

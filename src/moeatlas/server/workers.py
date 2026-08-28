@@ -314,6 +314,7 @@ def _run_worker(
         allow_downloads=allow_downloads,
         column_mapping=initial_column_mapping,
         sample_cap=payload.get("sample_cap", 32),
+        seed=payload.get("dataset_seed"),
         batch_size=payload.get("batch_size", 1),
         mode=RunMode(payload.get("mode", "generation")),
     )

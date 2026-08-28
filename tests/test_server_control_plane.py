@@ -247,7 +247,8 @@ def test_optional_overhead_can_be_skipped_without_cancelling_capture(
         resume_from=None,
         skip_overhead=None,
     ):
-        del workspace, payload, resume_from
+        del workspace, resume_from
+        assert payload["dataset_seed"] == 20260828
         assert skip_overhead is not None
         report_progress(stage="overhead", completed=0, total=1, message="synthetic overhead")
         while not skip_overhead():
@@ -268,6 +269,7 @@ def test_optional_overhead_can_be_skipped_without_cancelling_capture(
             "run_name": "overhead-test",
             "model_id": "org/model",
             "dataset_id": "org/data",
+            "dataset_seed": 20260828,
             "measure_capture_overhead": True,
         },
     )
