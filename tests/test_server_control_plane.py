@@ -61,6 +61,24 @@ def test_run_requests_accept_an_explicit_replication_identity() -> None:
     assert grouped.replication == 3
 
 
+def test_run_requests_accept_an_explicit_thinking_mode() -> None:
+    single = RunStartRequest(
+        run_name="direct-answers",
+        model_id="org/model",
+        dataset_id="org/dataset",
+        thinking_mode="disabled",
+    )
+    grouped = RunGroupStartRequest(
+        run_name="reasoning-group",
+        model_id="org/model",
+        datasets=({"dataset_id": "org/one"}, {"dataset_id": "org/two"}),
+        thinking_mode="enabled",
+    )
+
+    assert single.thinking_mode == "disabled"
+    assert grouped.thinking_mode == "enabled"
+
+
 def test_completed_capture_requires_nonempty_routing_evidence() -> None:
     class Receipt:
         routing_count = 12

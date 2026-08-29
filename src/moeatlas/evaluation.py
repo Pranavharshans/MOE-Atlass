@@ -57,6 +57,10 @@ def _token_f1(output: str, reference: str) -> float:
 
 
 _CHOICE = re.compile(r"(?:^|\b)([a-z])(?:\b|$)", re.IGNORECASE)
+_FINAL_CHOICE = re.compile(
+    r"(?:^|(?:final\s+)?answer\s*[:\-]?\s*)([a-d])(?:[.)])?\s*$",
+    re.IGNORECASE,
+)
 _NUMBER = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
 
 
@@ -87,7 +91,8 @@ def evaluate_text(
         selected = method if isinstance(method, EvaluationMethod) else EvaluationMethod(method)
     except (TypeError, ValueError) as exc:
         raise ValueError("unknown evaluation method") from exc
-    predicted = normalize_text(output)
+    raw_output = str(output).strip()
+    predicted = normalize_text(raw_output)
     expected = normalize_text(reference)
     if selected is EvaluationMethod.EXACT_MATCH:
         score = float(predicted == expected)
@@ -96,7 +101,15 @@ def evaluate_text(
     elif selected is EvaluationMethod.CONTAINS_REFERENCE:
         score = float(bool(expected) and expected in predicted)
     elif selected is EvaluationMethod.MULTIPLE_CHOICE:
-        predicted_choice = _last_match(_CHOICE, predicted)
+        # Never award a choice found inside an unfinished reasoning trace.  For
+        # completed traces, score only the answer emitted after the final
+        # closing tag.  Non-thinking responses must end in an explicit choice.
+        if "<think" in raw_output.casefold() and "</think>" not in raw_output.casefold():
+            answer_text = ""
+        else:
+            answer_text = raw_output.rsplit("</think>", maxsplit=1)[-1].strip()
+        match = _FINAL_CHOICE.search(answer_text)
+        predicted_choice = match.group(1) if match is not None else None
         expected_choice = _last_match(_CHOICE, expected)
         score = float(
             predicted_choice is not None

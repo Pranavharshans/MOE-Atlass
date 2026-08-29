@@ -336,6 +336,7 @@ class GenerationConfig(StrictManifestModel):
     repetition_penalty: StrictFloat | None = Field(default=None, gt=0, le=10)
     stop_sequences: tuple[StrictStr, ...] = ()
     do_sample: StrictBool | None = None
+    thinking_mode: Literal["model_default", "disabled", "enabled"] = "model_default"
 
     @field_validator("stop_sequences")
     @classmethod

@@ -43,8 +43,12 @@ from .test_runtime_generic_capture import _flat_logits, _HookedModel
 
 
 class _FakeTokenizer:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.template_calls: list[tuple[list[dict[str, str]], dict[str, object]]] = []
+
     def __call__(self, prompt: str, **kwargs: object) -> dict[str, list[list[int]]]:
-        del kwargs
+        self.calls.append((prompt, dict(kwargs)))
         ids = [(index * 7 + 3) % 97 + 1 for index in range(max(len(prompt), 2))]
         return {"input_ids": [ids], "attention_mask": [[1] * len(ids)]}
 
@@ -54,6 +58,10 @@ class _FakeTokenizer:
     def decode(self, ids: list[int], **kwargs: object) -> str:
         del kwargs
         return " ".join(f"t{value}" for value in ids)
+
+    def apply_chat_template(self, messages: list[dict[str, str]], **kwargs: object) -> str:
+        self.template_calls.append((messages, dict(kwargs)))
+        return f"chat:{messages[0]['content']}"
 
 
 class _PreHookHandle:
@@ -464,6 +472,45 @@ def test_store_token_text_opt_in_is_forwarded(
     entry = query_runs(workspace)[0]
     assert entry.run_key == "run-1"
     assert entry.token_event_count == 2
+
+
+def test_explicit_thinking_mode_uses_chat_template(fake_loader) -> None:
+    tokenizer = _FakeTokenizer()
+    fake_loader["loaded"] = _loaded(_loading_plan(), tokenizer=tokenizer)
+    executor = TransformersRoutingExecutor(
+        _loading_plan(), thinking_mode="disabled", max_new_tokens=1
+    )
+    executor.bind_run_key("run-1")
+
+    executor._encode(tokenizer, "choose C", "row-0")
+
+    assert tokenizer.template_calls == [
+        (
+            [{"role": "user", "content": "choose C"}],
+            {
+                "tokenize": False,
+                "add_generation_prompt": True,
+                "enable_thinking": False,
+            },
+        )
+    ]
+    assert tokenizer.calls[0][0] == "chat:choose C"
+    assert tokenizer.calls[0][1]["add_special_tokens"] is False
+
+
+def test_teacher_forced_mode_does_not_apply_thinking_template(fake_loader) -> None:
+    tokenizer = _FakeTokenizer()
+    fake_loader["loaded"] = _loaded(_loading_plan(), tokenizer=tokenizer)
+    executor = TransformersRoutingExecutor(
+        _loading_plan(), mode="teacher_forced", thinking_mode="disabled"
+    )
+    executor.bind_run_key("run-1")
+
+    executor._encode(tokenizer, "raw prompt", "row-0")
+
+    assert tokenizer.template_calls == []
+    assert tokenizer.calls[0][0] == "raw prompt"
+    assert tokenizer.calls[0][1]["add_special_tokens"] is True
 
 
 def test_publication_reconciles_only_the_committed_run(
