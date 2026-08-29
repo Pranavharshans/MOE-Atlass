@@ -1039,21 +1039,13 @@ class TransformersRoutingExecutor:
         return receipt
 
     def _ordered_storage_events(self) -> tuple[RoutingEvent, ...]:
-        layer_order = {
-            target.layer_key: position
-            for position, target in enumerate(sorted(self._targets, key=lambda t: t.layer_index))
-        }
-        token_positions = {token.token_key: index for index, token in enumerate(self._token_events)}
-        return tuple(
-            sorted(
-                self._routing_events,
-                key=lambda event: (
-                    layer_order[event.layer_key],
-                    token_positions[event.token_key],
-                    event.rank,
-                ),
-            )
+        ordered_layers = tuple(
+            target.layer_key for target in sorted(self._targets, key=lambda t: t.layer_index)
         )
+        buckets: dict[str, list[RoutingEvent]] = {layer_key: [] for layer_key in ordered_layers}
+        for event in self._routing_events:
+            buckets[event.layer_key].append(event)
+        return tuple(event for layer_key in ordered_layers for event in buckets[layer_key])
 
     def _release(self) -> None:
         loaded = self._loaded

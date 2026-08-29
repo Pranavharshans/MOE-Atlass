@@ -474,6 +474,35 @@ def test_store_token_text_opt_in_is_forwarded(
     assert entry.token_event_count == 2
 
 
+def test_storage_order_uses_linear_layer_buckets_across_rows(fake_loader) -> None:
+    executor = TransformersRoutingExecutor(_loading_plan())
+    executor.bind_run_key("run-1")
+    executor(row_index=0, batch_index=0, values={"prompt": "ab"})
+    executor(row_index=1, batch_index=1, values={"prompt": "cd"})
+
+    layer_order = {
+        target.layer_key: position
+        for position, target in enumerate(
+            sorted(executor._targets, key=lambda item: item.layer_index)
+        )
+    }
+    token_order = {
+        event.token_key: position for position, event in enumerate(executor._token_events)
+    }
+    expected = tuple(
+        sorted(
+            executor._routing_events,
+            key=lambda event: (
+                layer_order[event.layer_key],
+                token_order[event.token_key],
+                event.rank,
+            ),
+        )
+    )
+
+    assert executor._ordered_storage_events() == expected
+
+
 def test_explicit_thinking_mode_uses_chat_template(fake_loader) -> None:
     tokenizer = _FakeTokenizer()
     fake_loader["loaded"] = _loaded(_loading_plan(), tokenizer=tokenizer)
