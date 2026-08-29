@@ -217,9 +217,7 @@ def test_invalid_resolution_quantization_and_local_path_fail_before_optional_imp
 
 def test_model_factory_selection_preserves_declared_task_heads() -> None:
     assert (
-        model_loader._model_factory_name(
-            types.SimpleNamespace(architectures=["LingForCausalLM"])
-        )
+        model_loader._model_factory_name(types.SimpleNamespace(architectures=["LingForCausalLM"]))
         == "AutoModelForCausalLM"
     )
     assert (
@@ -278,12 +276,58 @@ def test_huggingface_loader_reports_configuration_tokenizer_and_weight_progress(
     )
 
     assert [(stage, completed, total) for stage, completed, total, _ in progress] == [
-        ("model_download", 0, 3),
-        ("model_download", 1, 3),
-        ("model_download", 2, 3),
-        ("model_download", 3, 3),
+        ("model_cache", 0, 3),
+        ("model_cache", 1, 3),
+        ("model_cache", 2, 3),
+        ("model_cache", 3, 3),
     ]
     assert "weight shards" in progress[2][3]
+    result.close()
+
+
+def test_download_enabled_loader_uses_complete_immutable_cache_offline_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+    _install_fake(monkeypatch, _fake_transformers(calls, close_log))
+    config = LoadConfig(download_policy="allow_downloads", allow_downloads=True)
+
+    result = load_huggingface(_plan(config=config))
+
+    assert all(call[2]["local_files_only"] is True for call in calls)
+    result.close()
+
+
+def test_download_enabled_loader_falls_back_only_when_cache_is_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+    module = _fake_transformers(calls, close_log)
+    original = module.AutoConfig.from_pretrained
+
+    def cache_sensitive_config(target: str, **kwargs: Any) -> _FakeConfig:
+        calls.append(("config-attempt", target, kwargs))
+        if kwargs["local_files_only"]:
+            raise OSError("not found in cache while local_files_only=True")
+        return original(target, **kwargs)
+
+    module.AutoConfig.from_pretrained = staticmethod(cache_sensitive_config)
+    _install_fake(monkeypatch, module)
+    config = LoadConfig(download_policy="allow_downloads", allow_downloads=True)
+    progress: list[tuple[str, int, int, str]] = []
+
+    result = load_huggingface(
+        _plan(config=config),
+        progress_callback=lambda stage, completed, total, message: progress.append(
+            (stage, completed, total, message)
+        ),
+    )
+
+    attempts = [call for call in calls if call[0] == "config-attempt"]
+    assert [call[2]["local_files_only"] for call in attempts] == [True, False]
+    assert any(stage == "model_download" for stage, _, _, _ in progress)
     result.close()
 
 
@@ -392,7 +436,7 @@ def test_online_and_remote_code_policy_is_forwarded_and_warned(
         remote_code_acknowledged=True,
     )
     result = load_huggingface(_plan(config=config))
-    assert all(kwargs["local_files_only"] is False for _, _, kwargs in calls)
+    assert all(kwargs["local_files_only"] is True for _, _, kwargs in calls)
     assert all(kwargs["trust_remote_code"] is True for _, _, kwargs in calls)
     assert any("trust_remote_code" in warning for warning in result.warnings)
     assert any("downloads" in warning for warning in result.warnings)

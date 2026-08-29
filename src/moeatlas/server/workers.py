@@ -18,6 +18,27 @@ _CAPTURE_OVERHEAD_DIRECTORY = "capture-overhead"
 _MAX_JOB_PAYLOAD_BYTES = 5_000_000
 
 
+def _bind_workspace_model_cache(workspace: str | Path) -> Path:
+    """Default Hugging Face storage to a VM-persistent workspace directory."""
+
+    explicit = (
+        os.environ.get("HF_HUB_CACHE")
+        or os.environ.get("HUGGINGFACE_HUB_CACHE")
+        or os.environ.get("HF_HOME")
+    )
+    if explicit:
+        return Path(explicit).expanduser()
+    root = Path(workspace)
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError("workspace must be an existing non-symlink directory")
+    cache = root / "model-cache" / "huggingface"
+    if cache.exists() and (cache.is_symlink() or not cache.is_dir()):
+        raise RuntimeError("workspace model cache path is unsafe")
+    cache.mkdir(parents=True, exist_ok=True)
+    os.environ["HF_HOME"] = str(cache)
+    return cache
+
+
 def _require_completed_routing_receipt(terminal: str, receipt: object | None) -> None:
     """Reject a nominally completed capture that published no routing evidence."""
 
@@ -269,6 +290,7 @@ def _run_worker(
     from ..services.run_service import execute_specification, publish_run_report
     from .jobs import JobOutcome
 
+    _bind_workspace_model_cache(workspace)
     if cancel.is_set():
         return JobOutcome({"status": "cancelled"}, "cancelled")
     report_progress(

@@ -252,6 +252,28 @@ def _call_stage(stage: str, function: Callable[..., Any], *args: Any, **kwargs: 
         raise ModelLoadError(stage, "loader call failed") from exc
 
 
+def _is_local_cache_miss(error: BaseException) -> bool:
+    """Recognize the bounded Transformers failure emitted for an absent snapshot."""
+
+    current: BaseException | None = error
+    visited: set[int] = set()
+    markers = (
+        "local_files_only",
+        "local cache",
+        "cached files",
+        "couldn't find it in the cached files",
+        "not found in cache",
+    )
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if isinstance(current, OSError):
+            message = str(current).casefold()
+            if any(marker in message for marker in markers):
+                return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 def _place_model(model: object, plan: LoadingPlan, stack: _CleanupStack) -> object:
     if plan.config.device == DeviceKind.AUTO.value or plan.config.device_map:
         return model
@@ -412,15 +434,17 @@ def _load_transformers(
         with remote_code_compatibility(
             transformers, enabled=plan.config.trust_remote_code
         ) as compatibility_bridges:
-            progress("model_download", 0, "Downloading model configuration")
+            stage = "model_cache" if local_files_only else "model_download"
+            action = "Loading cached" if local_files_only else "Downloading or loading"
+            progress(stage, 0, f"{action} model configuration")
             loaded_config = _call_stage("config", config_loader, model_target, **common_model)
             stack.add_object(loaded_config)
-            progress("model_download", 1, "Downloading tokenizer files")
+            progress(stage, 1, f"{action} tokenizer files")
             tokenizer = _call_stage(
                 "tokenizer", tokenizer_loader, tokenizer_target, **common_tokenizer
             )
             stack.add_object(tokenizer)
-            progress("model_download", 2, "Downloading and loading model weight shards")
+            progress(stage, 2, f"{action} model weight shards")
             model_loader = _model_loader(transformers, loaded_config)
             model = _call_stage(
                 "model",
@@ -436,14 +460,20 @@ def _load_transformers(
                     device_map=device_map,
                 ),
             )
-            progress("model_download", 3, "Model files downloaded; finalizing runtime")
+            progress(
+                stage,
+                3,
+                "Cached model files loaded; finalizing runtime"
+                if local_files_only
+                else "Model files are available; finalizing runtime",
+            )
         stack.add_object(model)
         model = _place_model(model, plan, stack)
         model_config_object, config_warnings = model_config(model, loaded_config)
         architecture, architecture_warnings = observed_architecture(model, model_config_object)
         observed_model_dtype, dtype_warnings = observed_dtype(model)
-        parameter_dtype_inventory, parameter_dtype_warnings = (
-            observed_parameter_dtype_inventory(model)
+        parameter_dtype_inventory, parameter_dtype_warnings = observed_parameter_dtype_inventory(
+            model
         )
         observed_map, device_warnings = observed_device_map(model)
         if isinstance(plan.source, HuggingFaceSource):
@@ -509,6 +539,26 @@ def load_huggingface(
     resolution_data = _validate_plan(plan, HuggingFaceSource)
     source = plan.source
     assert isinstance(source, HuggingFaceSource)
+    if source.allow_downloads:
+        try:
+            return _load_transformers(
+                plan,
+                model_target=source.model_id,
+                tokenizer_target=resolution_data[2],
+                local_files_only=True,
+                resolution_data=resolution_data,
+                progress_callback=progress_callback,
+            )
+        except ModelLoadError as exc:
+            if not _is_local_cache_miss(exc):
+                raise
+            if progress_callback is not None:
+                progress_callback(
+                    "model_download",
+                    0,
+                    3,
+                    "Immutable model snapshot is not complete in cache; downloading missing files",
+                )
     return _load_transformers(
         plan,
         model_target=source.model_id,

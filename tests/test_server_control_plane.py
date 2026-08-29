@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from moeatlas.server import create_app
 from moeatlas.server.dto import RunGroupStartRequest, RunStartRequest
-from moeatlas.server.workers import _require_completed_routing_receipt
 from moeatlas.server.jobs import JobOutcome
+from moeatlas.server.workers import _bind_workspace_model_cache, _require_completed_routing_receipt
 from moeatlas.services import initialize_workspace
 from moeatlas.services.model_resolution import (
     resolve_huggingface_plan,
@@ -73,6 +73,21 @@ def test_completed_capture_requires_nonempty_routing_evidence() -> None:
 
     with pytest.raises(RuntimeError, match="no routing events"):
         _require_completed_routing_receipt("completed", type("Empty", (), {"routing_count": 0})())
+
+
+def test_server_model_cache_defaults_to_persistent_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    for name in ("HF_HOME", "HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
+        monkeypatch.delenv(name, raising=False)
+
+    cache = _bind_workspace_model_cache(workspace)
+
+    assert cache == workspace / "model-cache" / "huggingface"
+    assert cache.is_dir()
+    assert os.environ["HF_HOME"] == str(cache)
 
 
 def test_offline_hub_plan_rejects_branch_without_contacting_the_hub(monkeypatch) -> None:
