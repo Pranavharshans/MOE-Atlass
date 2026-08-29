@@ -126,9 +126,7 @@ def test_plan_dispatch_strictness_is_exact() -> None:
 
 @pytest.fixture
 def csv_workspace(tmp_path: Path) -> Path:
-    (tmp_path / "d.csv").write_text(
-        "prompt,label\na,x\nb,y\nc,z\n", encoding="utf-8"
-    )
+    (tmp_path / "d.csv").write_text("prompt,label\na,x\nb,y\nc,z\n", encoding="utf-8")
     return tmp_path
 
 
@@ -156,6 +154,42 @@ def test_dataset_rows_project_mapped_roles_preserving_indices(
         1: {"prompt": "b", "reference": "y"},
         2: {"prompt": "c", "reference": "z"},
     }
+
+
+def test_mmlu_rows_render_choices_and_convert_numeric_answer(tmp_path: Path) -> None:
+    (tmp_path / "mmlu.jsonl").write_text(
+        '{"question":"Which protocol?","choices":["FTP","SSH","SMTP","DNS"],"answer":1}\n',
+        encoding="utf-8",
+    )
+    spec = DatasetInputSpec(
+        format=DatasetFormat.JSONL,
+        location="mmlu.jsonl",
+        column_mapping={"prompt": "question", "reference": "answer"},
+        prompt_format="mmlu_multiple_choice",
+        choices_column="choices",
+    )
+
+    prepared = prepare_input_rows(spec, base_directory=tmp_path)
+
+    assert prepared == {
+        0: {
+            "prompt": (
+                "Which protocol?\n\nA. FTP\nB. SSH\nC. SMTP\nD. DNS\n\n"
+                "Answer with only A, B, C, or D."
+            ),
+            "reference": "B",
+        }
+    }
+
+
+def test_mmlu_format_requires_choices_column() -> None:
+    with pytest.raises(ValueError, match="choices column"):
+        DatasetInputSpec(
+            format=DatasetFormat.JSONL,
+            location="mmlu.jsonl",
+            column_mapping={"prompt": "question", "reference": "answer"},
+            prompt_format="mmlu_multiple_choice",
+        )
 
 
 def test_dataset_budgets_propagate_from_the_reader(csv_workspace: Path) -> None:
@@ -195,9 +229,7 @@ def test_prepare_dispatch_strictness_is_exact(csv_workspace: Path) -> None:
         prepare_input_rows("not-a-spec", base_directory=csv_workspace)
 
 
-def test_csv_preparation_never_resolves_the_engine(
-    csv_workspace: Path, monkeypatch
-) -> None:
+def test_csv_preparation_never_resolves_the_engine(csv_workspace: Path, monkeypatch) -> None:
     def forbidden():
         raise AssertionError("CSV preparation must not resolve DuckDB")
 

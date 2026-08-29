@@ -30,6 +30,7 @@ RUN_INPUTS_SCHEMA_VERSION = "1.0"
 _DEFAULT_MAX_INPUT_BYTES = 65_536
 
 _STAGES = frozenset({"spec", "format", "budget"})
+_MULTIPLE_CHOICE_LABELS = ("A", "B", "C", "D")
 
 
 class RunInputError(RuntimeError):
@@ -149,6 +150,44 @@ def prepare_input_rows(
         max_file_bytes=max_file_bytes,
         duckdb=duckdb,
     )
+    if spec.prompt_format == "mmlu_multiple_choice":
+        prompt_column = spec.column_mapping.get("prompt")
+        reference_column = spec.column_mapping.get("reference")
+        choices_column = spec.choices_column
+        if prompt_column is None or reference_column is None or choices_column is None:
+            raise RunInputError(
+                "spec", "MMLU formatting requires prompt, reference, and choices columns"
+            )
+        prepared: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            question = row.values.get(prompt_column)
+            choices = row.values.get(choices_column)
+            answer = row.values.get(reference_column)
+            if not isinstance(question, str) or not question.strip():
+                raise RunInputError("format", "MMLU question must be a non-empty string")
+            if (
+                not isinstance(choices, list | tuple)
+                or len(choices) != 4
+                or any(not isinstance(choice, str) for choice in choices)
+            ):
+                raise RunInputError("format", "MMLU choices must contain exactly four strings")
+            if type(answer) is int and not isinstance(answer, bool) and 0 <= answer < 4:
+                reference = _MULTIPLE_CHOICE_LABELS[answer]
+            elif isinstance(answer, str) and answer.strip().upper() in _MULTIPLE_CHOICE_LABELS:
+                reference = answer.strip().upper()
+            else:
+                raise RunInputError("format", "MMLU answer must be an index from 0 to 3")
+            rendered_choices = "\n".join(
+                f"{label}. {choice}"
+                for label, choice in zip(_MULTIPLE_CHOICE_LABELS, choices, strict=True)
+            )
+            prepared[row.index] = {
+                "prompt": (
+                    f"{question.strip()}\n\n{rendered_choices}\n\nAnswer with only A, B, C, or D."
+                ),
+                "reference": reference,
+            }
+        return prepared
     if spec.column_mapping:
         projected = project_dataset_rows(rows, spec.column_mapping)
         return {row.index: values for row, values in zip(rows, projected)}

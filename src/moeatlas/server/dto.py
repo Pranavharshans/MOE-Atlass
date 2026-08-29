@@ -146,6 +146,8 @@ class RunStartRequest(_WireModel):
     dataset_split: str = Field(default="train", min_length=1, max_length=200)
     prompt_column: str = Field(default="prompt", min_length=1, max_length=200)
     reference_column: str | None = Field(default=None, min_length=1, max_length=200)
+    prompt_format: Literal["raw", "mmlu_multiple_choice"] = "raw"
+    choices_column: str | None = Field(default=None, min_length=1, max_length=200)
     evaluation_method: Literal[
         "normalized_exact_match",
         "token_f1",
@@ -180,6 +182,8 @@ class DatasetRunRequest(_WireModel):
     dataset_split: str = Field(default="train", min_length=1, max_length=200)
     prompt_column: str = Field(default="prompt", min_length=1, max_length=200)
     reference_column: str | None = Field(default=None, min_length=1, max_length=200)
+    prompt_format: Literal["raw", "mmlu_multiple_choice"] = "raw"
+    choices_column: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class RunGroupStartRequest(_WireModel):

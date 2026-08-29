@@ -321,7 +321,12 @@ def _run_worker(
     if cancel.is_set():
         return JobOutcome({"status": "cancelled", "plan_id": plan.plan_id}, "cancelled")
 
+    prompt_format = payload.get("prompt_format", "raw")
     requested_reference_column = payload.get("reference_column")
+    choices_column = payload.get("choices_column")
+    if prompt_format == "mmlu_multiple_choice":
+        requested_reference_column = requested_reference_column or "answer"
+        choices_column = choices_column or "choices"
     initial_column_mapping = {"prompt": payload.get("prompt_column", "prompt")}
     if requested_reference_column is not None:
         initial_column_mapping["reference"] = requested_reference_column
@@ -333,6 +338,8 @@ def _run_worker(
         split=payload.get("dataset_split", "train"),
         allow_downloads=allow_downloads,
         column_mapping=initial_column_mapping,
+        prompt_format=prompt_format,
+        choices_column=choices_column,
         sample_cap=payload.get("sample_cap", 32),
         seed=payload.get("dataset_seed"),
         batch_size=payload.get("batch_size", 1),
@@ -378,6 +385,14 @@ def _run_worker(
             if requested_reference_column not in preview:
                 raise ValueError("requested dataset reference column is unavailable")
             resolved_mapping["reference"] = requested_reference_column
+        if prompt_format == "mmlu_multiple_choice":
+            choices = preview.get(choices_column)
+            if (
+                not isinstance(choices, list | tuple)
+                or len(choices) != 4
+                or any(not isinstance(choice, str) for choice in choices)
+            ):
+                raise ValueError("MMLU choices column must contain exactly four strings")
         input_spec = DatasetInputSpec(
             **{
                 **input_spec.model_dump(mode="python"),
@@ -432,7 +447,11 @@ def _run_worker(
             data=DataProvenance(
                 input=input_spec,
                 row_count=input_spec.sample_cap,
-                preprocessing={"column_mapping": dict(input_spec.column_mapping)},
+                preprocessing={
+                    "column_mapping": dict(input_spec.column_mapping),
+                    "prompt_format": input_spec.prompt_format,
+                    "choices_column": input_spec.choices_column,
+                },
             ),
             generation=GenerationConfig(
                 max_new_tokens=payload.get("max_new_tokens", 128), do_sample=False
@@ -470,6 +489,8 @@ def _run_worker(
         "dataset_revision": dataset_revision,
         "prompt_column": input_spec.column_mapping["prompt"],
         "reference_column": input_spec.column_mapping.get("reference"),
+        "prompt_format": input_spec.prompt_format,
+        "choices_column": input_spec.choices_column,
         "resume_job_id": None,
         "measure_capture_overhead": False
         if recipe is not None

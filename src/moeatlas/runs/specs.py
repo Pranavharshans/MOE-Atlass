@@ -207,9 +207,7 @@ class PromptInputSpec(StrictManifestModel):
     @model_validator(mode="after")
     def _exactly_one_form(self) -> Self:
         if bool(self.messages) == (self.text is not None):
-            raise ValueError(
-                "prompt input must specify exactly one of chat messages or raw text"
-            )
+            raise ValueError("prompt input must specify exactly one of chat messages or raw text")
         return self
 
 
@@ -232,6 +230,8 @@ class DatasetInputSpec(StrictManifestModel):
     allow_downloads: StrictBool = False
     content_digest: StrictStr | None = None
     column_mapping: dict[str, str] = Field(default_factory=dict)
+    prompt_format: Literal["raw", "mmlu_multiple_choice"] = "raw"
+    choices_column: StrictStr | None = None
     row_count: StrictInt | None = Field(default=None, ge=0)
     sample_cap: StrictInt | None = Field(default=None, ge=1)
     batch_size: StrictInt | None = Field(default=None, ge=1)
@@ -275,6 +275,21 @@ class DatasetInputSpec(StrictManifestModel):
     @classmethod
     def _digest_shape(cls, value: str | None) -> str | None:
         return _optional_digest(value, field_name="content_digest")
+
+    @field_validator("choices_column")
+    @classmethod
+    def _choices_column(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _bounded_label(value, field_name="choices column", maximum=_MAX_LABEL)
+
+    @model_validator(mode="after")
+    def _prompt_format_requirements(self) -> Self:
+        if self.prompt_format == "mmlu_multiple_choice" and self.choices_column is None:
+            raise ValueError("MMLU prompt formatting requires a choices column")
+        if self.prompt_format == "raw" and self.choices_column is not None:
+            raise ValueError("a choices column is valid only for MMLU prompt formatting")
+        return self
 
     @field_validator("column_mapping")
     @classmethod
@@ -524,9 +539,7 @@ class RunSpecification(VersionedManifest):
 
         if self.intervention is not None:
             if self.probe is None:
-                raise ValueError(
-                    "intervention lineage requires a probe plan on the specification"
-                )
+                raise ValueError("intervention lineage requires a probe plan on the specification")
             if not self.probe.intervention_opt_in:
                 raise ValueError(
                     "intervention lineage requires probe.intervention_opt_in to be true"

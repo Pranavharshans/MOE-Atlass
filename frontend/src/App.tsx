@@ -37,6 +37,8 @@ type DatasetDraft = {
   datasetSplit: string;
   promptColumn: string;
   referenceColumn: string;
+  promptFormat: "raw" | "mmlu_multiple_choice";
+  choicesColumn: string;
 };
 
 type SourceDraft = {
@@ -48,6 +50,8 @@ type SourceDraft = {
   datasetSplit: string;
   promptColumn: string;
   referenceColumn: string;
+  promptFormat: "raw" | "mmlu_multiple_choice";
+  choicesColumn: string;
   device: string;
   dtype: "preserve" | "float32" | "float16" | "bfloat16";
   trustRemoteCode: boolean;
@@ -87,6 +91,8 @@ const DEFAULT_SOURCES: SourceDraft = {
   datasetSplit: "train",
   promptColumn: "prompt",
   referenceColumn: "",
+  promptFormat: "raw",
+  choicesColumn: "",
   device: "auto",
   dtype: "preserve",
   trustRemoteCode: false,
@@ -98,7 +104,7 @@ function normalizeSources(value: Partial<SourceDraft>): SourceDraft {
   return {
     ...DEFAULT_SOURCES,
     ...value,
-    additionalDatasets: Array.isArray(value.additionalDatasets) ? value.additionalDatasets : [],
+    additionalDatasets: Array.isArray(value.additionalDatasets) ? value.additionalDatasets.map((dataset) => ({ ...dataset, promptFormat: dataset.promptFormat ?? "raw", choicesColumn: dataset.choicesColumn ?? "" })) : [],
   };
 }
 
@@ -110,6 +116,8 @@ function datasetsFromSources(sources: SourceDraft): DatasetDraft[] {
     datasetSplit: sources.datasetSplit,
     promptColumn: sources.promptColumn,
     referenceColumn: sources.referenceColumn,
+    promptFormat: sources.promptFormat,
+    choicesColumn: sources.choicesColumn,
   };
   return sources.datasetMode === "many" ? [primary, ...sources.additionalDatasets] : [primary];
 }
@@ -309,6 +317,10 @@ function SourceCard({
   onPromptColumnChange,
   referenceColumn,
   onReferenceColumnChange,
+  promptFormat,
+  onPromptFormatChange,
+  choicesColumn,
+  onChoicesColumnChange,
   error,
   idSuffix = "primary",
   sequence,
@@ -327,6 +339,10 @@ function SourceCard({
   onPromptColumnChange?: (value: string) => void;
   referenceColumn?: string;
   onReferenceColumnChange?: (value: string) => void;
+  promptFormat?: "raw" | "mmlu_multiple_choice";
+  onPromptFormatChange?: (value: "raw" | "mmlu_multiple_choice") => void;
+  choicesColumn?: string;
+  onChoicesColumnChange?: (value: string) => void;
   error: string | null;
   idSuffix?: string;
   sequence?: number;
@@ -387,6 +403,17 @@ function SourceCard({
             Reference column <span className="field-optional">optional</span>
             <input id={`${inputPrefix}-reference-column`} className="input-control mt-2" value={referenceColumn ?? ""} onChange={(event) => onReferenceColumnChange?.(event.target.value)} placeholder="answer or label" spellCheck={false} />
           </label>
+          <label className="field-label" htmlFor={`${inputPrefix}-prompt-format`}>
+            Prompt format
+            <select id={`${inputPrefix}-prompt-format`} className="input-control mt-2" value={promptFormat ?? "raw"} onChange={(event) => onPromptFormatChange?.(event.target.value as "raw" | "mmlu_multiple_choice")}>
+              <option value="raw">Raw prompt column</option>
+              <option value="mmlu_multiple_choice">MMLU multiple choice</option>
+            </select>
+          </label>
+          {promptFormat === "mmlu_multiple_choice" ? <label className="field-label" htmlFor={`${inputPrefix}-choices-column`}>
+            Choices column
+            <input id={`${inputPrefix}-choices-column`} className="input-control mt-2" value={choicesColumn ?? ""} onChange={(event) => onChoicesColumnChange?.(event.target.value)} placeholder="choices" spellCheck={false} />
+          </label> : null}
         </div>
       ) : null}
     </section>
@@ -427,6 +454,8 @@ function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => vo
         datasetSplit: current.datasetSplit || "train",
         promptColumn: current.promptColumn || "prompt",
         referenceColumn: current.referenceColumn,
+        promptFormat: current.promptFormat || "raw",
+        choicesColumn: current.choicesColumn,
       }],
     }));
   }
@@ -469,8 +498,8 @@ function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => vo
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <main className="space-y-5">
           <div className="grid gap-5 lg:grid-cols-2"><SourceCard kind="model" value={sources.modelId} onChange={(value) => update("modelId", value)} revision={sources.modelRevision} onRevisionChange={(value) => update("modelRevision", value)} error={modelError} /><div className="space-y-3"><span className="field-label">Dataset mode</span><div className="inline-flex rounded-xl border border-line bg-ink p-1" role="group" aria-label="Dataset mode"><button type="button" className={`runner-tab ${sources.datasetMode === "one" ? "runner-tab-active" : ""}`} aria-pressed={sources.datasetMode === "one"} onClick={() => setSources((current) => ({ ...current, datasetMode: "one" }))}>One dataset</button><button type="button" className={`runner-tab ${sources.datasetMode === "many" ? "runner-tab-active" : ""}`} aria-pressed={sources.datasetMode === "many"} onClick={() => { setSources((current) => ({ ...current, datasetMode: "many" })); if (sources.additionalDatasets.length === 0) addDataset(); }}>Many datasets</button></div><p className="text-xs leading-5 text-muted">Many mode creates one managed master run with a separate child run for every dataset config.</p></div></div>
-          <SourceCard kind="dataset" sequence={1} value={sources.datasetId} onChange={(value) => update("datasetId", value)} revision={sources.datasetRevision} onRevisionChange={(value) => update("datasetRevision", value)} config={sources.datasetConfig} onConfigChange={(value) => update("datasetConfig", value)} split={sources.datasetSplit} onSplitChange={(value) => update("datasetSplit", value)} promptColumn={sources.promptColumn} onPromptColumnChange={(value) => update("promptColumn", value)} referenceColumn={sources.referenceColumn} onReferenceColumnChange={(value) => update("referenceColumn", value)} error={datasetErrors[0]} />
-          {sources.datasetMode === "many" ? sources.additionalDatasets.map((dataset, index) => <SourceCard key={`dataset-${index}`} kind="dataset" idSuffix={`additional-${index}`} sequence={index + 2} value={dataset.datasetId} onChange={(value) => updateAdditional(index, "datasetId", value)} revision={dataset.datasetRevision} onRevisionChange={(value) => updateAdditional(index, "datasetRevision", value)} config={dataset.datasetConfig} onConfigChange={(value) => updateAdditional(index, "datasetConfig", value)} split={dataset.datasetSplit} onSplitChange={(value) => updateAdditional(index, "datasetSplit", value)} promptColumn={dataset.promptColumn} onPromptColumnChange={(value) => updateAdditional(index, "promptColumn", value)} referenceColumn={dataset.referenceColumn} onReferenceColumnChange={(value) => updateAdditional(index, "referenceColumn", value)} error={datasetErrors[index + 1]} onRemove={() => setSources((current) => ({ ...current, additionalDatasets: current.additionalDatasets.filter((_, itemIndex) => itemIndex !== index) }))} />) : null}
+          <SourceCard kind="dataset" sequence={1} value={sources.datasetId} onChange={(value) => update("datasetId", value)} revision={sources.datasetRevision} onRevisionChange={(value) => update("datasetRevision", value)} config={sources.datasetConfig} onConfigChange={(value) => update("datasetConfig", value)} split={sources.datasetSplit} onSplitChange={(value) => update("datasetSplit", value)} promptColumn={sources.promptColumn} onPromptColumnChange={(value) => update("promptColumn", value)} referenceColumn={sources.referenceColumn} onReferenceColumnChange={(value) => update("referenceColumn", value)} promptFormat={sources.promptFormat} onPromptFormatChange={(value) => update("promptFormat", value)} choicesColumn={sources.choicesColumn} onChoicesColumnChange={(value) => update("choicesColumn", value)} error={datasetErrors[0]} />
+          {sources.datasetMode === "many" ? sources.additionalDatasets.map((dataset, index) => <SourceCard key={`dataset-${index}`} kind="dataset" idSuffix={`additional-${index}`} sequence={index + 2} value={dataset.datasetId} onChange={(value) => updateAdditional(index, "datasetId", value)} revision={dataset.datasetRevision} onRevisionChange={(value) => updateAdditional(index, "datasetRevision", value)} config={dataset.datasetConfig} onConfigChange={(value) => updateAdditional(index, "datasetConfig", value)} split={dataset.datasetSplit} onSplitChange={(value) => updateAdditional(index, "datasetSplit", value)} promptColumn={dataset.promptColumn} onPromptColumnChange={(value) => updateAdditional(index, "promptColumn", value)} referenceColumn={dataset.referenceColumn} onReferenceColumnChange={(value) => updateAdditional(index, "referenceColumn", value)} promptFormat={dataset.promptFormat} onPromptFormatChange={(value) => updateAdditional(index, "promptFormat", value)} choicesColumn={dataset.choicesColumn} onChoicesColumnChange={(value) => updateAdditional(index, "choicesColumn", value)} error={datasetErrors[index + 1]} onRemove={() => setSources((current) => ({ ...current, additionalDatasets: current.additionalDatasets.filter((_, itemIndex) => itemIndex !== index) }))} />) : null}
           {sources.datasetMode === "many" ? <button type="button" className="button-secondary" onClick={addDataset}><Plus size={16} weight="bold" /> Add dataset</button> : null}
           <section className="research-card">
             <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Runtime policy</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">How the model is loaded</h2></div><Cpu size={19} className="text-cyan" /></div>
@@ -680,6 +709,8 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
         dataset_split: dataset.datasetSplit.trim() || "train",
         prompt_column: dataset.promptColumn.trim() || "prompt",
         reference_column: dataset.referenceColumn.trim() || null,
+        prompt_format: dataset.promptFormat,
+        choices_column: dataset.promptFormat === "mmlu_multiple_choice" ? (dataset.choicesColumn.trim() || "choices") : null,
       });
       const created = isGroup
         ? await postJson<{ job_id: string }>("/api/run-groups/start", { ...commonPayload, datasets: datasets.map(datasetPayload) })
