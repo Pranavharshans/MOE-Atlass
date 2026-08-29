@@ -139,6 +139,7 @@ export function RunsPage() {
   const [routingSimilarity, setRoutingSimilarity] = useState<RoutingSimilarityResponse | null>(null);
   const [interventionTargets, setInterventionTargets] = useState<InterventionTargetsResponse | null>(null);
   const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
+  const [targetSearch, setTargetSearch] = useState("");
   const [interventionOperation, setInterventionOperation] = useState<"ablate" | "scale">("ablate");
   const [interventionRunName, setInterventionRunName] = useState("");
   const [scaleFactor, setScaleFactor] = useState("0.5");
@@ -152,6 +153,15 @@ export function RunsPage() {
   const [study, setStudy] = useState<InterventionStudy | null>(null);
   const heatmapFrame = useRef<HTMLIFrameElement | null>(null);
   const interventionJob = useJob(interventionJobId);
+  const visibleInterventionTargets = useMemo(() => {
+    const query = targetSearch.trim().toLowerCase();
+    const targets = interventionTargets?.targets ?? [];
+    if (!query) return targets;
+    return targets.filter((target) => {
+      const searchable = `l${target.layer_index} e${target.expert_index} ${target.layer_index} ${target.expert_index} ${target.label}`.toLowerCase();
+      return searchable.includes(query) || selectedTargets.includes(target.label);
+    });
+  }, [interventionTargets, selectedTargets, targetSearch]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -307,6 +317,7 @@ export function RunsPage() {
       const nextEvidence = evidence.status === "available" ? evidence.evidence ?? null : null;
       setInterventionTargets(targets);
       setSelectedTargets([]);
+      setTargetSearch("");
       setInterventionEvidence(nextEvidence);
       setStudyRuns(nextEvidence ? [selectedRun] : []);
       setControlRuns([]);
@@ -498,12 +509,13 @@ export function RunsPage() {
                 <div className="flex items-center gap-2"><Lightning size={16} className="text-signal" /><p className="label-caps text-[0.59rem] text-muted">Causal intervention</p></div>
                 {interventionTargets?.capability?.operation_capabilities?.length ? <div className="mt-4 border-y border-line"><OperationCapabilityList operations={interventionTargets.capability.operation_capabilities} compact /></div> : null}
                 {interventionEvidence ? <p className="mt-4 text-xs leading-5 text-muted">This is a derived intervention run. Select its recorded baseline to prepare another intervention.</p> : interventionTargets?.status === "available" ? <>
+                  <label className="field-label mt-4 block" htmlFor="intervention-target-search">Find a target<input id="intervention-target-search" className="input-control mt-2" type="search" value={targetSearch} onChange={(event) => setTargetSearch(event.target.value)} placeholder="L9, E188, or 9 188" autoComplete="off" /></label>
                   <label className="field-label mt-4" htmlFor="intervention-targets">Layer × expert targets
                     <select id="intervention-targets" className="input-control mt-2 min-h-40" multiple value={selectedTargets} onChange={(event) => setSelectedTargets(Array.from(event.target.selectedOptions, (option) => option.value))}>
-                      {interventionTargets.targets.map((target) => <option key={target.label} value={target.label}>L{target.layer_index} × E{target.expert_index}</option>)}
+                      {visibleInterventionTargets.map((target) => <option key={target.label} value={target.label}>L{target.layer_index} × E{target.expert_index}</option>)}
                     </select>
                   </label>
-                  <p className="mt-2 text-[0.65rem] leading-5 text-muted">Select one or more controllable experts. Packed experts are validated against the live backend when the run starts. Hold Ctrl or Command to select several.</p>
+                  <p className="mt-2 text-[0.65rem] leading-5 text-muted">Showing {visibleInterventionTargets.length} of {interventionTargets.targets.length} controllable experts. Packed experts are validated against the live backend when the run starts. Hold Ctrl or Command to select several.</p>
                   <label className="field-label mt-3 block" htmlFor="intervention-run-name">New run name<input id="intervention-run-name" className="input-control mt-2" value={interventionRunName} onChange={(event) => setInterventionRunName(event.target.value)} placeholder={`${runLabel(selectedEntry)}-ablation`} autoComplete="off" /></label>
                   <label className="field-label mt-3" htmlFor="intervention-operation">Operation
                     <select id="intervention-operation" className="input-control mt-2" value={interventionOperation} onChange={(event) => setInterventionOperation(event.target.value as typeof interventionOperation)}><option value="ablate">Disable contribution</option>{supportsScaling ? <option value="scale">Scale contribution</option> : null}</select>
