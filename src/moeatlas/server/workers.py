@@ -18,6 +18,19 @@ _CAPTURE_OVERHEAD_DIRECTORY = "capture-overhead"
 _MAX_JOB_PAYLOAD_BYTES = 5_000_000
 
 
+def _require_completed_routing_receipt(terminal: str, receipt: object | None) -> None:
+    """Reject a nominally completed capture that published no routing evidence."""
+
+    if terminal != "completed":
+        return
+    routing_count = getattr(receipt, "routing_count", None)
+    if receipt is None or type(routing_count) is not int or routing_count <= 0:
+        raise RuntimeError(
+            "completed capture produced no routing events; verify the model adapter "
+            "and routing targets before retrying"
+        )
+
+
 def _json_document(value: object, *, max_bytes: int = _MAX_JOB_PAYLOAD_BYTES) -> dict[str, Any]:
     """Return one bounded JSON object from a domain manifest."""
 
@@ -659,8 +672,20 @@ def _run_worker(
                 outcome=intervention_outcome,
                 invocation_counts=invocation_counts,
             )
-        publish_run_report(workspace, execution)
+        report_progress(
+            stage="finalizing",
+            completed=0,
+            total=3,
+            message="Publishing immutable routing artifacts…",
+        )
         receipt = executor.publish_run_artifacts(workspace)
+        _require_completed_routing_receipt(terminal, receipt)
+        report_progress(
+            stage="finalizing",
+            completed=1,
+            total=3,
+            message="Publishing evaluation and intervention evidence…",
+        )
         checkpoint_path: str | None = None
         if execution.checkpoint_path:
             checkpoint = Path(execution.checkpoint_path)
@@ -732,6 +757,19 @@ def _run_worker(
                 specification.run_key,
                 overhead_report,
             )
+        report_progress(
+            stage="finalizing",
+            completed=2,
+            total=3,
+            message="Updating the run catalog…",
+        )
+        publish_run_report(workspace, execution)
+        report_progress(
+            stage="finalizing",
+            completed=3,
+            total=3,
+            message="Routing evidence is ready.",
+        )
         return JobOutcome(
             payload_out,
             "cancelled"

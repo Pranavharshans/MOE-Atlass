@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from moeatlas.server import create_app
 from moeatlas.server.dto import RunGroupStartRequest, RunStartRequest
+from moeatlas.server.workers import _require_completed_routing_receipt
 from moeatlas.server.jobs import JobOutcome
 from moeatlas.services import initialize_workspace
 from moeatlas.services.model_resolution import (
@@ -58,6 +59,20 @@ def test_run_requests_accept_an_explicit_replication_identity() -> None:
 
     assert single.replication == 2
     assert grouped.replication == 3
+
+
+def test_completed_capture_requires_nonempty_routing_evidence() -> None:
+    class Receipt:
+        routing_count = 12
+
+    _require_completed_routing_receipt("completed", Receipt())
+    _require_completed_routing_receipt("failed", None)
+
+    with pytest.raises(RuntimeError, match="no routing events"):
+        _require_completed_routing_receipt("completed", None)
+
+    with pytest.raises(RuntimeError, match="no routing events"):
+        _require_completed_routing_receipt("completed", type("Empty", (), {"routing_count": 0})())
 
 
 def test_offline_hub_plan_rejects_branch_without_contacting_the_hub(monkeypatch) -> None:
