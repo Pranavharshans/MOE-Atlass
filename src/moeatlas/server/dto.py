@@ -155,6 +155,7 @@ class RunStartRequest(_WireModel):
     ] = "normalized_exact_match"
     sample_cap: int = Field(default=32, ge=1, le=10_000)
     dataset_seed: int | None = Field(default=None, ge=0)
+    replication: int = Field(default=0, ge=0, le=1_000_000)
     batch_size: int = Field(default=1, ge=1, le=256)
     max_new_tokens: int = Field(default=128, ge=1, le=1_000_000)
     token_text_policy: Literal["redacted", "stored"] = "redacted"
@@ -197,6 +198,7 @@ class RunGroupStartRequest(_WireModel):
     ] = "normalized_exact_match"
     sample_cap: int = Field(default=32, ge=1, le=10_000)
     dataset_seed: int | None = Field(default=None, ge=0)
+    replication: int = Field(default=0, ge=0, le=1_000_000)
     batch_size: int = Field(default=1, ge=1, le=256)
     max_new_tokens: int = Field(default=128, ge=1, le=1_000_000)
     token_text_policy: Literal["redacted", "stored"] = "redacted"

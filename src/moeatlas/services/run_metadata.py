@@ -131,6 +131,8 @@ def read_run_metadata(
             if entry.run_name is not None:
                 target = root / _NAMED_DIRECTORY / entry.run_name / _NAMED_FILE
         except Exception:
+            pass
+        if not target.exists():
             named_root = root / _NAMED_DIRECTORY
             candidates: list[Path] = []
             if named_root.is_dir() and not named_root.is_symlink():

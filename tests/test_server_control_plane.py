@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from moeatlas.server import create_app
+from moeatlas.server.dto import RunGroupStartRequest, RunStartRequest
 from moeatlas.server.jobs import JobOutcome
 from moeatlas.services import initialize_workspace
 from moeatlas.services.model_resolution import (
@@ -36,6 +37,27 @@ def test_immutable_hub_revision_builds_a_loader_ready_plan() -> None:
     assert plan.resolution.resolved_model_revision == commit
     assert plan.resolution.resolved_tokenizer_revision == commit
     assert plan.source.allow_downloads is True
+
+
+def test_run_requests_accept_an_explicit_replication_identity() -> None:
+    single = RunStartRequest(
+        run_name="replica-2",
+        model_id="org/model",
+        dataset_id="org/dataset",
+        replication=2,
+    )
+    grouped = RunGroupStartRequest(
+        run_name="replica-group",
+        model_id="org/model",
+        datasets=(
+            {"dataset_id": "org/one"},
+            {"dataset_id": "org/two"},
+        ),
+        replication=3,
+    )
+
+    assert single.replication == 2
+    assert grouped.replication == 3
 
 
 def test_offline_hub_plan_rejects_branch_without_contacting_the_hub(monkeypatch) -> None:

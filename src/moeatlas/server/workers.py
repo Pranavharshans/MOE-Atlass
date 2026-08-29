@@ -411,6 +411,7 @@ def _run_worker(
             "intervention_recipe": recipe.fingerprint if recipe is not None else None,
         }
         return RunSpecification(
+            replication=payload.get("replication", 0),
             run_name=run_name,
             workspace=workspace,
             created_by="local-server",
@@ -446,6 +447,9 @@ def _run_worker(
         expert_activity=bool(payload.get("capture_expert_activity", True)),
         run_name=payload.get("run_name"),
     )
+    from ..services import register_run
+
+    register_run(workspace, specification)
     _publish_run_policy(workspace, specification.run_key, specification.privacy)
     resolved_request = {
         **payload,
