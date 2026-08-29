@@ -80,6 +80,9 @@ def test_server_model_cache_defaults_to_persistent_workspace(
 ) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
     for name in ("HF_HOME", "HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
         monkeypatch.delenv(name, raising=False)
 
@@ -88,6 +91,22 @@ def test_server_model_cache_defaults_to_persistent_workspace(
     assert cache == workspace / "model-cache" / "huggingface"
     assert cache.is_dir()
     assert os.environ["HF_HOME"] == str(cache)
+
+
+def test_server_model_cache_preserves_an_existing_huggingface_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    home = tmp_path / "home"
+    legacy = home / ".cache" / "huggingface"
+    legacy.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    for name in ("HF_HOME", "HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
+        monkeypatch.delenv(name, raising=False)
+
+    assert _bind_workspace_model_cache(workspace) == legacy
+    assert os.environ["HF_HOME"] == str(legacy)
 
 
 def test_offline_hub_plan_rejects_branch_without_contacting_the_hub(monkeypatch) -> None:

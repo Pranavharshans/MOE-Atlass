@@ -28,6 +28,10 @@ def _bind_workspace_model_cache(workspace: str | Path) -> Path:
     )
     if explicit:
         return Path(explicit).expanduser()
+    legacy = Path.home() / ".cache" / "huggingface"
+    if legacy.is_dir() and not legacy.is_symlink():
+        os.environ["HF_HOME"] = str(legacy)
+        return legacy
     root = Path(workspace)
     if root.is_symlink() or not root.is_dir():
         raise RuntimeError("workspace must be an existing non-symlink directory")
