@@ -90,6 +90,7 @@ class TransformersRoutingExecutor:
         capture_routing: bool = True,
         mode: str = "generation",
         max_new_tokens: int = 128,
+        thinking_mode: str = "model_default",
         evaluation_method: EvaluationMethod | str = EvaluationMethod.EXACT_MATCH,
         load_progress: Callable[[str, int, int, str], None] | None = None,
     ) -> None:
@@ -109,6 +110,8 @@ class TransformersRoutingExecutor:
             or max_new_tokens <= 0
         ):
             raise TypeError("max_new_tokens must be a strict positive integer")
+        if thinking_mode not in {"model_default", "disabled", "enabled"}:
+            raise ValueError("thinking_mode must be model_default, disabled, or enabled")
         try:
             resolved_evaluation = (
                 evaluation_method
@@ -123,6 +126,7 @@ class TransformersRoutingExecutor:
         self._capture_routing = capture_routing
         self._mode = mode
         self._max_new_tokens = max_new_tokens
+        self._thinking_mode = thinking_mode
         self._evaluation_method = resolved_evaluation
         if load_progress is not None and not callable(load_progress):
             raise TypeError("load_progress must be callable")
@@ -891,6 +895,7 @@ class TransformersRoutingExecutor:
                 "evaluation_method": self._evaluation_method.value,
                 "max_new_tokens": self._max_new_tokens,
                 "mode": self._mode,
+                "thinking_mode": self._thinking_mode,
                 "reference": str(values["reference"]) if "reference" in values else None,
                 "token_ids": [token.token_id for token in token_events],
             }
@@ -924,8 +929,24 @@ class TransformersRoutingExecutor:
     ) -> tuple[tuple[TokenEvent, ...], dict[str, object]]:
         assert self._run_key is not None
         try:
+            rendered_prompt = prompt
+            add_special_tokens = True
+            if self._mode == "generation" and self._thinking_mode != "model_default":
+                apply_chat_template = getattr(tokenizer, "apply_chat_template", None)
+                if not callable(apply_chat_template):
+                    raise ValueError("tokenizer does not support explicit thinking control")
+                rendered_prompt = apply_chat_template(
+                    [{"role": "user", "content": prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=self._thinking_mode == "enabled",
+                )
+                if not isinstance(rendered_prompt, str) or not rendered_prompt:
+                    raise ValueError("chat template did not return rendered text")
+                add_special_tokens = False
             encoded = tokenizer(  # type: ignore[operator]
-                prompt,
+                rendered_prompt,
+                add_special_tokens=add_special_tokens,
                 padding=False,
                 truncation=False,
                 return_attention_mask=True,
@@ -1018,21 +1039,13 @@ class TransformersRoutingExecutor:
         return receipt
 
     def _ordered_storage_events(self) -> tuple[RoutingEvent, ...]:
-        layer_order = {
-            target.layer_key: position
-            for position, target in enumerate(sorted(self._targets, key=lambda t: t.layer_index))
-        }
-        token_positions = {token.token_key: index for index, token in enumerate(self._token_events)}
-        return tuple(
-            sorted(
-                self._routing_events,
-                key=lambda event: (
-                    layer_order[event.layer_key],
-                    token_positions[event.token_key],
-                    event.rank,
-                ),
-            )
+        ordered_layers = tuple(
+            target.layer_key for target in sorted(self._targets, key=lambda t: t.layer_index)
         )
+        buckets: dict[str, list[RoutingEvent]] = {layer_key: [] for layer_key in ordered_layers}
+        for event in self._routing_events:
+            buckets[event.layer_key].append(event)
+        return tuple(event for layer_key in ordered_layers for event in buckets[layer_key])
 
     def _release(self) -> None:
         loaded = self._loaded

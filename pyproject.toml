@@ -49,8 +49,10 @@ store = [
 ]
 server = [
     # The server's run worker streams Hugging Face datasets for dataset-backed
-    # studies, so keep this dependency with the documented server install.
+    # studies and publishes routing shards, so keep both runtime dependencies
+    # with the documented server install.
     "datasets>=3.0",
+    "duckdb>=1.4.5,<1.5",
     "fastapi>=0.115",
     "httpx>=0.27",
     "uvicorn>=0.30",

@@ -480,7 +480,9 @@ def _run_worker(
                 },
             ),
             generation=GenerationConfig(
-                max_new_tokens=payload.get("max_new_tokens", 128), do_sample=False
+                max_new_tokens=payload.get("max_new_tokens", 128),
+                do_sample=False,
+                thinking_mode=payload.get("thinking_mode", "model_default"),
             ),
             probe=ProbeProvenance(
                 probe_plan_id=f"plan:{stable_digest(probe_payload)}",
@@ -599,6 +601,7 @@ def _run_worker(
             capture_routing=False,
             mode=payload.get("mode", "generation"),
             max_new_tokens=payload.get("max_new_tokens", 128),
+            thinking_mode=payload.get("thinking_mode", "model_default"),
             load_progress=on_load_progress,
         )
         native_executor.bind_run_key(native_specification.run_key)
@@ -661,6 +664,7 @@ def _run_worker(
         capture_routing=True,
         mode=payload.get("mode", "generation"),
         max_new_tokens=payload.get("max_new_tokens", 128),
+        thinking_mode=payload.get("thinking_mode", "model_default"),
         evaluation_method=payload.get("evaluation_method", "normalized_exact_match"),
         load_progress=on_load_progress,
     )

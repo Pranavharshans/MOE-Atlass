@@ -160,6 +160,7 @@ class RunStartRequest(_WireModel):
     replication: int = Field(default=0, ge=0, le=1_000_000)
     batch_size: int = Field(default=1, ge=1, le=256)
     max_new_tokens: int = Field(default=128, ge=1, le=1_000_000)
+    thinking_mode: Literal["model_default", "disabled", "enabled"] = "model_default"
     token_text_policy: Literal["redacted", "stored"] = "redacted"
     allow_export: bool = True
     retain_raw_payloads: bool = False
@@ -205,6 +206,7 @@ class RunGroupStartRequest(_WireModel):
     replication: int = Field(default=0, ge=0, le=1_000_000)
     batch_size: int = Field(default=1, ge=1, le=256)
     max_new_tokens: int = Field(default=128, ge=1, le=1_000_000)
+    thinking_mode: Literal["model_default", "disabled", "enabled"] = "model_default"
     token_text_policy: Literal["redacted", "stored"] = "redacted"
     allow_export: bool = True
     retain_raw_payloads: bool = False

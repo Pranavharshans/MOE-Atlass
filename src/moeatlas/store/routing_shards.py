@@ -667,6 +667,31 @@ def _write_parquets(
     routing_rows: tuple[tuple[object, ...], ...],
     expert_rows: tuple[tuple[object, ...], ...] = (),
 ) -> None:
+    if getattr(duckdb, "__name__", None) == "duckdb":
+        try:
+            from .routing_arrow_writer import write_parquets
+        except ImportError:
+            # ``store`` remains a lightweight DuckDB-only extra.  The server
+            # and model extras include PyArrow through ``datasets`` and take
+            # this vectorized path for real routing captures.
+            pass
+        else:
+            try:
+                write_parquets(
+                    duckdb,
+                    stage,
+                    token_rows,
+                    routing_rows,
+                    expert_rows,
+                    _TOKEN_COLUMNS,
+                    _ROUTING_COLUMNS,
+                    _EXPERT_COLUMNS,
+                    (_TOKENS_FILE, _ROUTING_FILE, _EXPERTS_FILE),
+                )
+                return
+            except Exception as exc:
+                raise _error("write", exc)
+
     connection: Any | None = None
     try:
         connection = duckdb.connect(database=":memory:")

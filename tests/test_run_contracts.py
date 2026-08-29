@@ -116,9 +116,10 @@ def test_run_key_is_content_addressed_and_metadata_insensitive() -> None:
     ):
         assert run_specification(**metadata).run_key == spec.run_key
     assert run_specification(replication=1).run_key != spec.run_key
-    assert run_specification(
-        generation=GenerationConfig(seed=8, temperature=0.7)
-    ).run_key != spec.run_key
+    assert (
+        run_specification(generation=GenerationConfig(seed=8, temperature=0.7)).run_key
+        != spec.run_key
+    )
 
 
 @pytest.mark.parametrize(
@@ -238,9 +239,7 @@ def test_data_fingerprint_is_deterministic_and_sensitive() -> None:
     assert base.fingerprint == data_provenance().fingerprint
     assert data_provenance(task_labels=("other",)).fingerprint != base.fingerprint
     reordered = data_provenance(
-        input=prompt_input(
-            messages=(ChatMessage(role="user", content="hello"),)
-        ),
+        input=prompt_input(messages=(ChatMessage(role="user", content="hello"),)),
         task_labels=("math",),
     )
     assert reordered.fingerprint == base.fingerprint
@@ -253,9 +252,10 @@ def test_generation_config_bounds() -> None:
         GenerationConfig(top_p=1.5)
     with pytest.raises(ValidationError, match="stop sequence"):
         GenerationConfig(stop_sequences=("dup", "dup"))
-    config = GenerationConfig(max_new_tokens=16, do_sample=True)
+    config = GenerationConfig(max_new_tokens=16, do_sample=True, thinking_mode="disabled")
     round_tripped = GenerationConfig.model_validate(config.model_dump(mode="json"))
     assert round_tripped == config
+    assert round_tripped.thinking_mode == "disabled"
 
 
 def test_intervention_lineage_requires_probe_opt_in() -> None:
@@ -333,9 +333,9 @@ def test_runs_import_without_model_stack() -> None:
         )
     )
     env = os.environ.copy()
-    env["PYTHONPATH"] = (
-        str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
-    ).rstrip(os.pathsep)
+    env["PYTHONPATH"] = (str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")).rstrip(
+        os.pathsep
+    )
     completed = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True,
@@ -349,6 +349,4 @@ def test_runs_import_without_model_stack() -> None:
 
 
 def test_no_model_runtime_imported_by_contracts() -> None:
-    assert not any(
-        name in sys.modules for name in ("torch", "transformers", "safetensors")
-    )
+    assert not any(name in sys.modules for name in ("torch", "transformers", "safetensors"))

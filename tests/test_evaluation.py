@@ -19,11 +19,24 @@ def test_token_f1_counts_duplicate_tokens() -> None:
 
 
 def test_multiple_choice_uses_the_last_bounded_choice() -> None:
-    result = evaluate_text(
-        "I considered B. Final answer: C", "C", "multiple_choice_accuracy"
-    )
+    result = evaluate_text("I considered B. Final answer: C", "C", "multiple_choice_accuracy")
     assert result.score == 1.0
     assert evaluate_text("Final answer: B", "C", "multiple_choice_accuracy").score == 0.0
+
+
+def test_multiple_choice_rejects_unfinished_reasoning_and_implicit_mentions() -> None:
+    assert (
+        evaluate_text("<think>I considered B, then C", "C", "multiple_choice_accuracy").score == 0.0
+    )
+    assert evaluate_text("I considered B and C", "C", "multiple_choice_accuracy").score == 0.0
+    assert (
+        evaluate_text(
+            "<think>Reasoning about B</think>\nFinal answer: C",
+            "C",
+            "multiple_choice_accuracy",
+        ).score
+        == 1.0
+    )
 
 
 def test_numeric_match_uses_exact_decimal_values() -> None:
