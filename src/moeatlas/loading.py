@@ -55,6 +55,7 @@ _RESERVED_LOADER_OPTION_KEYS = frozenset(
         "proxies",
         "quantization",
         "quantization_config",
+        "ram_offload",
         "remote_code_acknowledged",
         "requested_revision",
         "revision",
@@ -532,6 +533,10 @@ class LoadConfig(VersionedLoadingModel):
 
     device: StrictStr = DeviceKind.CPU.value
     device_map: dict[StrictStr, StrictStr] = Field(default_factory=dict)
+    # Explicit opt-in for Accelerate's host-memory placement.  This remains a
+    # loader policy (rather than a device alias) so it is included in plan
+    # identity and provenance and cannot be silently inferred from ``auto``.
+    ram_offload: StrictBool = False
     dtype: DTypePolicy = DTypePolicy.PRESERVE
     quantization: QuantizationPolicy = QuantizationPolicy.NONE
     trust_remote_code: StrictBool = False
@@ -574,6 +579,10 @@ class LoadConfig(VersionedLoadingModel):
             raise ValueError("remote_code_acknowledged=True requires trust_remote_code=True")
         _validate_download_policy(self.download_policy, self.allow_downloads)
         self._validate_device_map_compatibility()
+        if self.ram_offload and self.device != DeviceKind.AUTO.value:
+            raise ValueError("ram_offload=True requires device='auto'")
+        if self.ram_offload and self.device_map:
+            raise ValueError("ram_offload=True cannot be combined with an explicit device_map")
         return self
 
     def _validate_device_map_compatibility(self) -> None:
@@ -615,6 +624,11 @@ class LoadConfig(VersionedLoadingModel):
             warnings.append("MPS support is best-effort and remains runtime-dependent")
         if self.allow_downloads:
             warnings.append("model downloads are explicitly allowed by this loading policy")
+        if self.ram_offload:
+            warnings.append(
+                "CPU RAM offload is enabled; Accelerate may place weights in host memory; "
+                "disk offload is disabled"
+            )
         return tuple(sorted(warnings))
 
 
@@ -771,6 +785,7 @@ def _portable_config_intent(config: LoadConfig) -> dict[str, Any]:
         "allow_downloads": config.allow_downloads,
         "device": config.device,
         "device_map": dict(config.device_map),
+        "ram_offload": config.ram_offload,
         "download_policy": config.download_policy.value,
         "dtype": config.dtype.value,
         "loader_options": config.loader_options,

@@ -233,6 +233,28 @@ def test_model_factory_selection_preserves_declared_task_heads() -> None:
     assert model_loader._model_factory_name(types.SimpleNamespace()) == "AutoModel"
 
 
+def test_multimodal_conditional_factory_uses_vision_surface_before_seq2seq() -> None:
+    assert (
+        model_loader._model_factory_name(
+            types.SimpleNamespace(
+                architectures=["VisionForConditionalGeneration"],
+                vision_config=types.SimpleNamespace(),
+            )
+        )
+        == "AutoModelForMultimodalLM"
+    )
+    # An absent marker must preserve the existing encoder-decoder behavior.
+    assert (
+        model_loader._model_factory_name(
+            types.SimpleNamespace(
+                architectures=["T5ForConditionalGeneration"],
+                vision_config=None,
+            )
+        )
+        == "AutoModelForSeq2SeqLM"
+    )
+
+
 def test_declared_transformers_class_precedes_ambiguous_conditional_auto_factory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -257,6 +279,33 @@ def test_declared_transformers_class_precedes_ambiguous_conditional_auto_factory
 
     result = load_huggingface(_plan())
     assert calls[2][0] == "declared-model"
+    result.close()
+
+
+def test_qwen4_declared_transformers_class_wins_over_conditional_auto_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+    module = _fake_transformers(calls, close_log)
+
+    class Qwen4ExpForConditionalGeneration:
+        @staticmethod
+        def from_pretrained(target: str, **kwargs: Any) -> _FakeModel:
+            calls.append(("qwen4-declared-model", target, kwargs))
+            return _FakeModel(kwargs["config"], close_log)
+
+    module.Qwen4ExpForConditionalGeneration = Qwen4ExpForConditionalGeneration
+    _install_fake(monkeypatch, module)
+    monkeypatch.setattr(
+        _FakeConfig,
+        "architectures",
+        ["Qwen4ExpForConditionalGeneration"],
+        raising=False,
+    )
+
+    result = load_huggingface(_plan())
+    assert calls[2][0] == "qwen4-declared-model"
     result.close()
 
 
@@ -466,6 +515,55 @@ def test_device_map_and_auto_require_accelerate_and_forward_copies(
     automatic = load_huggingface(_plan(config=LoadConfig(device="auto")))
     assert calls[2][2]["device_map"] == "auto"
     automatic.close()
+
+
+def test_ram_offload_forwards_auto_map_without_disk_offload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+    _install_fake(monkeypatch, _fake_transformers(calls, close_log))
+    monkeypatch.setitem(sys.modules, "accelerate", types.ModuleType("accelerate"))
+
+    result = load_huggingface(
+        _plan(config=LoadConfig(device="auto", ram_offload=True))
+    )
+    model_kwargs = calls[2][2]
+    assert model_kwargs["device_map"] == "auto"
+    assert "offload_folder" not in model_kwargs
+    assert any("CPU RAM offload" in warning for warning in result.warnings)
+    assert result.manifest.provenance is not None
+    assert any(
+        "disk offload is disabled" in warning
+        for warning in result.manifest.provenance.metadata["security_warnings"]
+    )
+    result.close()
+
+
+def test_ram_offload_preflight_rechecks_tampered_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = LoadConfig(device="auto")
+    tampered_config = config.model_copy(update={"ram_offload": 1})
+    tampered_plan = _plan(config=config).model_copy(update={"config": tampered_config})
+    with pytest.raises(ModelLoadError, match="ram_offload must be an exact bool"):
+        load_huggingface(tampered_plan)
+
+
+def test_ram_offload_rejects_observed_disk_placement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+
+    def disk_model(_target: str, kwargs: dict[str, Any]) -> _FakeModel:
+        model = _FakeModel(kwargs["config"], close_log)
+        model.hf_device_map = {"": "disk"}
+        return model
+
+    _install_fake(monkeypatch, _fake_transformers(calls, close_log, model_factory=disk_model))
+    monkeypatch.setitem(sys.modules, "accelerate", types.ModuleType("accelerate"))
+    with pytest.raises(ModelLoadError, match="disk offload is disabled"):
+        load_huggingface(_plan(config=LoadConfig(device="auto", ram_offload=True)))
+    assert close_log == ["model", "tokenizer", "config"]
 
 
 @pytest.mark.parametrize("device", ["cuda", "cuda:1"])

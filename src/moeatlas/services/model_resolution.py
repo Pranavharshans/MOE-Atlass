@@ -209,6 +209,7 @@ def resolve_huggingface_plan(
     *,
     device: str = DeviceKind.AUTO.value,
     dtype: str = DTypePolicy.PRESERVE.value,
+    ram_offload: bool = False,
     trust_remote_code: bool = False,
     allow_downloads: bool = True,
 ) -> LoadingPlan:
@@ -219,6 +220,7 @@ def resolve_huggingface_plan(
         requested_revision,
         device=device,
         dtype=dtype,
+        ram_offload=ram_offload,
         trust_remote_code=trust_remote_code,
         allow_downloads=allow_downloads,
     )
@@ -231,6 +233,7 @@ def resolve_huggingface_plan_with_metadata(
     *,
     device: str = DeviceKind.AUTO.value,
     dtype: str = DTypePolicy.PRESERVE.value,
+    ram_offload: bool = False,
     trust_remote_code: bool = False,
     allow_downloads: bool = True,
 ) -> tuple[LoadingPlan, HubRevisionMetadata]:
@@ -238,7 +241,11 @@ def resolve_huggingface_plan_with_metadata(
 
     stable_model_id = _validated_identifier(model_id, "model identifier")
     stable_requested = _validated_revision(requested_revision, "model revision")
-    if type(allow_downloads) is not bool or type(trust_remote_code) is not bool:
+    if (
+        type(allow_downloads) is not bool
+        or type(trust_remote_code) is not bool
+        or type(ram_offload) is not bool
+    ):
         raise ModelResolutionError("identity", "the loading policy is invalid")
     try:
         dtype_policy = DTypePolicy(dtype)
@@ -256,6 +263,7 @@ def resolve_huggingface_plan_with_metadata(
         )
         config = LoadConfig(
             device=device_kind,
+            ram_offload=ram_offload,
             dtype=dtype_policy,
             trust_remote_code=trust_remote_code,
             remote_code_acknowledged=trust_remote_code,

@@ -54,6 +54,7 @@ type SourceDraft = {
   choicesColumn: string;
   device: string;
   dtype: "preserve" | "float32" | "float16" | "bfloat16";
+  ramOffload: boolean;
   trustRemoteCode: boolean;
   datasetMode: "one" | "many";
   additionalDatasets: DatasetDraft[];
@@ -96,17 +97,21 @@ const DEFAULT_SOURCES: SourceDraft = {
   choicesColumn: "",
   device: "auto",
   dtype: "preserve",
+  ramOffload: false,
   trustRemoteCode: false,
   datasetMode: "one",
   additionalDatasets: [],
 };
 
 function normalizeSources(value: Partial<SourceDraft>): SourceDraft {
-  return {
+  const normalized = {
     ...DEFAULT_SOURCES,
     ...value,
+    ramOffload: typeof value.ramOffload === "boolean" ? value.ramOffload : false,
     additionalDatasets: Array.isArray(value.additionalDatasets) ? value.additionalDatasets.map((dataset) => ({ ...dataset, promptFormat: dataset.promptFormat ?? "raw", choicesColumn: dataset.choicesColumn ?? "" })) : [],
   };
+  if (normalized.device !== "auto") normalized.ramOffload = false;
+  return normalized;
 }
 
 function datasetsFromSources(sources: SourceDraft): DatasetDraft[] {
@@ -473,6 +478,7 @@ function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => vo
         model_revision: sources.modelRevision.trim() || "main",
         device: sources.device,
         dtype: sources.dtype,
+        ram_offload: sources.ramOffload,
         trust_remote_code: sources.trustRemoteCode,
         allow_downloads: true,
       });
@@ -506,10 +512,11 @@ function AnalysisPage({ onNavigate }: { onNavigate: (item: NavigationItem) => vo
           <section className="research-card">
             <div className="flex items-start justify-between gap-4"><div><p className="label-caps text-[0.59rem] text-cyan">Runtime policy</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.035em] text-white">How the model is loaded</h2></div><Cpu size={19} className="text-cyan" /></div>
             <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <label className="field-label" htmlFor="runtime-device">Device<select id="runtime-device" className="input-control mt-2" value={sources.device} onChange={(event) => update("device", event.target.value)}><option value="auto">Auto</option><option value="cuda">CUDA</option><option value="cpu">CPU</option><option value="mps">MPS</option></select></label>
+              <label className="field-label" htmlFor="runtime-device">Device<select id="runtime-device" className="input-control mt-2" value={sources.device} onChange={(event) => { const device = event.target.value; setSources((current) => ({ ...current, device, ramOffload: device === "auto" ? current.ramOffload : false })); setQueued(false); }}><option value="auto">Auto</option><option value="cuda">CUDA</option><option value="cpu">CPU</option><option value="mps">MPS</option></select></label>
               <label className="field-label" htmlFor="runtime-dtype">Dtype<select id="runtime-dtype" className="input-control mt-2" value={sources.dtype} onChange={(event) => update("dtype", event.target.value as SourceDraft["dtype"])}><option value="preserve">Preserve</option><option value="bfloat16">bfloat16</option><option value="float16">float16</option><option value="float32">float32</option></select></label>
               <label className="toggle-row self-end"><input className="check-control" type="checkbox" checked={sources.trustRemoteCode} onChange={(event) => update("trustRemoteCode", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Trust remote code</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Required by some custom architectures; opt in deliberately.</span></span></label>
             </div>
+            <label className={`toggle-row mt-4 ${sources.device !== "auto" ? "opacity-60" : ""}`}><input className="check-control" type="checkbox" checked={sources.ramOffload} disabled={sources.device !== "auto"} onChange={(event) => update("ramOffload", event.target.checked)} /><span><span className="block text-xs font-medium text-white">Use CPU RAM offload</span><span className="mt-1 block text-[0.68rem] leading-5 text-muted">Allow Accelerate to place weights in host memory; disk offload is not enabled.</span></span></label>
           </section>
         </main>
 
@@ -574,6 +581,7 @@ function DiscoveryPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
         model_revision: sources.modelRevision.trim() || "main",
         device: sources.device,
         dtype: sources.dtype,
+        ram_offload: sources.ramOffload,
         trust_remote_code: sources.trustRemoteCode,
         allow_downloads: true,
       });
@@ -700,6 +708,7 @@ function RunConfigPage({ onNavigate }: { onNavigate: (item: NavigationItem) => v
         mode: run.mode,
         device: sources.device,
         dtype: sources.dtype,
+        ram_offload: sources.ramOffload,
         trust_remote_code: sources.trustRemoteCode,
         allow_downloads: true,
         capture_expert_activity: true,

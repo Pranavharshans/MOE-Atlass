@@ -10,11 +10,19 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 
 class _WireModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def _validate_ram_offload(self) -> _WireModel:
+        """Reject ambiguous host-offload requests at the wire boundary."""
+
+        if getattr(self, "ram_offload", False) and getattr(self, "device", None) != "auto":
+            raise ValueError("ram_offload=True requires device='auto'")
+        return self
 
 
 class HealthResponse(_WireModel):
@@ -130,6 +138,7 @@ class DiscoveryRequest(_WireModel):
     model_revision: str = Field(default="main", min_length=1, max_length=200)
     device: str = Field(default="auto", min_length=1, max_length=32)
     dtype: Literal["preserve", "float32", "float16", "bfloat16"] = "preserve"
+    ram_offload: StrictBool = False
     trust_remote_code: bool = False
     allow_downloads: bool = True
 
@@ -167,6 +176,7 @@ class RunStartRequest(_WireModel):
     mode: Literal["generation", "teacher_forced"] = "generation"
     device: str = Field(default="auto", min_length=1, max_length=32)
     dtype: Literal["preserve", "float32", "float16", "bfloat16"] = "preserve"
+    ram_offload: StrictBool = False
     trust_remote_code: bool = False
     allow_downloads: bool = True
     capture_expert_activity: bool = True
@@ -213,6 +223,7 @@ class RunGroupStartRequest(_WireModel):
     mode: Literal["generation", "teacher_forced"] = "generation"
     device: str = Field(default="auto", min_length=1, max_length=32)
     dtype: Literal["preserve", "float32", "float16", "bfloat16"] = "preserve"
+    ram_offload: StrictBool = False
     trust_remote_code: bool = False
     allow_downloads: bool = True
     capture_expert_activity: bool = True

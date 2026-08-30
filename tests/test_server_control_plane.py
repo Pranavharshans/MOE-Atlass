@@ -10,11 +10,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from moeatlas.server import create_app
-from moeatlas.server.dto import RunGroupStartRequest, RunStartRequest
+from moeatlas.server.dto import DiscoveryRequest, RunGroupStartRequest, RunStartRequest
 from moeatlas.server.jobs import JobOutcome
 from moeatlas.server.workers import _bind_workspace_model_cache, _require_completed_routing_receipt
 from moeatlas.services import initialize_workspace
 from moeatlas.services.model_resolution import (
+    HubRevisionMetadata,
     resolve_huggingface_plan,
     resolve_huggingface_revision,
     resolve_huggingface_revision_metadata,
@@ -77,6 +78,57 @@ def test_run_requests_accept_an_explicit_thinking_mode() -> None:
 
     assert single.thinking_mode == "disabled"
     assert grouped.thinking_mode == "enabled"
+
+
+def test_ram_offload_wire_contract_is_strict_and_serializable() -> None:
+    discovery = DiscoveryRequest(model_id="org/model", ram_offload=True)
+    single = RunStartRequest(
+        run_name="ram-offload",
+        model_id="org/model",
+        dataset_id="org/data",
+        ram_offload=True,
+    )
+    grouped = RunGroupStartRequest(
+        run_name="ram-group",
+        model_id="org/model",
+        datasets=({"dataset_id": "org/one"}, {"dataset_id": "org/two"}),
+        ram_offload=True,
+    )
+    assert discovery.model_dump(mode="json")["ram_offload"] is True
+    assert single.model_dump(mode="json")["ram_offload"] is True
+    assert grouped.model_dump(mode="json")["ram_offload"] is True
+
+    with pytest.raises(ValueError, match="requires device='auto'"):
+        DiscoveryRequest(model_id="org/model", device="cpu", ram_offload=True)
+    with pytest.raises(ValueError):
+        RunStartRequest(
+            run_name="ram-offload",
+            model_id="org/model",
+            dataset_id="org/data",
+            ram_offload=1,
+        )
+
+
+def test_model_resolution_preserves_ram_offload_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    import moeatlas.services.model_resolution as resolution
+
+    commit = "d" * 40
+    monkeypatch.setattr(
+        resolution,
+        "_fetch_revision",
+        lambda kind, identifier, revision: HubRevisionMetadata(
+            resolved_revision=commit,
+            evidence_source=f"fake {kind} resolver",
+        ),
+    )
+    plan = resolution.resolve_huggingface_plan(
+        "org/model",
+        "main",
+        device="auto",
+        ram_offload=True,
+        allow_downloads=True,
+    )
+    assert plan.config.ram_offload is True
 
 
 def test_completed_capture_requires_nonempty_routing_evidence() -> None:
@@ -227,6 +279,37 @@ def test_json_job_routes_and_intervention_recipe_are_live(tmp_path: Path, monkey
     assert recipe.json()["fingerprint"].startswith("sha256:")
 
 
+def test_discovery_route_preserves_ram_offload_payload(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    initialize_workspace(workspace)
+    observed: dict[str, object] = {}
+
+    import moeatlas.server.app as app_module
+
+    def fake_discovery(payload, *, cancel, report_progress):
+        del cancel
+        observed.update(payload)
+        report_progress(stage="scan", completed=1, total=1, message="synthetic")
+        return JobOutcome({"status": "available"}, "completed")
+
+    monkeypatch.setattr(app_module, "_discovery_worker", fake_discovery)
+    client = TestClient(create_app(workspace, isolate_model_workers=False))
+    created = client.post(
+        "/api/discovery",
+        json={"model_id": "org/model", "ram_offload": True},
+    )
+    assert created.status_code == 202
+    job_id = created.json()["job_id"]
+    for _ in range(50):
+        status = client.get(f"/api/jobs/{job_id}")
+        if status.json()["state"] not in {"queued", "running"}:
+            break
+        time.sleep(0.01)
+    assert status.json()["state"] == "completed"
+    assert observed["ram_offload"] is True
+
+
 def test_multi_dataset_group_route_submits_one_parent_job(tmp_path: Path, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -252,6 +335,7 @@ def test_multi_dataset_group_route_submits_one_parent_job(tmp_path: Path, monkey
         json={
             "run_name": "cyber-study",
             "model_id": "org/model",
+            "ram_offload": True,
             "datasets": [
                 {"dataset_id": "cais/mmlu", "dataset_config": "computer_security"},
                 {
@@ -272,6 +356,7 @@ def test_multi_dataset_group_route_submits_one_parent_job(tmp_path: Path, monkey
     assert status.json()["state"] == "completed"
     assert observed["workspace"] == str(workspace)
     assert len(observed["payload"]["datasets"]) == 2
+    assert observed["payload"]["ram_offload"] is True
     groups = client.get("/api/run-groups")
     assert groups.status_code == 200
     assert groups.json() == {"groups": []}

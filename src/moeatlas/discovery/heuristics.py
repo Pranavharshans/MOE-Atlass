@@ -19,6 +19,26 @@ _TOKEN_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+")
 _ROUTER_TOKENS = frozenset({"router", "gate", "gates", "gating", "routing"})
 _EXPERT_CONTAINER_TOKENS = frozenset({"experts", "expertcontainer", "expertlist"})
 _MOE_TOKENS = frozenset({"moe", "mixture", "switch", "sparsemoe", "moelayer"})
+# A shared expert is the module/container that owns the shared FFN.  Its
+# descendants may inherit ``SharedExpert`` in a concrete class name, but a
+# projection (``gate_proj``, ``up_proj``/``down_proj``) or scalar gate is not
+# itself that component.  Keep this guard token based so it applies equally
+# to foreign families and to alternate shared-expert spellings.
+_SHARED_PROJECTION_TOKENS = frozenset(
+    {
+        "gate",
+        "gates",
+        "gating",
+        "proj",
+        "projection",
+        "up",
+        "down",
+        "weight",
+        "bias",
+        "act",
+        "activation",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -96,6 +116,20 @@ def _is_expert_container(entry: ModuleEntry, numeric_child_count: int) -> bool:
         tokens & _EXPERT_CONTAINER_TOKENS
         or ("expert" in tokens and numeric_child_count >= 2)
         or ("experts" in tokens and numeric_child_count >= 1)
+    )
+
+
+def _is_shared_owner(entry: ModuleEntry) -> bool:
+    """Identify the shared-expert owner, excluding projections and gates."""
+
+    leaf_tokens = frozenset(name_tokens(entry.path.rpartition(".")[2]))
+    class_tokens = _class_tokens(entry.value)
+    shared_markers = frozenset({"shared"}) & (leaf_tokens | class_tokens)
+    expert_markers = frozenset({"expert", "experts"}) & (leaf_tokens | class_tokens)
+    return bool(
+        shared_markers
+        and expert_markers
+        and not (leaf_tokens & _SHARED_PROJECTION_TOKENS)
     )
 
 
@@ -181,6 +215,9 @@ def candidate_specs(
         for path, entry in modules.items()
         if path and _is_expert_container(entry, numeric_child_counts.get(path, 0))
     }
+    shared_owner_paths = {
+        path for path, entry in modules.items() if path and _is_shared_owner(entry)
+    }
 
     moe_paths: set[str] = set()
     for path, entry in modules.items():
@@ -239,9 +276,21 @@ def candidate_specs(
         )
 
         is_router = bool(role_tokens & _ROUTER_TOKENS)
-        is_container = path in container_paths
-        is_expert = bool(path.rpartition(".")[2].isdigit() and parent_is_container)
-        is_shared = "shared" in role_tokens and bool(role_tokens & {"expert", "experts"})
+        # Restrict shared-expert identity to the component's own leaf/class
+        # marker.  Looking at all path tokens made ``shared_expert_gate`` and
+        # nested ``shared_expert.*`` projections look like additional shared
+        # experts when real model classes carried shared-expert names.
+        is_shared = path in shared_owner_paths
+        # A path such as ``shared_experts`` can be a container, but it is the
+        # shared component rather than a routed expert container.  Keep the
+        # path in ``container_paths`` for surrounding MoE-context evidence;
+        # only publish it as EXPERT_CONTAINER when it is not shared itself.
+        is_container = path in container_paths and not is_shared
+        is_expert = bool(
+            path.rpartition(".")[2].isdigit()
+            and parent_is_container
+            and parent not in shared_owner_paths
+        )
         is_moe_layer = bool(
             (role_tokens & _MOE_TOKENS or (has_router_child and has_container_child))
             and not (is_router or is_container or is_expert or is_shared)
