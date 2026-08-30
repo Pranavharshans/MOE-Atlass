@@ -18,6 +18,7 @@ from .mixtral import MixtralStaticAdapter
 from .planning import AdapterProbePlanError, build_routing_probe_plan
 from .qwen3_5_moe import Qwen3_5MoeStaticAdapter
 from .qwen3_moe import Qwen3MoeStaticAdapter
+from .qwen4_exp import Qwen4ExpStaticAdapter
 from .registry import (
     ADAPTER_REGISTRY_SCHEMA_VERSION,
     ENTRY_POINT_GROUP,
@@ -78,6 +79,7 @@ __all__ = [
     "MixtralStaticAdapter",
     "Qwen3MoeStaticAdapter",
     "Qwen3_5MoeStaticAdapter",
+    "Qwen4ExpStaticAdapter",
     "AdapterProbePlanError",
     "build_routing_probe_plan",
     "UNIVERSAL_ROUTING_INSPECTION_SCHEMA_VERSION",

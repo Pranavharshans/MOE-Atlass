@@ -221,6 +221,32 @@ Feature 26 routing capture/decoding, current-checkpoint loading, GPU
 equivalence, and release-time immutable revision review remain deferred to the
 final VM.
 
+## Qwen3.8 Flash Next (`qwen4_exp`) static adapter (experimental)
+
+`Qwen4ExpStaticAdapter` is a compact, caller-supplied, structure-only adapter
+for the official conditional-generation identity: outer `model_type` must be
+`qwen4_exp`, `architectures` must contain exactly
+`Qwen4ExpForConditionalGeneration`, and `text_config.model_type` must be
+`qwen4_exp_text`. The only accepted decoder root is
+`model.language_model.layers`. Every layer is checked for the packed gate and
+expert tensors (`[experts, hidden]`, `[experts, 2 * moe, hidden]`, and
+`[experts, hidden, moe]`) plus the shared-expert projections and `[1, hidden]`
+shared gate. Positive integer dimensions, `num_experts_per_tok <= num_experts`,
+and an exact `layer_types` schedule of `linear_attention`/`full_attention` are
+required. The wrapper's `model.language_model.config` must be the exact
+`config.text_config` object.
+
+The adapter publishes routed experts as logical packed slices and keeps the
+shared expert structural (`routed=False`); all evidence is `STRUCTURE` with
+`verified=False`. It imports no model runtime, reads no tensor values, and
+retains no model state. The structural basis is the pinned upstream
+[Qwen4-Exp modeling source](https://github.com/huggingface/transformers/blob/42ca97014c85d71a88ad60d55f08cb9fb4d26e2c/src/transformers/models/qwen4_exp/modeling_qwen4_exp.py)
+and the official
+[Qwen3.8-Flash-Next-FP8 configuration](https://huggingface.co/Qwen/Qwen3.8-Flash-Next-FP8/blob/main/config.json).
+Official FP8 checkpoint loading, runtime/routing equivalence, GPU behavior,
+and immutable revision review remain deferred to the final VM; this adapter is
+model-free static validation only.
+
 ## Routing universe publication
 
 `publish_routing_universe()` turns one validated `AdapterInspection` into a

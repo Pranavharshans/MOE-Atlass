@@ -207,6 +207,7 @@ def builtin_adapter_records() -> tuple[AdapterPluginRecord, ...]:
     from .mixtral import MixtralStaticAdapter
     from .qwen3_5_moe import Qwen3_5MoeStaticAdapter
     from .qwen3_moe import Qwen3MoeStaticAdapter
+    from .qwen4_exp import Qwen4ExpStaticAdapter
 
     records = [
         AdapterPluginRecord.from_descriptor(
@@ -219,6 +220,7 @@ def builtin_adapter_records() -> tuple[AdapterPluginRecord, ...]:
             ("mixtral", MixtralStaticAdapter),
             ("qwen3_5_moe", Qwen3_5MoeStaticAdapter),
             ("qwen3_moe", Qwen3MoeStaticAdapter),
+            ("qwen4_exp", Qwen4ExpStaticAdapter),
         )
     ]
     return tuple(sorted(records, key=lambda record: (record.name, record.location)))

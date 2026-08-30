@@ -359,6 +359,19 @@ denominators.
 Official checkpoint/runtime equivalence and GPU certification status remain
 deferred to the final VM and release-time revision review. No model files are
 downloaded.
+Feature 29 Qwen3.8 Flash Next (`qwen4_exp`) structure inspection: Status: model-free static complete;
+VM FP8 certification deferred. The adapter accepts only the pinned outer
+`qwen4_exp`/`Qwen4ExpForConditionalGeneration` identity with nested
+`qwen4_exp_text`, validates the exact `model.language_model.layers` packed
+topology and shapes, and excludes the shared expert from routed logical
+experts. It emits only unverified `STRUCTURE` evidence and retains no model or
+tensor values. The structural basis is the pinned
+[Transformers Qwen4-Exp modeling source](https://github.com/huggingface/transformers/blob/42ca97014c85d71a88ad60d55f08cb9fb4d26e2c/src/transformers/models/qwen4_exp/modeling_qwen4_exp.py)
+and the official
+[Qwen3.8-Flash-Next-FP8 configuration](https://huggingface.co/Qwen/Qwen3.8-Flash-Next-FP8/blob/main/config.json).
+Official FP8 checkpoint loading, routing/runtime equivalence, GPU behavior,
+and release-time immutable revision review remain deferred to the final VM.
+No model files are downloaded.
 Run-evidence export bundles: Status: implemented at the model-free boundary.
 Round-trip, byte-determinism, tamper/forged-digest rejection, canonicality
 enforcement, redaction fidelity (null text exactly when not stored), row/byte
