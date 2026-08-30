@@ -233,6 +233,28 @@ def test_model_factory_selection_preserves_declared_task_heads() -> None:
     assert model_loader._model_factory_name(types.SimpleNamespace()) == "AutoModel"
 
 
+def test_multimodal_conditional_factory_uses_vision_surface_before_seq2seq() -> None:
+    assert (
+        model_loader._model_factory_name(
+            types.SimpleNamespace(
+                architectures=["VisionForConditionalGeneration"],
+                vision_config=types.SimpleNamespace(),
+            )
+        )
+        == "AutoModelForMultimodalLM"
+    )
+    # An absent marker must preserve the existing encoder-decoder behavior.
+    assert (
+        model_loader._model_factory_name(
+            types.SimpleNamespace(
+                architectures=["T5ForConditionalGeneration"],
+                vision_config=None,
+            )
+        )
+        == "AutoModelForSeq2SeqLM"
+    )
+
+
 def test_declared_transformers_class_precedes_ambiguous_conditional_auto_factory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -257,6 +279,33 @@ def test_declared_transformers_class_precedes_ambiguous_conditional_auto_factory
 
     result = load_huggingface(_plan())
     assert calls[2][0] == "declared-model"
+    result.close()
+
+
+def test_qwen4_declared_transformers_class_wins_over_conditional_auto_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+    module = _fake_transformers(calls, close_log)
+
+    class Qwen4ExpForConditionalGeneration:
+        @staticmethod
+        def from_pretrained(target: str, **kwargs: Any) -> _FakeModel:
+            calls.append(("qwen4-declared-model", target, kwargs))
+            return _FakeModel(kwargs["config"], close_log)
+
+    module.Qwen4ExpForConditionalGeneration = Qwen4ExpForConditionalGeneration
+    _install_fake(monkeypatch, module)
+    monkeypatch.setattr(
+        _FakeConfig,
+        "architectures",
+        ["Qwen4ExpForConditionalGeneration"],
+        raising=False,
+    )
+
+    result = load_huggingface(_plan())
+    assert calls[2][0] == "qwen4-declared-model"
     result.close()
 
 

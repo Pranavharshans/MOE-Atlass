@@ -372,6 +372,15 @@ and the official
 Official FP8 checkpoint loading, routing/runtime equivalence, GPU behavior,
 and release-time immutable revision review remain deferred to the final VM.
 No model files are downloaded.
+Feature 2 Qwen3.8 generic routing candidate: Status: model-free candidate
+support complete; runtime and FP8 certification deferred. Generic discovery
+normalizes one shared expert per layer, binds exactly one routed gate per layer,
+and decodes the packed `(router_logits, router_scores, router_indices)` tuple
+into routed events. Packed experts are logical slices rather than independent
+hook targets, so capture support is truthfully `routing_candidate` only. Real
+FP8 loading, CPU/RAM-offload behavior, native equivalence, and upstream open
+FP8/CPU issues require a pinned VM run; this feature does not patch upstream
+Transformers.
 Run-evidence export bundles: Status: implemented at the model-free boundary.
 Round-trip, byte-determinism, tamper/forged-digest rejection, canonicality
 enforcement, redaction fidelity (null text exactly when not stored), row/byte

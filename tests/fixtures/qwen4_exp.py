@@ -35,10 +35,29 @@ class Qwen4ExpConfig:
     text_config: Qwen4ExpTextConfig = field(default_factory=Qwen4ExpTextConfig)
 
 
+class _HookHandle:
+    def __init__(self, owner: _Module, callback: object) -> None:
+        self.owner = owner
+        self.callback = callback
+
+    def remove(self) -> None:
+        if self.callback in self.owner._hooks:
+            self.owner._hooks.remove(self.callback)
+
+
 class _Module:
     def __init__(self, *, config: object | None = None) -> None:
+        self._hooks: list[object] = []
         if config is not None:
             self.config = config
+
+    def register_forward_hook(self, callback: object) -> _HookHandle:
+        self._hooks.append(callback)
+        return _HookHandle(self, callback)
+
+    def fire(self, payload: object) -> None:
+        for callback in tuple(self._hooks):
+            callback(self, (), payload)
 
 
 class Qwen4ExpForConditionalGeneration:
@@ -119,9 +138,35 @@ class Qwen4ExpForConditionalGeneration:
         return tuple(self._parameters.items())
 
 
+class Qwen4ExpHookableForConditionalGeneration(Qwen4ExpForConditionalGeneration):
+    """Small official-shaped router double for generic capture tests.
+
+    The packed expert tensors remain logical-only: only the real per-layer
+    ``mlp.gate`` modules expose forward hooks, and one opaque native tuple is
+    emitted by each gate during the single test forward.
+    """
+
+    def __init__(self, payload: object, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self.payload = payload
+        self.calls = 0
+        self.output = object()
+        self.router_paths = tuple(
+            path for path in self._modules if path.endswith(".mlp.gate")
+        )
+
+    def __call__(self, **kwargs: object) -> object:
+        del kwargs
+        self.calls += 1
+        for path in self.router_paths:
+            self._modules[path].fire(self.payload)  # type: ignore[attr-defined]
+        return self.output
+
+
 __all__ = [
     "FakeParameter",
     "Qwen4ExpConfig",
     "Qwen4ExpTextConfig",
     "Qwen4ExpForConditionalGeneration",
+    "Qwen4ExpHookableForConditionalGeneration",
 ]

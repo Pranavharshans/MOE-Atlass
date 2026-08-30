@@ -331,10 +331,27 @@ def _model_factory_name(config: object) -> str:
     configurations remain on the backbone fallback for foreign families.
     """
 
-    try:
-        architectures = getattr(config, "architectures", None)
-    except Exception:
-        architectures = None
+    def config_value(name: str) -> object:
+        try:
+            if isinstance(config, Mapping):
+                return config.get(name)
+            return getattr(config, name, None)
+        except Exception:
+            return None
+
+    # Transformers uses a dedicated multimodal auto factory for conditional
+    # wrappers that carry a real vision/audio/video surface.  Checking this
+    # marker before the generic ``ForConditionalGeneration`` suffix prevents
+    # such configs from being routed to the seq2seq factory.  ``None`` is the
+    # normal absent marker and keeps text-only T5 behavior unchanged.
+    for marker in ("vision_config", "audio_config", "video_config", "image_config"):
+        if config_value(marker) is not None:
+            return "AutoModelForMultimodalLM"
+    for marker in ("is_multimodal", "is_multimodal_model", "multimodal"):
+        if config_value(marker) is True:
+            return "AutoModelForMultimodalLM"
+
+    architectures = config_value("architectures")
     if isinstance(architectures, list | tuple):
         names = tuple(name for name in architectures if isinstance(name, str))
         suffixes = (
