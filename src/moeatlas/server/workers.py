@@ -182,6 +182,7 @@ def _discovery_worker(
         payload.get("model_revision", "main"),
         device=payload.get("device", "auto"),
         dtype=payload.get("dtype", "preserve"),
+        ram_offload=payload.get("ram_offload", False),
         trust_remote_code=bool(payload.get("trust_remote_code", False)),
         allow_downloads=bool(payload.get("allow_downloads", True)),
     )
@@ -308,6 +309,7 @@ def _run_worker(
         payload.get("model_revision", "main"),
         device=payload.get("device", "auto"),
         dtype=payload.get("dtype", "preserve"),
+        ram_offload=payload.get("ram_offload", False),
         trust_remote_code=bool(payload.get("trust_remote_code", False)),
         allow_downloads=bool(payload.get("allow_downloads", True)),
     )

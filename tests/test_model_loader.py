@@ -517,6 +517,55 @@ def test_device_map_and_auto_require_accelerate_and_forward_copies(
     automatic.close()
 
 
+def test_ram_offload_forwards_auto_map_without_disk_offload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+    _install_fake(monkeypatch, _fake_transformers(calls, close_log))
+    monkeypatch.setitem(sys.modules, "accelerate", types.ModuleType("accelerate"))
+
+    result = load_huggingface(
+        _plan(config=LoadConfig(device="auto", ram_offload=True))
+    )
+    model_kwargs = calls[2][2]
+    assert model_kwargs["device_map"] == "auto"
+    assert "offload_folder" not in model_kwargs
+    assert any("CPU RAM offload" in warning for warning in result.warnings)
+    assert result.manifest.provenance is not None
+    assert any(
+        "disk offload is disabled" in warning
+        for warning in result.manifest.provenance.metadata["security_warnings"]
+    )
+    result.close()
+
+
+def test_ram_offload_preflight_rechecks_tampered_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = LoadConfig(device="auto")
+    tampered_config = config.model_copy(update={"ram_offload": 1})
+    tampered_plan = _plan(config=config).model_copy(update={"config": tampered_config})
+    with pytest.raises(ModelLoadError, match="ram_offload must be an exact bool"):
+        load_huggingface(tampered_plan)
+
+
+def test_ram_offload_rejects_observed_disk_placement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    close_log: list[str] = []
+
+    def disk_model(_target: str, kwargs: dict[str, Any]) -> _FakeModel:
+        model = _FakeModel(kwargs["config"], close_log)
+        model.hf_device_map = {"": "disk"}
+        return model
+
+    _install_fake(monkeypatch, _fake_transformers(calls, close_log, model_factory=disk_model))
+    monkeypatch.setitem(sys.modules, "accelerate", types.ModuleType("accelerate"))
+    with pytest.raises(ModelLoadError, match="disk offload is disabled"):
+        load_huggingface(_plan(config=LoadConfig(device="auto", ram_offload=True)))
+    assert close_log == ["model", "tokenizer", "config"]
+
+
 @pytest.mark.parametrize("device", ["cuda", "cuda:1"])
 def test_cuda_request_warns_when_single_device_observation_remains_cpu(
     monkeypatch: pytest.MonkeyPatch,

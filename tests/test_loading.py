@@ -184,6 +184,7 @@ def test_load_config_defaults_and_device_map_invariants() -> None:
     assert config.download_policy is DownloadPolicy.OFFLINE
     assert config.allow_downloads is False
     assert config.trust_remote_code is False
+    assert config.ram_offload is False
     assert DTypePolicy.PRESERVE.manifest_dtype_hint() is DType.UNKNOWN
     assert DTypePolicy.FLOAT32.manifest_dtype_hint() is DType.FLOAT32
     assert DTypePolicy.FLOAT16.manifest_dtype_hint() is DType.FLOAT16
@@ -207,6 +208,23 @@ def test_load_config_defaults_and_device_map_invariants() -> None:
         load_config(device_map={"layers.0": "auto"})
     with pytest.raises(ValidationError, match="incompatible"):
         load_config(device=DeviceKind.CUDA.value, device_map={"": "mps"})
+
+
+def test_ram_offload_is_strictly_bound_to_auto_and_plan_identity() -> None:
+    config = load_config(device=DeviceKind.AUTO.value, ram_offload=True)
+    assert config.ram_offload is True
+    assert any("CPU RAM offload" in warning for warning in config.security_warnings)
+    assert portable_loading_intent(hf_source(), config)["config"]["ram_offload"] is True
+    assert LoadingPlan(source=hf_source(), config=config).plan_id != LoadingPlan(
+        source=hf_source(), config=load_config(device=DeviceKind.AUTO.value)
+    ).plan_id
+
+    with pytest.raises(ValidationError, match="requires device='auto'"):
+        load_config(device=DeviceKind.CPU.value, ram_offload=True)
+    with pytest.raises(ValidationError, match="explicit device_map"):
+        load_config(device=DeviceKind.AUTO.value, ram_offload=True, device_map={"": "cpu"})
+    with pytest.raises(ValidationError):
+        load_config(device=DeviceKind.AUTO.value, ram_offload=1)
 
 
 def test_load_config_security_acknowledgement_download_and_derived_warnings() -> None:
@@ -276,6 +294,7 @@ def test_load_options_are_finite_json_safe_and_deeply_immutable() -> None:
         "dtype",
         "torch_dtype",
         "quantization_config",
+        "ram_offload",
         "load_in_4bit",
         "load_in_8bit",
     ):

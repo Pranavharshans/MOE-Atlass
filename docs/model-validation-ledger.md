@@ -381,6 +381,13 @@ hook targets, so capture support is truthfully `routing_candidate` only. Real
 FP8 loading, CPU/RAM-offload behavior, native equivalence, and upstream open
 FP8/CPU issues require a pinned VM run; this feature does not patch upstream
 Transformers.
+Feature 3 Qwen3.8 host-memory loading policy: Status: model-free contract
+complete; runtime FP8/placement certification deferred. `ram_offload=True` is
+strictly bound to `device="auto"` with no explicit device map, forwards only
+Accelerate `device_map="auto"`, and records a warning that CPU RAM may be used
+while disk offload remains disabled. No `offload_folder` or upstream
+Transformers patch is introduced; real FP8 and RAM placement require VM
+certification.
 Run-evidence export bundles: Status: implemented at the model-free boundary.
 Round-trip, byte-determinism, tamper/forged-digest rejection, canonicality
 enforcement, redaction fidelity (null text exactly when not stored), row/byte

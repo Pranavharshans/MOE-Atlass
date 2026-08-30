@@ -43,6 +43,12 @@ with case- and punctuation-insensitive matching. This covers variants such as
 `Token`, `Authorization`, `api-key`, passwords, secrets, credentials, and
 `headers`; benign backend names such as `secret_sauce_mode` remain data.
 
+`ram_offload=True` is an explicit host-memory policy. It requires
+`device="auto"` and an empty explicit `device_map`; the runtime forwards only
+Accelerate's `device_map="auto"`, which may place weights in CPU RAM. Disk
+offload is not enabled, no `offload_folder` is supplied, and the choice is
+included in the loading-plan ID and provenance warning.
+
 `DTypePolicy` describes requested loading intent. Its explicit values map to
 the existing core `DType` only as a later manifest hint; `preserve` maps to
 `DType.UNKNOWN` until runtime observation produces a manifest. It is not a

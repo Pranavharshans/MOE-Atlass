@@ -400,9 +400,16 @@ outside the routed universe. Its packed logical expert slices have no
 independently hookable module, so `classify_capture_support(report)` reports a
 `routing_candidate` (not expert-activity support) with that limitation stated
 explicitly. This is model-free candidate evidence only: real FP8 loading,
-CPU/RAM-offload behavior, native tuple equivalence, and any upstream open
+native tuple equivalence, and any upstream open
 FP8/CPU issues remain deferred to VM certification; no upstream patch is
 implied by this seam.
+
+The loading boundary also accepts an explicit `ram_offload` policy. It is
+valid only with `device="auto"` and an empty explicit map, and forwards
+Accelerate's `device_map="auto"` so host CPU RAM may be used. The loader does
+not configure disk offload or an `offload_folder`; the warning and plan
+provenance record this limitation. Real FP8 and host-memory behavior remain a
+VM certification concern.
 
 ## Routing decode capabilities (model-free)
 

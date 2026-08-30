@@ -139,6 +139,14 @@ def _validate_plan(
     # ``model_copy(update=...)`` can intentionally bypass Pydantic validators;
     # repeat the policy checks before resolution or any optional import/I/O.
     _loader_options(plan)
+    if type(plan.config.ram_offload) is not bool:
+        raise ModelLoadError("preflight", "ram_offload must be an exact bool")
+    if plan.config.ram_offload and plan.config.device != DeviceKind.AUTO.value:
+        raise ModelLoadError("preflight", "ram_offload=True requires device='auto'")
+    if plan.config.ram_offload and plan.config.device_map:
+        raise ModelLoadError(
+            "preflight", "ram_offload=True cannot be combined with an explicit device_map"
+        )
     if isinstance(plan.source, HuggingFaceSource) and (
         plan.source.download_policy != plan.config.download_policy
         or plan.source.allow_downloads != plan.config.allow_downloads
@@ -223,6 +231,12 @@ def _dtype_kwarg(plan: LoadingPlan) -> Any | None:
 
 
 def _device_map_kwarg(plan: LoadingPlan) -> Any | None:
+    if plan.config.ram_offload:
+        # The explicit policy is intentionally still the bounded Accelerate
+        # ``auto`` map.  It may place modules in CPU RAM; no disk map or
+        # ``offload_folder`` is supplied by this loader.
+        _import_optional("accelerate")
+        return "auto"
     if plan.config.device_map:
         _import_optional("accelerate")
         return dict(plan.config.device_map)
@@ -493,6 +507,11 @@ def _load_transformers(
             model
         )
         observed_map, device_warnings = observed_device_map(model)
+        if plan.config.ram_offload and any(device == "disk" for device in observed_map.values()):
+            raise ModelLoadError(
+                "placement",
+                "ram_offload=True observed disk placement; disk offload is disabled",
+            )
         if isinstance(plan.source, HuggingFaceSource):
             validate_exposed_commits(model, model_config_object, tokenizer, resolution)
         warnings = tuple(
