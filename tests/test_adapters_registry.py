@@ -90,7 +90,7 @@ def test_surface_is_pinned() -> None:
         AdapterRegistryError("cancelled")
 
 
-def test_builtin_records_cover_the_three_shipped_adapters() -> None:
+def test_builtin_records_cover_the_four_shipped_adapters() -> None:
     records = builtin_adapter_records()
     names = [record.name for record in records]
     assert names == sorted(names)
@@ -98,6 +98,7 @@ def test_builtin_records_cover_the_three_shipped_adapters() -> None:
         "huggingface-mixtral-static",
         "huggingface-qwen3-moe-static",
         "huggingface-qwen3.5-moe-static",
+        "huggingface-qwen4-exp-static",
     }
     for record in records:
         assert record.source == "builtin"
